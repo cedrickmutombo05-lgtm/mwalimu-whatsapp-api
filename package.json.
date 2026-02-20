@@ -1,7 +1,6 @@
 {
   "name": "mwalimu-whatsapp-api",
   "version": "1.0.0",
-  "description": "",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
@@ -9,6 +8,6 @@
   "dependencies": {
     "express": "^4.18.2",
     "axios": "^1.6.0",
-    "@google/generative-ai": "^0.1.1";
+    "@google/generative-ai": "^0.1.1"
   }
 }
