@@ -37,7 +37,7 @@ app.post('/webhook', async (req, res) => {
             console.log("Message reçu de " + from + " : " + text);
 
             // --- ÉTAPE A : Demander une réponse à l'IA Gemini ---
-            const geminiRes = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key='" + apiKey, {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;      
                 contents: [{ parts: [{ text: text }] }]
             });
 
