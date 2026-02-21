@@ -1,45 +1,39 @@
-
 const express = require('express');
 const axios = require('axios');
 const app = express();
 
 app.use(express.json());
 
-// 1. TA CONFIGURATION
-const apiKey = "TON_API_KEY_GEMINI_ICI";
+const apiKey = "VOTRE_CLE_API_GEMINI_ICI";
 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
-// 2. LA FONCTION QUI PARLE À L'IA
-async function askGemini(question) {
-    try {
-        const response = await axios.post(url, {
-            contents: [{ parts: [{ text: question }] }]
-        });
-        return response.data.candidates[0].content.parts[0].text;
-    } catch (error) {
-        console.error("Erreur Gemini:", error.message);
-        return "Désolé, j'ai un petit bug de cerveau...";
-    }
-}
-
-// 3. LA ROUTE POUR RECEVOIR LES MESSAGES (WEBHOOK)
 app.post('/webhook', async (req, res) => {
-    // On récupère le message qui vient de WhatsApp
-    const userMsg = req.body.message || "Bonjour";
-   
-    console.log("Message reçu :", userMsg);
+    // CETTE LIGNE EST LA PLUS IMPORTANTE : elle va tout nous dire
+    console.log("--- CONTENU REÇU DU FOURNISSEUR ---");
+    console.log(JSON.stringify(req.body, null, 2));
 
-    // On demande la réponse à l'IA
-    const aiReply = await askGemini(userMsg);
+    try {
+        // On essaie de chercher le message partout où il pourrait se cacher
+        const userMsg = req.body.message ||
+                        (req.body.text && req.body.text.body) ||
+                        req.body.text ||
+                        "ERREUR_LECTURE";
 
-    // On répond au serveur WhatsApp
-    res.status(200).json({
-        reply: aiReply
-    });
+        console.log("Texte extrait :", userMsg);
+
+        const response = await axios.post(url, {
+            contents: [{ parts: [{ text: userMsg }] }]
+        });
+
+        const aiReply = response.data.candidates[0].content.parts[0].text;
+        console.log("Réponse Gemini :", aiReply);
+
+        res.status(200).send("Reçu");
+    } catch (error) {
+        console.log("Erreur détaillée :", error.message);
+        res.status(500).send("Erreur");
+    }
 });
 
-// 4. LANCEMENT DU SERVEUR
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Mwalimu est prêt sur le port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Mwalimu écoute sur le port ${PORT}`));
