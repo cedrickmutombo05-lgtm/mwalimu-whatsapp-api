@@ -1,68 +1,45 @@
 
 const express = require('express');
 const axios = require('axios');
-require('dotenv').config();
-
 const app = express();
+
 app.use(express.json());
 
-// Récupération des clés configurées sur Render
-const token = process.env.WA_TOKEN;
-const apiKey = process.env.API_KEY;
+// 1. TA CONFIGURATION
+const apiKey = "TON_API_KEY_GEMINI_ICI";
+const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
-// 1. Validation du Webhook (pour Meta)
-app.get('/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token_sent = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    // Remplace "votre_token_de_verification" par celui que tu as mis sur Meta
-    if (mode && token_sent === "votre_token_de_verification") {
-        res.status(200).send(challenge);
-    } else {
-        res.sendStatus(403);
-    }
-});
-
-// 2. Réception des messages et réponse avec l'IA Gemini
-app.post('/webhook', async (req, res) => {
+// 2. LA FONCTION QUI PARLE À L'IA
+async function askGemini(question) {
     try {
-        const body = req.body;
-
-        if (body.object === 'whatsapp_business_account' && body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
-            const msg = body.entry[0].changes[0].value.messages[0];
-            const from = msg.from; // Numéro de l'utilisateur
-            const text = msg.text.body; // Message reçu
-
-            console.log("Message reçu de " + from + " : " + text);
-
-            // --- ÉTAPE A : Demander une réponse à l'IA Gemini ---
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;      
-                contents: [{ parts: [{ text: text }] }]
-            });
-
-            const aiResponse = geminiRes.data.candidates[0].content.parts[0].text;
-
-            // --- ÉTAPE B : Envoyer la réponse de l'IA sur WhatsApp ---
-            await axios.post(`https://graph.facebook.com/v18.0/1052332771286374/messages`, {
-                messaging_product: "whatsapp",
-                to: from,
-                text: { body: aiResponse }
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            res.sendStatus(200);
-        } else {
-            res.sendStatus(404);
-        }
+        const response = await axios.post(url, {
+            contents: [{ parts: [{ text: question }] }]
+        });
+        return response.data.candidates[0].content.parts[0].text;
     } catch (error) {
-        console.error("Erreur détaillée :", error.response?.data || error.message);
-        res.sendStatus(500);
+        console.error("Erreur Gemini:", error.message);
+        return "Désolé, j'ai un petit bug de cerveau...";
     }
+}
+
+// 3. LA ROUTE POUR RECEVOIR LES MESSAGES (WEBHOOK)
+app.post('/webhook', async (req, res) => {
+    // On récupère le message qui vient de WhatsApp
+    const userMsg = req.body.message || "Bonjour";
+   
+    console.log("Message reçu :", userMsg);
+
+    // On demande la réponse à l'IA
+    const aiReply = await askGemini(userMsg);
+
+    // On répond au serveur WhatsApp
+    res.status(200).json({
+        reply: aiReply
+    });
 });
 
-app.listen(3000, () => console.log('Mwalimu est prêt et écoute sur le port 3000 !'));
+// 4. LANCEMENT DU SERVEUR
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Mwalimu est prêt sur le port ${PORT}`);
+});
