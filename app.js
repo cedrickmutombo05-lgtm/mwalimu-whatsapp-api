@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 // --- CONFIGURATION ---
-const GEMINI_API_KEY = "TA_CLE_GEMINI_ICI";
+const GEMINI_API_KEY = "AIzaSyDbJqC_h1VimLfnKC_u0okfXNQtlw_F2bs";
 const WHATSAPP_TOKEN = "TON_TOKEN_PERMANENT_ICI";
 const PHONE_NUMBER_ID = "10523327712866374";
 const VERIFY_TOKEN = "mwalimu_token_2026";
