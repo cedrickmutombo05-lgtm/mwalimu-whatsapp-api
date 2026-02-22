@@ -1,16 +1,14 @@
-
 const express = require('express');
 const axios = require('axios');
 const app = express();
 app.use(express.json());
 
-// --- CONFIGURATION ---
-const GEMINI_API_KEY = "AIzaSyDbJqC_h1VimLfnKC_u0okfXNQtlw_F2bs";
-const WHATSAPP_TOKEN = "TON_TOKEN_PERMANENT_ICI";
+// CONFIGURATION VIA VARIABLES D'ENVIRONNEMENT (SÉCURISÉ)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = "10523327712866374";
 const VERIFY_TOKEN = "mwalimu_token_2026";
 
-// 1. Validation Webhook
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
         return res.status(200).send(req.query['hub.challenge']);
@@ -18,11 +16,8 @@ app.get('/webhook', (req, res) => {
     res.sendStatus(403);
 });
 
-// 2. Traitement des messages
 app.post('/webhook', async (req, res) => {
-    // On répond TOUT DE SUITE à Meta pour éviter les messages en boucle dans les logs
     res.status(200).send("OK");
-
     try {
         const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
         if (!message || !message.text) return;
@@ -30,37 +25,23 @@ app.post('/webhook', async (req, res) => {
         const userText = message.text.body;
         const userPhone = message.from;
 
-        console.log(`📩 Reçu de ${userPhone}: ${userText}`);
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        const geminiRes = await axios.post(geminiUrl, {
+            contents: [{ parts: [{ text: userText }] }]
+        });
 
-        // APPEL GEMINI (Format ultra-simplifié)
-        try {
-            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-           
-            const geminiRes = await axios.post(geminiUrl, {
-                contents: [{ parts: [{ text: userText }] }]
-            });
+        const aiReply = geminiRes.data.candidates[0].content.parts[0].text;
 
-            const aiReply = geminiRes.data.candidates[0].content.parts[0].text;
-
-            // ENVOI WHATSAPP
-            await axios.post(`https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`, {
-                messaging_product: "whatsapp",
-                to: userPhone,
-                text: { body: aiReply }
-            }, {
-                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
-            });
-
-            console.log("🚀 Mwalimu a répondu !");
-
-        } catch (apiErr) {
-            console.error("❌ ERREUR API (Gemini ou Meta) :");
-            console.error(apiErr.response ? JSON.stringify(apiErr.response.data) : apiErr.message);
-        }
-
+        await axios.post(`https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`, {
+            messaging_product: "whatsapp",
+            to: userPhone,
+            text: { body: aiReply }
+        }, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+        });
     } catch (error) {
-        console.error("❌ ERREUR SYSTÈME :", error.message);
+        console.error("Erreur détaillée :", error.response ? JSON.stringify(error.response.data) : error.message);
     }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("Mwalimu est prêt !"));
+app.listen(process.env.PORT || 3000, () => console.log("Mwalimu est prêt."));
