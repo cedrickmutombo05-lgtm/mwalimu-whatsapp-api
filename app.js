@@ -6,15 +6,15 @@ const { OpenAI } = require('openai');
 const app = express();
 app.use(express.json());
 
-// Nettoyage du token (Protection contre les erreurs de headers)
+// 1. Nettoyage du Token (Protection totale)
 const RAW_TOKEN = process.env.TOKEN || "";
-const cleanToken = RAW_TOKEN.replace(/[\r\n\s]+/g, "");
+const cleanToken = RAW_TOKEN.replace(/[\r\n\s]+/g, "").trim();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.get("/", (req, res) => res.send("MWALIMU est en ligne ! ✅"));
+app.get("/", (req, res) => res.send("MWALIMU est opérationnel ✅"));
 
-// Webhook validation
+// 2. Webhook Validation
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -25,8 +25,10 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
+// 3. Réception et Réponse Automatique
 app.post("/webhook", async (req, res) => {
-  res.sendStatus(200);
+  res.sendStatus(200); // On libère Meta immédiatement
+
   try {
     const entry = req.body?.entry?.[0];
     const changes = entry?.changes?.[0]?.value;
@@ -43,26 +45,39 @@ app.post("/webhook", async (req, res) => {
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "Tu es MWALIMU, assistant éducatif en RDC." },
+          { role: "system", content: "Tu es MWALIMU, un assistant éducatif pour les élèves en RDC. Réponds de manière courte et pédagogique." },
           { role: "user", content: text }
         ],
       });
 
       const aiReply = completion.choices[0].message.content;
 
-      // Envoi WhatsApp
-      await axios.post(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-        messaging_product: "whatsapp",
-        to: from,
-        text: { body: aiReply }
-      }, {
-        headers: { Authorization: `Bearer ${cleanToken}` }
+      // ENVOI WHATSAPP AVEC VÉRIFICATION
+      await axios({
+        method: 'POST',
+        url: `https://graph.facebook.com/v21.0/${phoneId}/messages`,
+        data: {
+          messaging_product: "whatsapp",
+          to: from,
+          type: "text",
+          text: { body: aiReply }
+        },
+        headers: {
+          'Authorization': `Bearer ${cleanToken}`,
+          'Content-Type': 'application/json'
+        }
       });
      
-      console.log("✅ Réponse envoyée !");
+      console.log("✅ Réponse envoyée avec succès !");
     }
   } catch (err) {
-    console.error("❌ Erreur :", err.message);
+    // Cela va nous dire exactement pourquoi on a l'erreur 400
+    console.error("❌ ERREUR META :");
+    if (err.response) {
+      console.error("Détails :", JSON.stringify(err.response.data, null, 2));
+    } else {
+      console.error(err.message);
+    }
   }
 });
 
