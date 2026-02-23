@@ -2,58 +2,39 @@
 const express = require('express');
 const axios = require('axios');
 const app = express();
+
 app.use(express.json());
 
-// Tes identifiants (récupérés automatiquement depuis Render)
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = "10523327712866374"; // Ton ID WhatsApp
+// 1. ON RÉCUPÈRE ET ON NETTOIE LE TOKEN ICI
+// Cela enlève automatiquement les sauts de ligne vus sur Render
+const rawToken = process.env.TOKEN || "";
+const cleanToken = rawToken.replace(/\s/g, '');
 
-app.post('/webhook', async (req, res) => {
-    // 1. Répondre immédiatement à Facebook
-    res.sendStatus(200);
+// 2. ON CONFIGURE LES HEADERS GLOBAUX
+const headers = {
+  'Authorization': `Bearer ${cleanToken}`,
+  'Content-Type': 'application/json'
+};
 
-    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!message || !message.text) return;
-
-    const userText = message.text.body;
-    const userPhone = message.from;
-
+// 3. EXEMPLE DE ROUTE D'ENVOI DE MESSAGE
+app.post('/send-message', async (req, res) => {
     try {
-        // 2. Envoyer la question à l'IA d'OpenAI (payée avec tes 10$)
-        const aiRes = await axios.post('https://api.openai.com/v1/chat/completions', {
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: userText }]
-        }, {
-            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` }
-        });
+        const response = await axios.post('https://graph.facebook.com/v17.0/VOTRE_PHONE_ID/messages', {
+            messaging_product: 'whatsapp',
+            to: req.body.to,
+            type: 'text',
+            text: { body: 'Bonjour depuis Mwalimu !' }
+        }, { headers: headers }); // On utilise les headers nettoyés ici
 
-        const botResponse = aiRes.data.choices[0].message.content;
-
-        // 3. Envoyer la réponse de l'IA sur le WhatsApp de l'élève
-        await axios.post(`https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`, {
-            messaging_product: "whatsapp",
-            to: userPhone,
-            text: { body: botResponse }
-        }, {
-            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
-        });
-
+        res.status(200).send('Message envoyé !');
     } catch (error) {
-        console.error("Erreur Mwalimu:", error.response ? error.response.data : error.message);
+        console.error('Erreur Mwalimu:', error.message);
+        res.status(500).send('Erreur lors de l\'envoi');
     }
 });
 
-// Validation du webhook pour Facebook
-app.get('/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-    if (mode && token === "mwalimu_secret_token") {
-        res.status(200).send(challenge);
-    } else {
-        res.sendStatus(403);
-    }
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Mwalimu est prêt !`);
+    console.log(`==> Your service is live 🚀`);
 });
-
-app.listen(process.env.PORT || 3000, () => console.log("Mwalimu est prêt !"));
