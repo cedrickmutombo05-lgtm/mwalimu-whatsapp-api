@@ -6,13 +6,11 @@ const { OpenAI } = require('openai');
 const app = express();
 app.use(express.json());
 
-// Nettoyage du Token pour supprimer les sauts de ligne de Render
 const cleanToken = (process.env.TOKEN || "").replace(/[\r\n\s]+/g, "").trim();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.get("/", (req, res) => res.send("MWALIMU est prêt ! ✅"));
+app.get("/", (req, res) => res.send("Diagnostic MWALIMU actif ✅"));
 
-// Validation Webhook (Obligatoire pour Meta)
 app.get("/webhook", (req, res) => {
   if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
     return res.status(200).send(req.query["hub.challenge"]);
@@ -20,38 +18,40 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
-// Réception des messages
 app.post("/webhook", async (req, res) => {
+  // 1. LOG COMPLET : On affiche TOUT ce que Meta envoie
+  console.log("-----------------------------------------");
+  console.log("📩 OBJET REÇU DE META :", JSON.stringify(req.body, null, 2));
+  console.log("-----------------------------------------");
+
   res.sendStatus(200);
+
   try {
     const entry = req.body?.entry?.[0];
     const changes = entry?.changes?.[0]?.value;
     const message = changes?.messages?.[0];
 
     if (message?.type === "text") {
-      const userPhone = message.from; // Numéro de l'utilisateur (ex: 243...)
+      const userPhone = message.from;
       const text = message.text.body;
      
-      // RÉGLAGE DE L'ERREUR 100 : On prend l'ID du numéro qui a reçu le message
-      const phoneId = changes.metadata.phone_number_id;
+      // On extrait l'ID du numéro de téléphone fourni par Meta
+      const phoneIdFromMeta = changes.metadata.phone_number_id;
 
-      console.log(`📩 Message de ${userPhone} : ${text}`);
+      console.log(`👤 Utilisateur : ${userPhone}`);
+      console.log(`🆔 ID Téléphone détecté : ${phoneIdFromMeta}`);
 
-      // 1. Intelligence Artificielle
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "Tu es MWALIMU, un assistant éducatif pour les élèves en RDC." },
-          { role: "user", content: text }
-        ],
+        messages: [{ role: "system", content: "Tu es MWALIMU, assistant éducatif." }, { role: "user", content: text }],
       });
 
       const aiReply = completion.choices[0].message.content;
 
-      // 2. Envoi de la réponse à userPhone
+      // On tente de répondre en utilisant l'ID reçu
       await axios({
         method: 'POST',
-        url: `https://graph.facebook.com/v18.0/${phoneId}/messages`,
+        url: `https://graph.facebook.com/v18.0/${phoneIdFromMeta}/messages`,
         data: {
           messaging_product: "whatsapp",
           to: userPhone,
@@ -63,14 +63,13 @@ app.post("/webhook", async (req, res) => {
         }
       });
      
-      console.log(`✅ Réponse envoyée à ${userPhone} via ID ${phoneId}`);
+      console.log("✅ Réponse envoyée !");
     }
   } catch (err) {
-    console.error("❌ ERREUR META :");
-    // Affiche le détail pour comprendre si le Token est expiré
+    console.error("❌ ERREUR :");
     console.error(err.response ? JSON.stringify(err.response.data, null, 2) : err.message);
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Serveur actif sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Serveur en écoute sur le port ${PORT}`));
