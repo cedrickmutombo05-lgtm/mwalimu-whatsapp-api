@@ -1,61 +1,105 @@
 
 const express = require('express');
 const axios = require('axios');
-const app = express();
+const { OpenAI } = require('openai');
 
-// Important pour lire le contenu des messages envoyés par WhatsApp
+const app = express();
 app.use(express.json());
 
-// --- 1. NETTOYAGE AUTOMATIQUE DU TOKEN ---
-// Supprime les retours à la ligne invisibles qui causent votre erreur de header
-const cleanToken = (process.env.TOKEN || "").replace(/\s/g, '');
+// ✅ 1. Configuration des Variables (Noms exacts de Render)
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// On utilise 'TOKEN' car c'est le nom visible sur votre capture Render
+const RAW_TOKEN = process.env.TOKEN || "";
 
-// --- 2. VALIDATION DU WEBHOOK (Étape obligatoire pour Meta) ---
-// Sans cette partie, Meta refusera d'envoyer des messages à votre serveur.
+// ✅ 2. Nettoyage du Token WhatsApp
+const cleanToken = RAW_TOKEN.replace(/[\r\n\s]+/g, "");
+
+// ✅ 3. Initialisation OpenAI
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+// Route de base
+app.get("/", (req, res) => res.send("MWALIMU est prêt et en ligne ! 🚀"));
+
+// ✅ 4. Validation Webhook (GET)
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  // Remplacez 'VOTRE_CODE_SECRET' par ce que vous avez mis dans Meta Developers
-  // Ou utilisez une variable d'environnement : process.env.VERIFY_TOKEN
-  if (mode === "subscribe" && token === process.env.VERIFY_TOKEN) {
-    console.log("✅ Webhook validé par Meta !");
-    res.status(200).send(challenge);
-  } else {
-    console.error("❌ Échec de la validation du Webhook.");
-    res.sendStatus(403);
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook Validé !");
+    return res.status(200).send(challenge);
   }
+  res.sendStatus(403);
 });
 
-// --- 3. RÉCEPTION ET AFFICHAGE DES MESSAGES ---
-// C'est ici que les messages reçus s'afficheront dans vos logs Render
-app.post("/webhook", (req, res) => {
-  console.log("📩 Nouveau message reçu de WhatsApp !");
- 
-  // On vérifie s'il y a bien un message dans la requête
-  if (req.body.object) {
-    if (req.body.entry &&
-        req.body.entry[0].changes &&
-        req.body.entry[0].changes[0].value.messages &&
-        req.body.entry[0].changes[0].value.messages[0]) {
-           
-      const message = req.body.entry[0].changes[0].value.messages[0];
-      const from = message.from; // Numéro de l'expéditeur
-      const text = message.text ? message.text.body : "Message non textuel";
+// ✅ 5. Réception et Réponse (POST)
+app.post("/webhook", async (req, res) => {
+  // On répond immédiatement à Meta pour éviter les renvois
+  res.sendStatus(200);
 
-      console.log(`📱 De : ${from}`);
-      console.log(`💬 Message : ${text}`);
+  try {
+    const entry = req.body?.entry?.[0];
+    const changes = entry?.changes?.[0]?.value;
+    const message = changes?.messages?.[0];
+
+    if (message && message.type === "text") {
+      const from = message.from;
+      const text = message.text.body;
+      const phoneNumberId = changes.metadata.phone_number_id;
+
+      console.log(`📩 Message reçu de ${from} : ${text}`);
+
+      // A. Appel à l'IA Mwalimu
+      const aiReply = await getAIReply(text);
+      console.log(`🤖 Réponse IA : ${aiReply}`);
+
+      // B. Envoi de la réponse sur WhatsApp
+      await sendWhatsApp(phoneNumberId, from, aiReply);
+      console.log("✅ Réponse envoyée avec succès !");
     }
-    res.sendStatus(200); // On dit à Meta qu'on a bien reçu le message
-  } else {
-    res.sendStatus(404);
+  } catch (error) {
+    console.error("❌ Erreur Mwalimu :", error.response?.data || error.message);
   }
 });
 
-// --- 4. CONFIGURATION DU PORT ---
-const PORT = process.env.PORT || 3000;
+// Fonction pour obtenir la réponse de l'IA
+async function getAIReply(userText) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "Tu es MWALIMU, un assistant éducatif expert pour les élèves de RDC. Réponds de manière simple et pédagogique." },
+        { role: "user", content: userText }
+      ],
+    });
+    return completion.choices[0].message.content;
+  } catch (err) {
+    return "Désolé, j'ai un petit souci technique pour réfléchir. Réessaye plus tard !";
+  }
+}
+
+// Fonction pour envoyer le message via l'API Graph de Meta
+async function sendWhatsApp(phoneId, to, message) {
+  await axios.post(
+    `https://graph.facebook.com/v21.0/${phoneId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to: to,
+      type: "text",
+      text: { body: message }
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${cleanToken}`,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+}
+
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 Mwalimu est en ligne sur le port ${PORT}`);
-  console.log("Attente de messages...");
+  console.log(`Mwalimu est en ligne sur le port ${PORT}`);
 });
