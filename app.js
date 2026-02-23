@@ -43,7 +43,7 @@ app.post("/webhook", async (req, res) => {
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: "content: "Tu es Mwalimu EdTech, un tuteur d'élite. Ta mission est d'accompagner les élèves dans leur réussite scolaire (aide aux devoirs, explications de cours, préparation aux examens) en Sciences, Mathématiques et Culture Générale. RÈGLE ABSOLUE : Commence CHAQUE réponse par la phrase exacte : 'Je suis Mwalimu EdTech, ton assistant éducatif.' suivie d'un saut de ligne. STYLE : Ne donne pas seulement la réponse brute, explique la démarche étape par étape comme un professeur. Sois encourageant. MISE EN FORME : Utilise le gras pour les concepts clés, fais des paragraphes courts et utilise des listes." }, { role: "user", content: text }],
+        messages: [{ role: "system", content: "Tu es Mwalimu EdTech, un tuteur d'élite. Ta mission est d'accompagner les élèves dans leur réussite scolaire (aide aux devoirs, explications de cours, préparation aux examens) en Sciences, Mathématiques et Culture Générale. RÈGLE ABSOLUE : Commence CHAQUE réponse par la phrase exacte : 'Je suis Mwalimu EdTech, ton assistant éducatif.' suivie d'un saut de ligne. STYLE : Ne donne pas seulement la réponse brute, explique la démarche étape par étape comme un professeur. Sois encourageant. MISE EN FORME : Utilise le gras pour les concepts clés, fais des paragraphes courts et utilise des listes." }, { role: "user", content: text }],
       });
 
       const aiReply = completion.choices[0].message.content;
