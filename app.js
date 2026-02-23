@@ -6,22 +6,19 @@ const { OpenAI } = require('openai');
 const app = express();
 app.use(express.json());
 
-// --- CONFIGURATION SÉCURISÉE ---
-// On nettoie le token des retours à la ligne visibles sur Render
+// Nettoyage du token (Protection contre les erreurs de headers)
 const RAW_TOKEN = process.env.TOKEN || "";
 const cleanToken = RAW_TOKEN.replace(/[\r\n\s]+/g, "");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Route pour vérifier que le serveur vit
-app.get("/", (req, res) => res.send("MWALIMU est en ligne ✅"));
+app.get("/", (req, res) => res.send("MWALIMU est en ligne ! ✅"));
 
-// --- WEBHOOK (GET & POST) ---
+// Webhook validation
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
   if (mode === "subscribe" && token === process.env.VERIFY_TOKEN) {
     return res.status(200).send(challenge);
   }
@@ -29,8 +26,7 @@ app.get("/webhook", (req, res) => {
 });
 
 app.post("/webhook", async (req, res) => {
-  res.sendStatus(200); // Réponse immédiate à Meta
-
+  res.sendStatus(200);
   try {
     const entry = req.body?.entry?.[0];
     const changes = entry?.changes?.[0]?.value;
@@ -43,7 +39,7 @@ app.post("/webhook", async (req, res) => {
 
       console.log(`📩 Reçu : ${text}`);
 
-      // Appel à OpenAI
+      // Appel OpenAI
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -54,7 +50,7 @@ app.post("/webhook", async (req, res) => {
 
       const aiReply = completion.choices[0].message.content;
 
-      // Envoi de la réponse WhatsApp
+      // Envoi WhatsApp
       await axios.post(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
         messaging_product: "whatsapp",
         to: from,
@@ -66,10 +62,9 @@ app.post("/webhook", async (req, res) => {
       console.log("✅ Réponse envoyée !");
     }
   } catch (err) {
-    // Affiche l'erreur précise si l'envoi échoue
-    console.error("❌ Erreur :", err.response?.data || err.message);
+    console.error("❌ Erreur :", err.message);
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Serveur sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Serveur prêt sur le port ${PORT}`));
