@@ -43,7 +43,7 @@ app.post("/webhook", async (req, res) => {
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: process.env.SYSTEM_PROMPT. }, { role: "user", content: text }],
+        messages: [{ role: "system", content: process.env.SYSTEM_PROMPT }, { role: "user", content: text }],
       });
 
       const aiReply = completion.choices[0].message.content;
