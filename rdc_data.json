@@ -1,0 +1,26 @@
+{
+  "pays": "République Démocratique du Congo",
+  "villes_et_communes": {
+    "Kinshasa": [
+      "Bandalungwa", "Barumbu", "Bumbu", "Gombe", "Kalamu", "Kasa-Vubu",
+      "Kimbanseke", "Kinshasa", "Kintambo", "Kisenso", "Lemba", "Limete",
+      "Lingwala", "Makala", "Maluku", "Masina", "Matete", "Mont-Ngafula",
+      "Ndjili", "Ngaba", "Ngaliema", "Ngiri-Ngiri", "Nsele", "Selembao"
+    ]
+  },
+  "provinces": [
+    {"nom": "Bas-Uele", "chef_lieu": "Buta"}, {"nom": "Équateur", "chef_lieu": "Mbandaka"},
+    {"nom": "Haut-Katanga", "chef_lieu": "Lubumbashi"}, {"nom": "Haut-Lomami", "chef_lieu": "Kamina"},
+    {"nom": "Haut-Uele", "chef_lieu": "Isiro"}, {"nom": "Ituri", "chef_lieu": "Bunia"},
+    {"nom": "Kasaï", "chef_lieu": "Tshikapa"}, {"nom": "Kasaï-Central", "chef_lieu": "Kananga"},
+    {"nom": "Kasaï-Oriental", "chef_lieu": "Mbuji-Mayi"}, {"nom": "Kongo-Central", "chef_lieu": "Matadi"},
+    {"nom": "Kwango", "chef_lieu": "Kenge"}, {"nom": "Kwilu", "chef_lieu": "Bandundu"},
+    {"nom": "Lomami", "chef_lieu": "Kabinda"}, {"nom": "Lualaba", "chef_lieu": "Kolwezi"},
+    {"nom": "Maï-Ndombe", "chef_lieu": "Inongo"}, {"nom": "Maniema", "chef_lieu": "Kindu"},
+    {"nom": "Mongala", "chef_lieu": "Lisala"}, {"nom": "Nord-Kivu", "chef_lieu": "Goma"},
+    {"nom": "Nord-Ubangi", "chef_lieu": "Gbadolite"}, {"nom": "Sankuru", "chef_lieu": "Lusambo"},
+    {"nom": "Sud-Kivu", "chef_lieu": "Bukavu"}, {"nom": "Sud-Ubangi", "chef_lieu": "Gemena"},
+    {"nom": "Tanganyika", "chef_lieu": "Kalemie"}, {"nom": "Tshopo", "chef_lieu": "Kisangani"},
+    {"nom": "Tshuapa", "chef_lieu": "Boende"}, {"nom": "Kinshasa", "chef_lieu": "Kinshasa"}
+  ]
+}
