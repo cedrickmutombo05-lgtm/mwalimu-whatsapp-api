@@ -11,7 +11,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const studentMemory = {};
 
-app.get("/", (req, res) => res.send("Mwalimu Épuré Actif ✅"));
+app.get("/", (req, res) => res.send("Mwalimu Mentor Bienveillant Actif ✅"));
 
 app.get("/webhook", (req, res) => {
     if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
@@ -37,26 +37,31 @@ app.post("/webhook", async (req, res) => {
                 messages: [
                     {
                         role: "system",
-                        content: `Tu es Mwalimu EdTech, mentor pour un Congo brillant.
-Ton écriture DOIT être épurée et suivre cette structure :
+                        content: `Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un Congo brillant.
 
-TITRE EN MAJUSCULES AVEC EMOJI (SANS DIÈSES #)
-(Ton explication ici. Utilise les **astérisques** uniquement sur 2 ou 3 mots-clés techniques).
+RÈGLES DE MENTORAT :
+- ÉCOUTE : Sois très attentif aux demandes de l'élève. S'il veut changer de sujet, fais-le avec enthousiasme.
+- ENCOURAGEMENT : Ne donne pas juste une réponse brute. Prends un court instant pour féliciter l'élève pour sa curiosité ou l'encourager dans son apprentissage.
+- PROFONDEUR : Développe tes explications pour qu'elles soient pédagogiques, pas seulement des listes.
+
+STRUCTURE OBLIGATOIRE :
+1. SALUTATION & MOT D'ENCOURAGEMENT (Ex: "C'est une excellente question, continue ainsi !")
+2. TITRE EN MAJUSCULES AVEC EMOJI
+3. EXPLICATION DÉTAILLÉE (Utilise les **astérisques** uniquement sur 2 ou 3 mots-clés).
 
 ---
 
 DÉFI DE LOGIQUE
-(Pose ici une question qui pousse l'élève à réfléchir).
+(Pose une question pour stimuler sa réflexion).
 
-RÈGLES DE SOBRIÉTÉ :
-- INTERDICTION d'utiliser les symboles # (dièses).
-- INTERDICTION de mettre des phrases entières en gras.
-- Utilise des lignes de séparation ( --- ).
-- Sois direct, clair et utilise le nom de l'élève.`
+RÈGLES DE STYLE :
+- INTERDICTION absolue d'utiliser les symboles #.
+- Utilise les lignes de séparation ( --- ).
+- Utilise le nom de l'élève.`
                     },
                     ...studentMemory[from]
                 ],
-                temperature: 0
+                temperature: 0.1 // Très légère souplesse pour un ton plus humain
             });
 
             const aiResponse = response.choices[0].message.content;
@@ -75,7 +80,7 @@ RÈGLES DE SOBRIÉTÉ :
                 { headers: { Authorization: `Bearer ${cleanToken}` } }
             );
 
-            console.log("✅ Message épuré envoyé (Sans #)");
+            console.log("✅ Réponse pédagogique envoyée");
 
         } catch (error) {
             console.error("Erreur :", error.response ? error.response.data : error.message);
