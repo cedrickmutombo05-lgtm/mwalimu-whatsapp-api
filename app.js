@@ -6,70 +6,75 @@ const { OpenAI } = require('openai');
 const app = express();
 app.use(express.json());
 
+// 1. Réglages de base (calqués sur ton écran)
 const cleanToken = (process.env.TOKEN || "").replace(/[\r\n\s]+/g, "").trim();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.get("/", (req, res) => res.send("Diagnostic MWALIMU actif ✅"));
+// 2. Mémoire vive pour le tutorat approfondi
+const studentMemory = {};
+
+app.get("/", (req, res) => res.send("Diagnostic MWALIMU actif ✅")); //
 
 app.get("/webhook", (req, res) => {
-  if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
-    return res.status(200).send(req.query["hub.challenge"]);
-  }
-  res.sendStatus(403);
+    if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
+        return res.status(200).send(req.query["hub.challenge"]);
+    }
+    res.sendStatus(403);
 });
 
 app.post("/webhook", async (req, res) => {
-  // 1. LOG COMPLET : On affiche TOUT ce que Meta envoie
-  console.log("-----------------------------------------");
-  console.log("📩 OBJET REÇU DE META :", JSON.stringify(req.body, null, 2));
-  console.log("-----------------------------------------");
+    // Ton log exact : OBJET REÇU DE META
+    console.log("---------------------------------------");
+    console.log("📥 OBJET REÇU DE META : ", JSON.stringify(req.body, null, 2));
 
-  res.sendStatus(200);
+    const body = req.body;
+    if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
+        const msg = body.entry[0].changes[0].value.messages[0];
+        const from = msg.from;
+        const text = msg.text.body;
 
-  try {
-    const entry = req.body?.entry?.[0];
-    const changes = entry?.changes?.[0]?.value;
-    const message = changes?.messages?.[0];
+        // Mise en mémoire du message élève
+        if (!studentMemory[from]) { studentMemory[from] = []; }
+        studentMemory[from].push({ role: "user", content: text });
 
-    if (message?.type === "text") {
-      const userPhone = message.from;
-      const text = message.text.body;
-     
-      // On extrait l'ID du numéro de téléphone fourni par Meta
-      const phoneIdFromMeta = changes.metadata.phone_number_id;
+        if (studentMemory[from].length > 10) { studentMemory[from].shift(); }
 
-      console.log(`👤 Utilisateur : ${userPhone}`);
-      console.log(`🆔 ID Téléphone détecté : ${phoneIdFromMeta}`);
+        try {
+            // Appel à l'IA avec ton SYSTEM_PROMPT
+            const response = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: process.env.SYSTEM_PROMPT },
+                    ...studentMemory[from]
+                ],
+                temperature: 0
+            });
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-       messages: [{ role: "system", content: process.env.SYSTEM_PROMPT }, { role: "user", content: text }], temperature: 0 
-      });
+            const aiResponse = response.choices[0].message.content;
+            studentMemory[from].push({ role: "assistant", content: aiResponse });
 
-      const aiReply = completion.choices[0].message.content;
+            // Envoi WhatsApp
+            await axios.post(
+                `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
+                {
+                    messaging_product: "whatsapp",
+                    to: from,
+                    type: "text",
+                    text: { body: aiResponse }
+                },
+                { headers: { Authorization: `Bearer ${cleanToken}` } }
+            );
 
-      // On tente de répondre en utilisant l'ID reçu
-      await axios({
-        method: 'POST',
-        url: `https://graph.facebook.com/v18.0/${phoneIdFromMeta}/messages`,
-        data: {
-          messaging_product: "whatsapp",
-          to: userPhone,
-          text: { body: aiReply }
-        },
-        headers: {
-          'Authorization': `Bearer ${cleanToken}`,
-          'Content-Type': 'application/json'
+            // --- TA LIGNE DE CONFIRMATION AJOUTÉE ICI ---
+            console.log("✅ Réponse envoyée");
+
+        } catch (error) {
+            console.error("Erreur :", error.response ? error.response.data : error.message);
         }
-      });
-     
-      console.log("✅ Réponse envoyée !");
     }
-  } catch (err) {
-    console.error("❌ ERREUR :");
-    console.error(err.response ? JSON.stringify(err.response.data, null, 2) : err.message);
-  }
+    res.sendStatus(200);
 });
 
+// Ton port exact : 10000
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Serveur en écoute sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Mwalimu opérationnel sur le port ${PORT}`));
