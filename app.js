@@ -11,7 +11,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const studentMemory = {};
 
-app.get("/", (req, res) => res.send("Mwalimu Mentor Anti-Hallucination Actif ✅"));
+app.get("/", (req, res) => res.send("Mwalimu Adaptatif DRC Actif ✅"));
 
 app.get("/webhook", (req, res) => {
     if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
@@ -29,7 +29,7 @@ app.post("/webhook", async (req, res) => {
 
         if (!studentMemory[from]) { studentMemory[from] = []; }
         studentMemory[from].push({ role: "user", content: text });
-        if (studentMemory[from].length > 10) { studentMemory[from].shift(); }
+        if (studentMemory[from].length > 15) { studentMemory[from].shift(); }
 
         try {
             const response = await openai.chat.completions.create({
@@ -37,41 +37,33 @@ app.post("/webhook", async (req, res) => {
                 messages: [
                     {
                         role: "system",
-                        content: `Tu es Mwalimu EdTech, un mentor strictement factuel.
+                        content: `Tu es Mwalimu EdTech, mentor pour un DRC brillant.
 
-RÈGLE D'OR (SIGNATURE VISUELLE) :
-Chaque message sans exception DOIT commencer par cette phrase EXACTE entourée de tirets bas pour la mettre en italique sur WhatsApp :
-_Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant._
-Suivie immédiatement d'une ligne de séparation ( --- ).
+RÈGLE D'OR (SIGNATURE) :
+Chaque message commence par : _Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant._
+Suivie d'une ligne ( --- ).
 
-RÈGLE ANTI-HALLUCINATION (TOLÉRANCE ZÉRO) :
-- Tu es un scientifique de la vérité. Tu ne dois JAMAIS deviner, supposer, ou inventer des faits, des noms ou des dates.
-- Si tu n'es pas absolument certain à 100% d'une information, ou si la question n'a pas de sens, tu as l'ORDRE de répondre : "C'est une excellente question, mais je préfère ne pas te dire de bêtises car je n'ai pas de faits avérés à ce sujet."
-- Ne complète jamais les informations manquantes par ton imagination.
+PROTOCOLE DE NIVEAU SCOLAIRE :
+1. Si c'est le premier message ou si tu ne connais pas encore la classe de l'élève, demande-lui poliment sa classe (ex: 7ème EB, 8ème EB, 1ère Humanité...) avant de proposer un défi.
+2. Une fois la classe connue, ADAPTE la complexité de tes explications et de ton DÉFI DE LOGIQUE à son niveau scolaire.
+3. Ne pose jamais de questions banales à un élève du secondaire.
 
-TON STYLE :
-- ACCUEIL : Après la ligne de séparation, salue l'élève.
-- PROFONDEUR : Tu DOIS mettre l'accent sur le tutorat approfondi. Tes explications doivent être riches et détaillées.
+RÈGLES DE VÉRITÉ :
+- Interdiction d'inventer des faits. Si tu ne sais pas, admets-le.
+- Accent mis sur le tutorat approfondi (explications riches).
 
 STRUCTURE :
-1. SIGNATURE EN ITALIQUE (_Je suis..._)
+1. SIGNATURE EN ITALIQUE
 2. ---
-3. TITRE EN MAJUSCULES AVEC EMOJI
-4. EXPLICATION APPROFONDIE (2-3 mots-clés en **astérisques**)
-
----
-
-DÉFI DE LOGIQUE
-(Une question pour faire réfléchir l'élève).
-
-RÈGLES DE SOBRIÉTÉ :
-- INTERDICTION des symboles #.
-- Utilise les lignes de séparation ( --- ).
-- Utilise le nom de l'élève.`
+3. SALUTATION & ENCOURAGEMENT
+4. TITRE EN MAJUSCULES (SANS #)
+5. EXPLICATION (Mots-clés en **astérisques**)
+6. ---
+7. DÉFI DE LOGIQUE (Adapté à la classe de l'élève)`
                     },
                     ...studentMemory[from]
                 ],
-                temperature: 0.0 // Maintenu à zéro pour un blocage strict des déviations
+                temperature: 0.0
             });
 
             const aiResponse = response.choices[0].message.content;
@@ -90,7 +82,7 @@ RÈGLES DE SOBRIÉTÉ :
                 { headers: { Authorization: `Bearer ${cleanToken}` } }
             );
 
-            console.log("✅ Message DRC (Italique + Anti-Hallucination) envoyé");
+            console.log("✅ Message adaptatif envoyé");
 
         } catch (error) {
             console.error("Erreur :", error.response ? error.response.data : error.message);
