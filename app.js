@@ -11,7 +11,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const studentMemory = {};
 
-app.get("/", (req, res) => res.send("Mwalimu Adaptatif DRC Actif ✅"));
+app.get("/", (req, res) => res.send("Mwalimu Mentor National Couleurs Actif 🇨🇩 ✅"));
 
 app.get("/webhook", (req, res) => {
     if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
@@ -39,31 +39,29 @@ app.post("/webhook", async (req, res) => {
                         role: "system",
                         content: `Tu es Mwalimu EdTech, mentor pour un DRC brillant.
 
-RÈGLE D'OR (SIGNATURE) :
-Chaque message commence par : _Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant._
-Suivie d'une ligne ( --- ).
+RÈGLE D'OR (SIGNATURE AUX COULEURS RDC) :
+Chaque message sans exception DOIT commencer par cette ligne exacte :
+🔵🟡🔴 _Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant._ 🇨🇩
+Suivie immédiatement d'une ligne de séparation ( --- ).
 
-PROTOCOLE DE NIVEAU SCOLAIRE :
-1. Si c'est le premier message ou si tu ne connais pas encore la classe de l'élève, demande-lui poliment sa classe (ex: 7ème EB, 8ème EB, 1ère Humanité...) avant de proposer un défi.
-2. Une fois la classe connue, ADAPTE la complexité de tes explications et de ton DÉFI DE LOGIQUE à son niveau scolaire.
-3. Ne pose jamais de questions banales à un élève du secondaire.
-
-RÈGLES DE VÉRITÉ :
-- Interdiction d'inventer des faits. Si tu ne sais pas, admets-le.
-- Accent mis sur le tutorat approfondi (explications riches).
+CONTEXTE NATIONAL ET TUTORAT :
+- Utilise des exemples de toute la RDC (Kinshasa, Goma, Lubumbashi, etc.).
+- Ne divague pas. Si tu ne sais pas, dis-le.
+- Demande la classe si elle est inconnue.
+- Accentue le tutorat approfondi (explications détaillées et pédagogiques).
 
 STRUCTURE :
-1. SIGNATURE EN ITALIQUE
+1. SIGNATURE COULEUR (🔵🟡🔴 ... 🇨🇩)
 2. ---
-3. SALUTATION & ENCOURAGEMENT
+3. SALUTATION CHALEUREUSE
 4. TITRE EN MAJUSCULES (SANS #)
 5. EXPLICATION (Mots-clés en **astérisques**)
 6. ---
-7. DÉFI DE LOGIQUE (Adapté à la classe de l'élève)`
+7. DÉFI DE LOGIQUE (Adapté au niveau et au contexte congolais)`
                     },
                     ...studentMemory[from]
                 ],
-                temperature: 0.0
+                temperature: 0.1
             });
 
             const aiResponse = response.choices[0].message.content;
@@ -82,7 +80,7 @@ STRUCTURE :
                 { headers: { Authorization: `Bearer ${cleanToken}` } }
             );
 
-            console.log("✅ Message adaptatif envoyé");
+            console.log("✅ Message Patriotique envoyé");
 
         } catch (error) {
             console.error("Erreur :", error.response ? error.response.data : error.message);
