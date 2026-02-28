@@ -1,26 +1,85 @@
+
 {
-  "pays": "République Démocratique du Congo",
-  "villes_et_communes": {
-    "Kinshasa": [
-      "Bandalungwa", "Barumbu", "Bumbu", "Gombe", "Kalamu", "Kasa-Vubu",
-      "Kimbanseke", "Kinshasa", "Kintambo", "Kisenso", "Lemba", "Limete",
-      "Lingwala", "Makala", "Maluku", "Masina", "Matete", "Mont-Ngafula",
-      "Ndjili", "Ngaba", "Ngaliema", "Ngiri-Ngiri", "Nsele", "Selembao"
+  "administration": {
+    "pays": "République Démocratique du Congo",
+    "capitale": "Kinshasa",
+    "nombre_provinces": 26,
+    "provinces": ["Bas-Uele", "Équateur", "Haut-Katanga", "Haut-Lomami", "Haut-Uele", "Ituri", "Kasaï", "Kasaï Central", "Kasaï Oriental", "Kinshasa", "Kongo Central", "Kwango", "Kwilu", "Lomami", "Lualaba", "Maï-Ndombe", "Maniema", "Mongala", "Nord-Kivu", "Nord-Ubangi", "Sankuru", "Sud-Kivu", "Sud-Ubangi", "Tanganyika", "Tshopo", "Tshuapa"],
+    "communes_kinshasa": [
+      {"nom": "Gombe", "district": "Lukunga", "type": "Urbaine"},
+      {"nom": "Ngaliema", "district": "Lukunga", "type": "Urbaine"},
+      {"nom": "Maluku", "district": "Tshangu", "type": "Urbano-rurale"},
+      {"nom": "Masina", "district": "Tshangu", "type": "Urbaine"},
+      {"nom": "Limete", "district": "Mont-Amba", "type": "Urbaine"},
+      {"nom": "Kalamu", "district": "Funa", "type": "Urbaine"}
     ]
   },
-  "provinces": [
-    {"nom": "Bas-Uele", "chef_lieu": "Buta"}, {"nom": "Équateur", "chef_lieu": "Mbandaka"},
-    {"nom": "Haut-Katanga", "chef_lieu": "Lubumbashi"}, {"nom": "Haut-Lomami", "chef_lieu": "Kamina"},
-    {"nom": "Haut-Uele", "chef_lieu": "Isiro"}, {"nom": "Ituri", "chef_lieu": "Bunia"},
-    {"nom": "Kasaï", "chef_lieu": "Tshikapa"}, {"nom": "Kasaï-Central", "chef_lieu": "Kananga"},
-    {"nom": "Kasaï-Oriental", "chef_lieu": "Mbuji-Mayi"}, {"nom": "Kongo-Central", "chef_lieu": "Matadi"},
-    {"nom": "Kwango", "chef_lieu": "Kenge"}, {"nom": "Kwilu", "chef_lieu": "Bandundu"},
-    {"nom": "Lomami", "chef_lieu": "Kabinda"}, {"nom": "Lualaba", "chef_lieu": "Kolwezi"},
-    {"nom": "Maï-Ndombe", "chef_lieu": "Inongo"}, {"nom": "Maniema", "chef_lieu": "Kindu"},
-    {"nom": "Mongala", "chef_lieu": "Lisala"}, {"nom": "Nord-Kivu", "chef_lieu": "Goma"},
-    {"nom": "Nord-Ubangi", "chef_lieu": "Gbadolite"}, {"nom": "Sankuru", "chef_lieu": "Lusambo"},
-    {"nom": "Sud-Kivu", "chef_lieu": "Bukavu"}, {"nom": "Sud-Ubangi", "chef_lieu": "Gemena"},
-    {"nom": "Tanganyika", "chef_lieu": "Kalemie"}, {"nom": "Tshopo", "chef_lieu": "Kisangani"},
-    {"nom": "Tshuapa", "chef_lieu": "Boende"}, {"nom": "Kinshasa", "chef_lieu": "Kinshasa"}
+  "demographie": {
+    "population_estimee": "Plus de 100 millions d'habitants",
+    "langue_officielle": "Français",
+    "langues_nationales": ["Lingala", "Swahili", "Kikongo", "Tshiluba"]
+  },
+  "geographie": {
+    "superficie": "2 345 409 km²",
+    "rang_superficie": "2ème plus grand pays d'Afrique et 11ème au monde",
+    "frontieres": {
+      "nombre_pays_voisins": 9,
+      "pays_voisins": ["République du Congo", "République Centrafricaine", "Soudan du Sud", "Ouganda", "Rwanda", "Burundi", "Tanzanie", "Zambie", "Angola"]
+    },
+    "reseau_hydrographique": {
+      "fleuve_principal": {
+        "nom": "Fleuve Congo",
+        "longueur": "4 700 km",
+        "provinces_traversees": [
+          "Haut-Katanga (Source/Lualaba)", "Haut-Lomami", "Maniema", "Tshopo (à Kisangani)",
+          "Mongala", "Équateur", "Maï-Ndombe", "Kinshasa", "Kongo Central (Embouchure à Moanda)"
+        ],
+        "affluents_rive_droite": ["Ubangi", "Sangha", "Aruwimi", "Itimbiri"],
+        "affluents_rive_gauche": ["Kasaï", "Lomami", "Ruki", "Lulua", "Sankuru"]
+      },
+      "autres_cours_deau_importants": ["Lualaba", "Kwango", "Kwilu", "Uele", "Bomu", "Lukuga", "Luvua", "Inkisi"]
+    },
+    "point_culminant": "Pic Marguerite (5 119 m) dans le massif du Rwenzori",
+    "lacs_majeurs": ["Tanganyika", "Kivu", "Albert", "Édouard", "Moëro", "Tumba", "Mai-Ndombe"],
+    "ecosystemes_speciaux": {
+      "la_mangrove": {
+        "localisation": "Parc Marin des Mangroves, à l'embouchure du fleuve Congo (Moanda).",
+        "role": "Protection contre l'érosion, nurserie pour les poissons et habitat du Lamantin d'Afrique."
+      }
+    }
+  },
+  "environnement_et_biodiversite": {
+    "parcs_nationaux_majeurs": [
+      {"nom": "Parc National des Virunga", "province": "Nord-Kivu", "particularite": "Plus ancien parc d'Afrique, célèbre pour les gorilles de montagne et le volcan Nyiragongo."},
+      {"nom": "Parc National de la Salonga", "province": "Tshuapa / Maï-Ndombe / Kasaï", "particularite": "Plus grande réserve de forêt tropicale humide d'Afrique, sanctuaire des bonobos."},
+      {"nom": "Parc National de Kahuzi-Biega", "province": "Sud-Kivu", "particularite": "Dernier refuge des gorilles de plaine de l'Est."},
+      {"nom": "Parc National de la Garamba", "province": "Haut-Uele", "particularite": "Abondance de savanes, connu pour les girafes et les éléphants."},
+      {"nom": "Parc National de l'Upemba", "province": "Haut-Lomami", "particularite": "Réseau de lacs, faune diversifiée incluant des zèbres."}
+    ],
+    "faune_emblematique_et_endemique": [
+      "Bonobo (Endémique à la RDC - vit uniquement sur la rive gauche du fleuve)",
+      "Okapi (Endémique à la RDC - forêt de l'Ituri)",
+      "Gorille des montagnes",
+      "Paon congolais (Endémique)",
+      "Lamantin d'Afrique",
+      "Éléphant de forêt"
+    ],
+    "flore": "Le bassin du Congo est le 2ème poumon vert du monde (après l'Amazonie). Il regorge d'essences de bois précieux comme l'ébène, le wenge, l'iroko et l'acajou."
+  },
+  "economie_et_ressources": {
+    "monnaie": "Franc Congolais (CDF)",
+    "ressources_minieres_majeures": {
+      "cobalt": "1er producteur mondial (essentiel pour les batteries)",
+      "coltan": "Possède la majorité des réserves mondiales",
+      "cuivre": "L'un des plus grands producteurs mondiaux",
+      "autres_minerais": ["Or", "Diamant", "Cassitérite", "Uranium", "Zinc"]
+    },
+    "ressources_naturelles": ["Forêt équatoriale immense", "Hydroélectricité (Barrages d'Inga)", "Terres arables (80 millions d'hectares)"]
+  },
+  "histoire_education": [
+    {"annee": "1906", "fait": "Signature de la convention scolaire entre l'État et le Saint-Siège."},
+    {"annee": "1946", "fait": "Création de l'enseignement public officiel au Congo."},
+    {"annee": "1960", "fait": "Indépendance de la RDC et congolisation des cadres éducatifs."},
+    {"annee": "2019", "fait": "Lancement de la gratuité de l'enseignement primaire."}
   ]
 }
