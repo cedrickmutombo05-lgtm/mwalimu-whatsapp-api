@@ -1,85 +1,94 @@
 
 {
-  "administration": {
-    "pays": "République Démocratique du Congo",
-    "capitale": "Kinshasa",
-    "nombre_provinces": 26,
-    "provinces": ["Bas-Uele", "Équateur", "Haut-Katanga", "Haut-Lomami", "Haut-Uele", "Ituri", "Kasaï", "Kasaï Central", "Kasaï Oriental", "Kinshasa", "Kongo Central", "Kwango", "Kwilu", "Lomami", "Lualaba", "Maï-Ndombe", "Maniema", "Mongala", "Nord-Kivu", "Nord-Ubangi", "Sankuru", "Sud-Kivu", "Sud-Ubangi", "Tanganyika", "Tshopo", "Tshuapa"],
-    "communes_kinshasa": [
-      {"nom": "Gombe", "district": "Lukunga", "type": "Urbaine"},
-      {"nom": "Ngaliema", "district": "Lukunga", "type": "Urbaine"},
-      {"nom": "Maluku", "district": "Tshangu", "type": "Urbano-rurale"},
-      {"nom": "Masina", "district": "Tshangu", "type": "Urbaine"},
-      {"nom": "Limete", "district": "Mont-Amba", "type": "Urbaine"},
-      {"nom": "Kalamu", "district": "Funa", "type": "Urbaine"}
-    ]
-  },
-  "demographie": {
-    "population_estimee": "Plus de 100 millions d'habitants",
-    "langue_officielle": "Français",
-    "langues_nationales": ["Lingala", "Swahili", "Kikongo", "Tshiluba"]
-  },
-  "geographie": {
-    "superficie": "2 345 409 km²",
-    "rang_superficie": "2ème plus grand pays d'Afrique et 11ème au monde",
-    "frontieres": {
-      "nombre_pays_voisins": 9,
-      "pays_voisins": ["République du Congo", "République Centrafricaine", "Soudan du Sud", "Ouganda", "Rwanda", "Burundi", "Tanzanie", "Zambie", "Angola"]
-    },
-    "reseau_hydrographique": {
-      "fleuve_principal": {
-        "nom": "Fleuve Congo",
-        "longueur": "4 700 km",
-        "provinces_traversees": [
-          "Haut-Katanga (Source/Lualaba)", "Haut-Lomami", "Maniema", "Tshopo (à Kisangani)",
-          "Mongala", "Équateur", "Maï-Ndombe", "Kinshasa", "Kongo Central (Embouchure à Moanda)"
-        ],
-        "affluents_rive_droite": ["Ubangi", "Sangha", "Aruwimi", "Itimbiri"],
-        "affluents_rive_gauche": ["Kasaï", "Lomami", "Ruki", "Lulua", "Sankuru"]
-      },
-      "autres_cours_deau_importants": ["Lualaba", "Kwango", "Kwilu", "Uele", "Bomu", "Lukuga", "Luvua", "Inkisi"]
-    },
-    "point_culminant": "Pic Marguerite (5 119 m) dans le massif du Rwenzori",
-    "lacs_majeurs": ["Tanganyika", "Kivu", "Albert", "Édouard", "Moëro", "Tumba", "Mai-Ndombe"],
-    "ecosystemes_speciaux": {
-      "la_mangrove": {
-        "localisation": "Parc Marin des Mangroves, à l'embouchure du fleuve Congo (Moanda).",
-        "role": "Protection contre l'érosion, nurserie pour les poissons et habitat du Lamantin d'Afrique."
-      }
+  "IDENTITE_NATIONALE": {
+    "NOM": "République Démocratique du Congo",
+    "SUPERFICIE": "2.345.410 km2",
+    "POPULATION": "Environ 105 millions (2026)",
+    "MONNAIE": "Franc Congolais (CDF)",
+    "LIMITES_VOISINS": {
+      "NORD": "Centrafrique, Sud-Soudan",
+      "SUD": "Zambie, Angola",
+      "EST": "Ouganda, Rwanda, Burundi, Tanzanie",
+      "OUEST": "Congo-Brazzaville, Océan Atlantique (37 km)"
     }
   },
-  "environnement_et_biodiversite": {
-    "parcs_nationaux_majeurs": [
-      {"nom": "Parc National des Virunga", "province": "Nord-Kivu", "particularite": "Plus ancien parc d'Afrique, célèbre pour les gorilles de montagne et le volcan Nyiragongo."},
-      {"nom": "Parc National de la Salonga", "province": "Tshuapa / Maï-Ndombe / Kasaï", "particularite": "Plus grande réserve de forêt tropicale humide d'Afrique, sanctuaire des bonobos."},
-      {"nom": "Parc National de Kahuzi-Biega", "province": "Sud-Kivu", "particularite": "Dernier refuge des gorilles de plaine de l'Est."},
-      {"nom": "Parc National de la Garamba", "province": "Haut-Uele", "particularite": "Abondance de savanes, connu pour les girafes et les éléphants."},
-      {"nom": "Parc National de l'Upemba", "province": "Haut-Lomami", "particularite": "Réseau de lacs, faune diversifiée incluant des zèbres."}
-    ],
-    "faune_emblematique_et_endemique": [
-      "Bonobo (Endémique à la RDC - vit uniquement sur la rive gauche du fleuve)",
-      "Okapi (Endémique à la RDC - forêt de l'Ituri)",
-      "Gorille des montagnes",
-      "Paon congolais (Endémique)",
-      "Lamantin d'Afrique",
-      "Éléphant de forêt"
-    ],
-    "flore": "Le bassin du Congo est le 2ème poumon vert du monde (après l'Amazonie). Il regorge d'essences de bois précieux comme l'ébène, le wenge, l'iroko et l'acajou."
-  },
-  "economie_et_ressources": {
-    "monnaie": "Franc Congolais (CDF)",
-    "ressources_minieres_majeures": {
-      "cobalt": "1er producteur mondial (essentiel pour les batteries)",
-      "coltan": "Possède la majorité des réserves mondiales",
-      "cuivre": "L'un des plus grands producteurs mondiaux",
-      "autres_minerais": ["Or", "Diamant", "Cassitérite", "Uranium", "Zinc"]
+  "HYDROGRAPHIE_EXPERTE": {
+    "FLEUVE_CONGO": {
+      "longueur": "4.700 km",
+      "debit": "41.000 m3/s",
+      "rive_droite": ["UBANGI (plus grand)", "Sangha", "Aruwimi", "Itimbiri", "Mongala"],
+      "rive_gauche": ["KASAÏ (plus grand - 2.150 km)", "Lomami", "Lulonga", "Ruki", "Inkisi", "Luvua"]
     },
-    "ressources_naturelles": ["Forêt équatoriale immense", "Hydroélectricité (Barrages d'Inga)", "Terres arables (80 millions d'hectares)"]
+    "LACS": {
+      "TECTONIQUES": ["Tanganyika (1470m)", "Kivu (Gaz Méthane)", "Albert", "Edouard"],
+      "CUVETTE": ["Mai-Ndombe", "Tumba"],
+      "ARTIFICIELS": ["Inga", "Mwadingusha", "Nzilo", "Koni", "Tshopo"]
+    }
   },
-  "histoire_education": [
-    {"annee": "1906", "fait": "Signature de la convention scolaire entre l'État et le Saint-Siège."},
-    {"annee": "1946", "fait": "Création de l'enseignement public officiel au Congo."},
-    {"annee": "1960", "fait": "Indépendance de la RDC et congolisation des cadres éducatifs."},
-    {"annee": "2019", "fait": "Lancement de la gratuité de l'enseignement primaire."}
-  ]
+  "PROVINCES_INTEGREES_BIODIVERSITE_ET_RICHESSES": [
+    {
+      "nom": "Kongo-Central", "chef_lieu": "Matadi", "richesses": "Pétrole, Ports, Inga",
+      "biodiversite": "Parc Marin des Mangroves (Lamantins, Tortues marines, Palétuviers)"
+    },
+    {
+      "nom": "Nord-Kivu", "chef_lieu": "Goma", "richesses": "Coltan, Agriculture",
+      "biodiversite": "Parc des Virunga (Gorilles de montagne, Okapis, Volcans Nyiragongo/Nyamuragira)"
+    },
+    {
+      "nom": "Sud-Kivu", "chef_lieu": "Bukavu", "richesses": "Or, Quinquina",
+      "biodiversite": "Parc de Kahuzi-Biega (Gorilles de plaine de l'Est - Grauer)"
+    },
+    {
+      "nom": "Haut-Uele", "chef_lieu": "Isiro", "richesses": "Or (Kibali)",
+      "biodiversite": "Parc de la Garamba (Rhinocéros blancs du Nord, Girafes de Perse, Éléphants)"
+    },
+    {
+      "nom": "Ituri", "chef_lieu": "Bunia", "richesses": "Or, Pétrole",
+      "biodiversite": "Réserve de Faune à Okapis d'Epulu (Okapis, Paons congolais)"
+    },
+    {
+      "nom": "Haut-Katanga", "chef_lieu": "Lubumbashi", "richesses": "Cuivre, Cobalt",
+      "biodiversite": "Parc des Kundelungu (Chutes de la Lofoï - 340m, Guépards, Antilopes)"
+    },
+    {
+      "nom": "Haut-Lomami", "chef_lieu": "Kamina", "richesses": "Élevage, Agriculture",
+      "biodiversite": "Parc de l'Upemba (Zèbres de Crawshay, Elans du Cap)"
+    },
+    {
+      "nom": "Maniema", "chef_lieu": "Kindu", "richesses": "Cassitérite, Or",
+      "biodiversite": "Parc de la Lomami (Singe Lesula découvert en 2007, Bonobos)"
+    },
+    {
+      "nom": "Tshuapa", "chef_lieu": "Boende", "richesses": "Bois, Biodiversité",
+      "biodiversite": "Parc de la Salonga Nord (Bonobos, Éléphants de forêt)"
+    },
+    {
+      "nom": "Sankuru", "chef_lieu": "Lusambo", "richesses": "Bois, Diamant",
+      "biodiversite": "Parc de la Salonga Sud (Bonobos, Paons congolais)"
+    },
+    {
+      "nom": "Tshopo", "chef_lieu": "Kisangani", "richesses": "Électricité, Commerce",
+      "biodiversite": "Parc de la Maiko (Gorilles de Grauer, Okapis, Paons congolais)"
+    },
+    { "nom": "Bas-Uele", "chef_lieu": "Buta", "richesses": "Or, Bois", "biodiversite": "Domaine de Gangala-na-Bodio" },
+    { "nom": "Equateur", "chef_lieu": "Mbandaka", "richesses": "Cacao, Pêche", "biodiversite": "Réserve de la Tumba-Lediima" },
+    { "nom": "Kasai", "chef_lieu": "Tshikapa", "richesses": "Diamant", "biodiversite": "Cuvette centrale" },
+    { "nom": "Kasai-Central", "chef_lieu": "Kananga", "richesses": "Diamant, Maïs", "biodiversite": "Savanes" },
+    { "nom": "Kasai-Oriental", "chef_lieu": "Mbuji-Mayi", "richesses": "Diamant (MIBA)", "biodiversite": "Plateaux" },
+    { "nom": "Kinshasa", "chef_lieu": "Kinshasa", "richesses": "Services, Capitale", "biodiversite": "Vallée de la Nsele (Lions, Hippos)" },
+    { "nom": "Kwango", "chef_lieu": "Kenge", "richesses": "Élevage", "biodiversite": "Plateaux du Kwango" },
+    { "nom": "Kwilu", "chef_lieu": "Bandundu", "richesses": "Huile de palme", "biodiversite": "Forêts galeries" },
+    { "nom": "Lomami", "chef_lieu": "Kabinda", "richesses": "Agriculture", "biodiversite": "Savanes boisées" },
+    { "nom": "Lualaba", "chef_lieu": "Kolwezi", "richesses": "Cobalt, Cuivre", "biodiversite": "Réserve de Basse-Kando" },
+    { "nom": "Mai-Ndombe", "chef_lieu": "Inongo", "richesses": "Bois, Crédit Carbone", "biodiversite": "Lac Mai-Ndombe" },
+    { "nom": "Mongala", "chef_lieu": "Lisala", "richesses": "Bois, Huile de palme", "biodiversite": "Forêt dense" },
+    { "nom": "Nord-Ubangi", "chef_lieu": "Gbadolite", "richesses": "Agriculture", "biodiversite": "Savanes du Nord" },
+    { "nom": "Sud-Ubangi", "chef_lieu": "Gemena", "richesses": "Café, Cacao", "biodiversite": "Zone forestière" },
+    { "nom": "Tanganyika", "chef_lieu": "Kalemie", "richesses": "Lithium, Pêche", "biodiversite": "Lac Tanganyika" }
+  ],
+  "HISTOIRE_ET_INSTITUTIONS": {
+    "EDUCATION": "1906 (Missions), 1954 (Lovanium), 2019 (Gratuité du Primaire)",
+    "DATES": ["1885: EIC", "1908: Congo Belge", "1960: Indépendance"],
+    "INSTITUTIONS": "Exécutif, Législatif (Parlement), Judiciaire (Cours)"
+  }
 }
