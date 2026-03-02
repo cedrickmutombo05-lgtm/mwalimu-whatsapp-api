@@ -38,8 +38,8 @@
         {"nom": "Kalemie", "importance": "Port sur le Tanganyika, connexion Est-Ouest"}
       ]
     }
-  }
-}
+  
+},
   "geographie_economique_humaine_integrale": {
     "agriculture_et_terroir_complet": {
       "cultures_vivrieres": [
@@ -87,4 +87,4 @@
       }
     }
   }
-}
+
