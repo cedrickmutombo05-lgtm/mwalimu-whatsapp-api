@@ -5,19 +5,36 @@
     "SUPERFICIE": "2.345.410 km2",
     "POPULATION": "Environ 105 millions (2026)",
     "MONNAIE": "Franc Congolais (CDF)",
-    "LIMITES_VOISINS": {
+    "DEVISE": "Justice - Paix - Travail",
+    "LIMITES_FRONTIERES": {
       "NORD": "Centrafrique, Sud-Soudan",
       "SUD": "Zambie, Angola",
       "EST": "Ouganda, Rwanda, Burundi, Tanzanie",
       "OUEST": "Congo-Brazzaville, Océan Atlantique (37 km)"
     }
   },
-  "HYDROGRAPHIE_EXPERTE": {
-    "FLEUVE_CONGO": {
+  "HYDROGRAPHIE_EXPERTE_ET_NAVIGATION": {
+    "FLEUVE_CONGO_MASTER": {
       "longueur": "4.700 km",
       "debit": "41.000 m3/s",
-      "rive_droite": ["UBANGI (plus grand)", "Sangha", "Aruwimi", "Itimbiri", "Mongala"],
-      "rive_gauche": ["KASAÏ (plus grand - 2.150 km)", "Lomami", "Lulonga", "Ruki", "Inkisi", "Luvua"]
+      "PROVINCES_TRAVERSEES": [
+        "Lualaba (Source)", "Haut-Lomami", "Tanganyika", "Maniema", "Tshopo",
+        "Mongala", "Equateur", "Mai-Ndombe", "Kinshasa", "Kongo-Central (Embouchure)"
+      ],
+      "BIEFS_NAVIGABLES": [
+        { "nom": "Bief Maritime", "troncon": "Banana - Matadi (150 km)", "usage": "Navires de haute mer" },
+        { "nom": "Moyen Bief", "troncon": "Kinshasa - Kisangani (1.734 km)", "usage": "Grandes unités fluviales, Autoroute du pays" },
+        { "nom": "Bief Supérieur (Lualaba)", "troncon": "Ubundu-Kindu et Kongolo-Bukama", "usage": "Navigation régionale" }
+      ],
+      "BIEFS_NON_NAVIGABLES": [
+        { "nom": "Rapides d'Aval", "troncon": "Matadi - Kinshasa (350 km)", "cause": "32 Chutes dont Inga, Monts de Cristal" },
+        { "nom": "Rapides de Boyoma", "troncon": "Kisangani - Ubundu", "cause": "7 Chutes (Stanley Falls)" },
+        { "nom": "Portes d'Enfer", "troncon": "Gorges vers Kasongo/Kongolo", "cause": "Étranglement rocheux" }
+      ],
+      "AFFLUENTS_MAJEURS": {
+        "RIVE_DROITE": ["UBANGI (plus grand)", "Sangha", "Aruwimi", "Itimbiri", "Mongala"],
+        "RIVE_GAUCHE": ["KASAÏ (plus grand - 2.150 km)", "Lomami", "Ruki", "Lulonga", "Inkisi", "Luvua"]
+      }
     },
     "LACS": {
       "TECTONIQUES": ["Tanganyika (1470m)", "Kivu (Gaz Méthane)", "Albert", "Edouard"],
@@ -25,70 +42,37 @@
       "ARTIFICIELS": ["Inga", "Mwadingusha", "Nzilo", "Koni", "Tshopo"]
     }
   },
-  "PROVINCES_INTEGREES_BIODIVERSITE_ET_RICHESSES": [
-    {
-      "nom": "Kongo-Central", "chef_lieu": "Matadi", "richesses": "Pétrole, Ports, Inga",
-      "biodiversite": "Parc Marin des Mangroves (Lamantins, Tortues marines, Palétuviers)"
-    },
-    {
-      "nom": "Nord-Kivu", "chef_lieu": "Goma", "richesses": "Coltan, Agriculture",
-      "biodiversite": "Parc des Virunga (Gorilles de montagne, Okapis, Volcans Nyiragongo/Nyamuragira)"
-    },
-    {
-      "nom": "Sud-Kivu", "chef_lieu": "Bukavu", "richesses": "Or, Quinquina",
-      "biodiversite": "Parc de Kahuzi-Biega (Gorilles de plaine de l'Est - Grauer)"
-    },
-    {
-      "nom": "Haut-Uele", "chef_lieu": "Isiro", "richesses": "Or (Kibali)",
-      "biodiversite": "Parc de la Garamba (Rhinocéros blancs du Nord, Girafes de Perse, Éléphants)"
-    },
-    {
-      "nom": "Ituri", "chef_lieu": "Bunia", "richesses": "Or, Pétrole",
-      "biodiversite": "Réserve de Faune à Okapis d'Epulu (Okapis, Paons congolais)"
-    },
-    {
-      "nom": "Haut-Katanga", "chef_lieu": "Lubumbashi", "richesses": "Cuivre, Cobalt",
-      "biodiversite": "Parc des Kundelungu (Chutes de la Lofoï - 340m, Guépards, Antilopes)"
-    },
-    {
-      "nom": "Haut-Lomami", "chef_lieu": "Kamina", "richesses": "Élevage, Agriculture",
-      "biodiversite": "Parc de l'Upemba (Zèbres de Crawshay, Elans du Cap)"
-    },
-    {
-      "nom": "Maniema", "chef_lieu": "Kindu", "richesses": "Cassitérite, Or",
-      "biodiversite": "Parc de la Lomami (Singe Lesula découvert en 2007, Bonobos)"
-    },
-    {
-      "nom": "Tshuapa", "chef_lieu": "Boende", "richesses": "Bois, Biodiversité",
-      "biodiversite": "Parc de la Salonga Nord (Bonobos, Éléphants de forêt)"
-    },
-    {
-      "nom": "Sankuru", "chef_lieu": "Lusambo", "richesses": "Bois, Diamant",
-      "biodiversite": "Parc de la Salonga Sud (Bonobos, Paons congolais)"
-    },
-    {
-      "nom": "Tshopo", "chef_lieu": "Kisangani", "richesses": "Électricité, Commerce",
-      "biodiversite": "Parc de la Maiko (Gorilles de Grauer, Okapis, Paons congolais)"
-    },
-    { "nom": "Bas-Uele", "chef_lieu": "Buta", "richesses": "Or, Bois", "biodiversite": "Domaine de Gangala-na-Bodio" },
-    { "nom": "Equateur", "chef_lieu": "Mbandaka", "richesses": "Cacao, Pêche", "biodiversite": "Réserve de la Tumba-Lediima" },
+  "PROVINCES_INTEGREES_COMPLETES": [
+    { "nom": "Kongo-Central", "chef_lieu": "Matadi", "richesses": "Pétrole, Ports, Inga", "biodiversite": "Parc Marin des Mangroves (Lamantins, Tortues)" },
+    { "nom": "Nord-Kivu", "chef_lieu": "Goma", "richesses": "Coltan, Volcans", "biodiversite": "Parc des Virunga (Gorilles de montagne, Okapis)" },
+    { "nom": "Sud-Kivu", "chef_lieu": "Bukavu", "richesses": "Or, Thé", "biodiversite": "Parc de Kahuzi-Biega (Gorilles de Grauer)" },
+    { "nom": "Haut-Uele", "chef_lieu": "Isiro", "richesses": "Or (Kibali)", "biodiversite": "Parc de la Garamba (Rhinocéros blancs, Girafes)" },
+    { "nom": "Ituri", "chef_lieu": "Bunia", "richesses": "Or, Pétrole", "biodiversite": "Réserve d'Epulu (Okapis, Paons congolais)" },
+    { "nom": "Haut-Katanga", "chef_lieu": "Lubumbashi", "richesses": "Cuivre, Cobalt", "biodiversite": "Parc Kundelungu (Chutes Lofoï 340m, Guépards)" },
+    { "nom": "Haut-Lomami", "chef_lieu": "Kamina", "richesses": "Élevage", "biodiversite": "Parc de l'Upemba (Zèbres de Crawshay)" },
+    { "nom": "Maniema", "chef_lieu": "Kindu", "richesses": "Cassitérite", "biodiversite": "Parc de la Lomami (Singe Lesula)" },
+    { "nom": "Tshuapa", "chef_lieu": "Boende", "richesses": "Forêt", "biodiversite": "Parc Salonga Nord (Bonobos)" },
+    { "nom": "Sankuru", "chef_lieu": "Lusambo", "richesses": "Diamant", "biodiversite": "Parc Salonga Sud (Paons congolais)" },
+    { "nom": "Tshopo", "chef_lieu": "Kisangani", "richesses": "Commerce", "biodiversite": "Parc Maiko (Gorilles, Okapis)" },
+    { "nom": "Bas-Uele", "chef_lieu": "Buta", "richesses": "Or, Bois", "biodiversite": "Gangala-na-Bodio" },
+    { "nom": "Equateur", "chef_lieu": "Mbandaka", "richesses": "Cacao", "biodiversite": "Réserve de la Tumba-Lediima" },
     { "nom": "Kasai", "chef_lieu": "Tshikapa", "richesses": "Diamant", "biodiversite": "Cuvette centrale" },
     { "nom": "Kasai-Central", "chef_lieu": "Kananga", "richesses": "Diamant, Maïs", "biodiversite": "Savanes" },
     { "nom": "Kasai-Oriental", "chef_lieu": "Mbuji-Mayi", "richesses": "Diamant (MIBA)", "biodiversite": "Plateaux" },
-    { "nom": "Kinshasa", "chef_lieu": "Kinshasa", "richesses": "Services, Capitale", "biodiversite": "Vallée de la Nsele (Lions, Hippos)" },
+    { "nom": "Kinshasa", "chef_lieu": "Kinshasa", "richesses": "Services, Capitale", "biodiversite": "Vallée de la Nsele" },
     { "nom": "Kwango", "chef_lieu": "Kenge", "richesses": "Élevage", "biodiversite": "Plateaux du Kwango" },
     { "nom": "Kwilu", "chef_lieu": "Bandundu", "richesses": "Huile de palme", "biodiversite": "Forêts galeries" },
     { "nom": "Lomami", "chef_lieu": "Kabinda", "richesses": "Agriculture", "biodiversite": "Savanes boisées" },
     { "nom": "Lualaba", "chef_lieu": "Kolwezi", "richesses": "Cobalt, Cuivre", "biodiversite": "Réserve de Basse-Kando" },
-    { "nom": "Mai-Ndombe", "chef_lieu": "Inongo", "richesses": "Bois, Crédit Carbone", "biodiversite": "Lac Mai-Ndombe" },
-    { "nom": "Mongala", "chef_lieu": "Lisala", "richesses": "Bois, Huile de palme", "biodiversite": "Forêt dense" },
+    { "nom": "Mai-Ndombe", "chef_lieu": "Inongo", "richesses": "Crédit Carbone", "biodiversite": "Lac Mai-Ndombe" },
+    { "nom": "Mongala", "chef_lieu": "Lisala", "richesses": "Bois", "biodiversite": "Forêt dense" },
     { "nom": "Nord-Ubangi", "chef_lieu": "Gbadolite", "richesses": "Agriculture", "biodiversite": "Savanes du Nord" },
-    { "nom": "Sud-Ubangi", "chef_lieu": "Gemena", "richesses": "Café, Cacao", "biodiversite": "Zone forestière" },
+    { "nom": "Sud-Ubangi", "chef_lieu": "Gemena", "richesses": "Café", "biodiversite": "Zone forestière" },
     { "nom": "Tanganyika", "chef_lieu": "Kalemie", "richesses": "Lithium, Pêche", "biodiversite": "Lac Tanganyika" }
   ],
-  "HISTOIRE_ET_INSTITUTIONS": {
+  "HISTOIRE_EDUCATION_ET_INSTITUTIONS": {
     "EDUCATION": "1906 (Missions), 1954 (Lovanium), 2019 (Gratuité du Primaire)",
-    "DATES": ["1885: EIC", "1908: Congo Belge", "1960: Indépendance"],
-    "INSTITUTIONS": "Exécutif, Législatif (Parlement), Judiciaire (Cours)"
+    "DATES_HISTOIRE": ["1885: EIC", "1908: Congo Belge", "1960: Indépendance"],
+    "INSTITUTIONS": "Exécutif (Président), Législatif (Parlement), Judiciaire (Cours)"
   }
 }
