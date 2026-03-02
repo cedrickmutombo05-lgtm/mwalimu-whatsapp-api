@@ -24,11 +24,12 @@
         "sommets": "Ruwenzori (Pic Marguerite 5119m), Volcans Virunga (Nyiragongo 3470m, Nyamuragira)"
       }
     },
-    "hydrographie_approfondie": {
+    "hydrographie_systemique": {
       "fleuve_congo": {
         "source": "Musofi (Haut-Katanga, 1435m d'altitude)",
-        "longueur": "4.700 km",
+        "longueur": "4.700 km (2ème d'Afrique, 2ème débit mondial)",
         "debit_moyen": "41.000 m³/s",
+        "provinces_traversees": ["Haut-Katanga", "Haut-Lomami", "Maniema", "Tshopo", "Mongala", "Équateur", "Mai-Ndombe", "Kinshasa", "Kongo-Central"],
         "biefs_navigables": [
           "Bief Supérieur : Bukama à Kongolo (645 km)",
           "Bief Moyen : Kindu à Ubundu (310 km) et Kisangani à Kinshasa (1734 km)",
@@ -40,51 +41,65 @@
           "Chutes d'Inga et Livingstone (entre Kinshasa et Matadi - 32 rapides)"
         ],
         "principaux_affluents": {
-          "rive_droite": ["Oubangui (le plus long)", "Sangha", "Itimbiri", "Aruwimi", "Lindi", "Lufira"],
-          "rive_gauche": ["Kasaï (le plus puissant)", "Lomami", "Lulonga", "Ruki", "Kwa", "Inkisi"]
+          "rive_droite": ["Oubangui", "Sangha", "Itimbiri", "Aruwimi", "Lindi", "Lufira"],
+          "rive_gauche": ["Kasaï", "Lomami", "Lulonga", "Ruki", "Kwa", "Inkisi"]
         }
       },
       "chutes_et_rapides_majeurs": [
-        {"nom": "Chutes d'Inga", "riviere": "Fleuve Congo (Kongo-Central)", "importance": "Plus grand potentiel hydroélectrique mondial"},
-        {"nom": "Chutes de la Lofoi", "riviere": "Lofoi (Haut-Katanga)", "importance": "Plus hautes chutes d'Afrique (340m de chute directe)"},
-        {"nom": "Chutes Boyoma (Stanley)", "riviere": "Lualaba/Congo (Tshopo)", "importance": "Série de 7 cataractes marquant le début du bief moyen"},
-        {"nom": "Chutes de Zongo", "riviere": "Inkisi (Kongo-Central)", "importance": "Site touristique et énergétique majeur"},
-        {"nom": "Chutes de la Tshopo", "riviere": "Tshopo (Kisangani)", "importance": "Alimente la centrale de la Tshopo"},
-        {"nom": "Chutes de Kyoppopo", "riviere": "Upemba (Haut-Lomami)", "importance": "Paysage spectaculaire dans le parc de l'Upemba"}
+        {"nom": "Chutes d'Inga", "riviere": "Fleuve Congo", "province": "Kongo-Central", "importance": "Plus grand potentiel hydroélectrique mondial"},
+        {"nom": "Chutes de la Lofoi", "riviere": "Lofoi", "province": "Haut-Katanga", "importance": "Plus hautes chutes d'Afrique (340m)"},
+        {"nom": "Chutes Boyoma (Stanley)", "riviere": "Lualaba/Congo", "province": "Tshopo"},
+        {"nom": "Chutes de Zongo", "riviere": "Inkisi", "province": "Kongo-Central"}
       ],
       "reseau_des_lacs": {
         "lacs_tectoniques_graben": [
-          {"nom": "Tanganyika", "detail": "Le plus profond (1470m) et poissonneux"},
+          {"nom": "Tanganyika", "detail": "Le plus profond d'Afrique (1470m) et très poissonneux"},
           {"nom": "Kivu", "detail": "Lac de montagne, contient du gaz méthane"},
           {"nom": "Edouard", "detail": "Riche en faune aquatique"},
           {"nom": "Albert", "detail": "Potentiel pétrolier important"}
         ],
         "lacs_de_cuvette_residuels": [
-          {"nom": "Maï-Ndombe", "detail": "Ancien lac Léopold II, très étendu et peu profond"},
+          {"nom": "Maï-Ndombe", "detail": "Ancien lac Léopold II"},
           {"nom": "Tumba", "detail": "Relié au fleuve par le canal d'Irebu"}
         ],
-        "lacs_de_retenue_artificiels": ["Nzilo (Lualaba)", "Mwadingusha (Lufira)"]
+        "lacs_de_retenue_artificiels": ["Nzilo (Lualaba)", "Mwadingusha (Lufira)", "Koni"]
       }
     }
   },
-  "MODULE_2_ECONOMIE_ET_AGRICULTURE_DU_TERROIR": {
+  "MODULE_2_ECONOMIE_SOL_ET_SOUS_SOL": {
     "cultures_vivrieres_et_sols": [
-      {"produit": "Manioc", "zones": "Kwilu, Kwango, Kasaï, Bas-Fleuve", "importance": "Base de l'alimentation"},
+      {"produit": "Manioc", "zones": "Kwilu, Kwango, Kasaï, Bas-Fleuve", "importance": "Base de l'alimentation nationale"},
       {"produit": "Maïs", "zones": "Haut-Katanga, Lualaba, Kasaï-Central, Lomami"},
       {"produit": "Riz", "zones": "Maniema (Kindu), Tshopo (Basoko), Ituri"}
     ],
-    "cultures_industrielles_et_perennes": [
-      {"produit": "Café Robusta", "zones": "Grand Équateur (Gemena, Libenge, Businga, Lisala, Bumba), Bas-Uele (Aketi, Buta)"},
-      {"produit": "Café Arabica", "zones": "Nord-Kivu (Beni, Lubero), Ituri, Sud-Kivu"},
-      {"produit": "Cacao", "zones": "Kongo-Central (Mayombe), Nord-Kivu, Ituri (Mambasa)"},
-      {"produit": "Caoutchouc (Hévéa)", "zones": "Équateur (Boende), Tshuapa, Mongala"},
-      {"produit": "Palmier à huile", "zones": "Kwilu (Lusanga), Tshuapa, Sankuru"},
-      {"produit": "Thé", "zones": "Hautes terres du Kivu (Masisi, Kabare)"},
-      {"produit": "Coton", "zones": "Nord-Ubangi, Bas-Uele (Bambesa)"}
+    "cultures_industrielles": [
+      {"produit": "Café Robusta", "zones": "Grand Équateur (Gemena, Bumba), Bas-Uele (Buta)"},
+      {"produit": "Café Arabica", "zones": "Nord-Kivu (Lubero), Ituri, Sud-Kivu"},
+      {"produit": "Cacao", "zones": "Kongo-Central (Mayombe), Nord-Kivu, Ituri"},
+      {"produit": "Palmier à huile", "zones": "Kwilu (Lusanga), Tshuapa, Sankuru"}
     ],
+    "richesse_du_sous_sol_minier": {
+      "cobalt_et_cuivre": {
+        "societe_phare": "GÉCAMINES (Générale des Carrières et des Mines)",
+        "siege_et_zones": "Haut-Katanga (Lubumbashi, Likasi) et Lualaba (Kolwezi capitale mondiale du Cobalt)",
+        "importance": "1er producteur mondial de Cobalt (70%)."
+      },
+      "diamant": {
+        "societe_phare": "MIBA (Minière de Bakwanga)",
+        "siege_et_zones": "Kasaï-Oriental (Mbuji-Mayi), et Kasaï (Tshikapa)"
+      },
+      "or": {"societe": "Kibali Gold Mine", "zones": "Ituri, Haut-Uele, Sud-Kivu"},
+      "coltan": {"zones": "Nord-Kivu, Sud-Kivu, Maniema"}
+    },
     "infrastructures_transport": {
-      "chemins_de_fer": ["Matadi-Kinshasa (365 km)", "Kamina-Kindu", "Kamina-Ilebo", "Tenke-Dilolo (voie vers Lobito)", "Kabalo-Kalemie"],
-      "ports_majeurs": ["Matadi (Port principal)", "Boma", "Banana", "Kinshasa", "Mbandaka", "Kisangani", "Ubundu", "Kalemie (Lac Tanganyika)"]
+      "chemins_de_fer": [
+        {"axe": "Kinshasa-Matadi (365 km)", "gestionnaire": "ONATRA SA", "role": "Évacuation portuaire"},
+        {"axe": "Kamina-Kindu", "gestionnaire": "SNCC", "role": "Liaison Katanga-Maniema"},
+        {"axe": "Kamina-Ilebo", "gestionnaire": "SNCC"},
+        {"axe": "Tenke-Dilolo", "gestionnaire": "SNCC"},
+        {"axe": "Kabalo-Kalemie", "gestionnaire": "SNCC"}
+      ],
+      "ports_strategiques": ["Matadi", "Banana", "Kinshasa", "Kalemie", "Mbandaka", "Kisangani","Ubundu","Kalemi" ]
     }
   },
   "MODULE_3_ATLAS_DES_PROVINCES_ET_DES_145_TERRITOIRES": {
@@ -117,31 +132,48 @@
   },
   "MODULE_4_CLIMAT_ET_VEGETATION_DETAILS": {
     "zones_climatiques": [
-      {"type": "Équatorial", "details": "Chaud et humide, pluie toute l'année (pas de saison sèche)", "localisation": "Cuvette centrale, Tshuapa, Mongala"},
-      {"type": "Tropical humide (Soudanien/Zambézien)", "details": "2 saisons (Pluies longues, Sèche courte)", "localisation": "Bas-Uele, Haut-Uele, Kongo-Central"},
-      {"type": "Tropical sec", "details": "Saison sèche longue (5-7 mois)", "localisation": "Sud du pays, Haut-Katanga"},
-      {"type": "Climat de montagne", "details": "Températures fraîches, relief élevé", "localisation": "Kivu, Ituri"}
+      {"type": "Équatorial", "details": "Chaud et humide, pluie toute l'année", "localisation": "Cuvette centrale"},
+      {"type": "Tropical humide", "details": "2 saisons", "localisation": "Bas/Haut-Uele, Kongo-Central"},
+      {"type": "Tropical sec", "details": "Saison sèche longue", "localisation": "Sud du pays, Haut-Katanga"},
+      {"type": "Climat de montagne", "details": "Températures fraîches", "localisation": "Kivu, Ituri"}
     ],
-    "formations_vegetales": {
-      "foret_ombrophile": "Forêt dense toujours verte (Cuvette centrale)",
-      "savanes_boisees": "Zones de transition au Nord et au Sud",
-      "mangroves": "Forêt de palétuviers (Embouchure à Muanda)",
-      "foret_de_montagne": "Végétations étagées selon l'altitude"
-    }
+    "formations_vegetales": ["Forêt ombrophile (dense)", "Savanes boisées", "Mangroves (Muanda)", "Forêt de montagne"]
   },
   "MODULE_5_PARCS_NATIONAUX_ET_BIODIVERSITE": {
     "patrimoine_unesco": [
-      {"nom": "Parc National des Virunga", "province": "Nord-Kivu", "particularite": "Le plus ancien d'Afrique, Gorilles de montagne, Volcans actifs"},
-      {"nom": "Parc National de la Garamba", "province": "Haut-Uele", "particularite": "Derniers Rhinocéros blancs du Nord, Eléphants"},
-      {"nom": "Parc National de Kahuzi-Biega", "province": "Sud-Kivu", "particularite": "Gorilles de plaine de l'Est"},
-      {"nom": "Parc National de la Salonga", "province": "Tshuapa/Mai-Ndombe", "particularite": "Plus grande réserve de forêt tropicale, Bonobos"},
-      {"nom": "Réserve de Faune à Okapis", "province": "Ituri (Epulu)", "particularite": "Habitat exclusif de l'Okapi"}
+      {"nom": "Parc National des Virunga", "province": "Nord-Kivu", "particularite": "Gorilles de montagne, Volcans actifs"},
+      {"nom": "Parc National de la Garamba", "province": "Haut-Uele", "particularite": "Rhinocéros blancs du Nord"},
+      {"nom": "Parc National de Kahuzi-Biega", "province": "Sud-Kivu", "particularite": "Gorilles de plaine"},
+      {"nom": "Parc National de la Salonga", "province": "Tshuapa/Mai-Ndombe", "particularite": "Bonobos"},
+      {"nom": "Réserve de Faune à Okapis", "province": "Ituri", "particularite": "Okapi"}
     ],
     "autres_parcs_majeurs": [
-      {"nom": "Parc National de l'Upemba", "province": "Haut-Lomami", "particularite": "Zèbres, Antilopes, Chutes de Kyoppopo"},
-      {"nom": "Parc National de Kundelungu", "province": "Haut-Katanga", "particularite": "Chutes de la Lofoi (plus hautes d'Afrique, 340m)"},
-      {"nom": "Parc National de la Maiko", "province": "Maniema/Nord-Kivu", "particularite": "Gorilles de Grauer, Paon du Congo"},
-      {"nom": "Parc Marin des Mangroves", "province": "Kongo-Central (Muanda)", "particularite": "Lamantins, tortues marines"}
+      {"nom": "Parc National de l'Upemba", "province": "Haut-Lomami"},
+      {"nom": "Parc National de Kundelungu", "province": "Haut-Katanga"},
+      {"nom": "Parc National de la Maiko", "province": "Maniema/Nord-Kivu"},
+      {"nom": "Parc Marin des Mangroves", "province": "Kongo-Central"}
     ]
+  },
+  "MODULE_6_HISTOIRE_NATIONALE_COMPLETE": {
+    "epoques_precoloniales": ["Royaume Kongo", "Empire Luba", "Empire Lunda", "Royaume Kuba"],
+    "explorations_et_traite": [
+      {"nom": "David Livingstone", "role": "Explorateur, témoin de la traite à Nyangwe"},
+      {"nom": "Henry Morton Stanley", "role": "Explore le fleuve (1874-1877), travaille pour Léopold II"},
+      {"nom": "Tippo-Tip", "role": "Traitant arabo-swahili (ivoire et esclaves)"}
+    ],
+    "dates_cles": {
+      "1885": "Conférence de Berlin (E.I.C)",
+      "4_janvier_1959": "Émeutes pour l'indépendance",
+      "30_juin_1960": "Indépendance (Kasa-Vubu & Lumumba)",
+      "17_janvier_1961": "Assassinat de Lumumba",
+      "1971": "Le pays devient le Zaïre",
+      "1973_1974": "Zaïrianisation (Nationalisations)",
+      "17_mai_1997": "Laurent-Désiré Kabila (RDC)",
+      "16_janvier_2001": "Assassinat de L.D. Kabila",
+      "24_janvier_2019": "Alternance pacifique (Félix Tshisekedi)"
+    }
+  },
+  "MODULE_7_CITOYENNETE_ET_CIVISME": {
+    "symboles": ["Drapeau bleu ciel/jaune/rouge", "Hymne: Debout Congolais", "Devise: Justice-Paix-Travail"]
   }
 }
