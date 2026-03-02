@@ -1,90 +1,79 @@
 
 {
-  "geographie_profonde": {
-    "etude_du_milieu": {
-      "coordonnees_astronomiques": {
-        "latitude": "5°30’ Nord et 13°5’ Sud",
-        "longitude": "12°15’ Est et 31°15’ Est",
-        "position_centrale": "La RDC est au cœur de l'Afrique, à cheval sur l'Équateur (à Wangata/Mbandaka)."
+  "MODULE_1_GEOGRAPHIE_PHYSIQUE_PROFONDE": {
+    "astronomie_et_superficie": {
+      "coordonnees": "5°30’ Nord et 13°5’ Sud ; 12°15’ et 31°15’ Est",
+      "superficie_reelle": "2.345.410 km²",
+      "frontieres": "9 pays voisins (RCA, Soudan du Sud, Ouganda, Rwanda, Burundi, Tanzanie, Zambie, Angola, Congo-Brazzaville)"
+    },
+    "relief_et_geologie": {
+      "cuvette_centrale": "Vaste dépression sédimentaire (300-500m)",
+      "plateaux": ["Uele au Nord", "Kasaï et Lunda au Sud", "Batéké à l'Ouest"],
+      "montagnes_est": ["Chaîne de Mitumba", "Massif du Ruwenzori (Pic Marguerite 5119m)", "Volcans Virunga (Nyiragongo, Nyamuragira)"]
+    },
+    "hydrographie_detaillee": {
+      "fleuve_congo": {
+        "source": "Musofi (Haut-Katanga)",
+        "longueur": "4.700 km",
+        "debit_moyen": "41.000 m³/s",
+        "biefs_navigables": [
+          "Bukama-Kongolo",
+          "Kindu-Ubundu",
+          "Kisangani-Kinshasa (Bief moyen)",
+          "Matadi-Banana (Bief maritime)"
+        ],
+        "chutes_majeures": ["Chutes Stanley (Boyoma)", "Chutes d'Inga (Potentiel hydroélectrique mondial)"]
       },
-      "superficie_comparative": "2.345.410 km² (80 fois la Belgique, 4 fois la France, 2ème plus grand d'Afrique).",
-      "relief_detaille": {
-        "cuvette_centrale": "Altitude moyenne 300m-500m, immense cuvette sédimentaire.",
-        "plateaux_peripheriques": ["Plateau de l'Uele (Nord)", "Plateaux du Kasaï (Sud)", "Plateau de la Lunda (Sud)", "Plateau des Batéké (Ouest)"],
-        "hautes_terres_est": "Grands Grabens (fossés d'effondrement), Montagnes volcaniques (Virunga : Karisimbi, Mikeno, Nyiragongo - volcan actif)."
+      "lacs": {
+        "tectoniques_est": ["Tanganyika", "Kivu", "Edouard", "Albert"],
+        "residuels_cuvette": ["Tumba", "Maï-Ndombe"]
       }
-    },
-    "hydrographie_systemique": {
-      "le_fleuve_congo": {
-        "source": "Près du village de Musofi (Haut-Katanga), altitude 1435m.",
-        "debit_specifique": "Régularité exceptionnelle grâce aux affluents répartis sur les deux hémisphères (balancement des crues).",
-        "biefs_et_obstacles": [
-          {"nom": "Source - Bukama", "caractere": "Non navigable"},
-          {"nom": "Bukama - Kongolo", "caractere": "Navigable (Bief Supérieur)"},
-          {"nom": "Portes d'Enfer", "lieu": "Entre Kongolo et Kindu (Innavigable)"},
-          {"nom": "Kindu - Ubundu", "caractere": "Navigable"},
-          {"nom": "Chutes Stanley/Boyoma", "lieu": "Près de Kisangani (7 chutes sur 100km)"},
-          {"nom": "Chenal/Pool Malebo", "lieu": "Entre Bolobo et Kinshasa"}
-        ]
-      },
-      "les_lacs_de_la_cuvette": ["Lac Tumba", "Lac Maï-Ndombe (ancien lac Léopold II)"]
-    },
-    "organisation_du_territoire_profond": {
-      "repartition_administrative": "26 provinces, 145 territoires, villes, communes, secteurs et chefferies.",
-      "zoom_villes_strategiques": [
-        {"nom": "Boma", "importance": "Ancienne capitale, port de mer"},
-        {"nom": "Aketi", "importance": "Port fluvial sur l'Itimbiri"},
-        {"nom": "Ilebo", "importance": "Point de rupture de charge Rail-Fleuve (Kasaï)"},
-        {"nom": "Kalemie", "importance": "Port sur le Tanganyika, connexion Est-Ouest"}
-      ]
     }
-  
-},
-  "geographie_economique_humaine_integrale": {
-    "agriculture_et_terroir_complet": {
-      "cultures_vivrieres": [
-        {"produit": "Manioc", "zones": "Partout (Base de l'alimentation)", "principales": "Kwilu, Kwango, Kasaï"},
-        {"produit": "Maïs", "zones": "Haut-Katanga, Lualaba, Kasaï-Central (Farine/Mpanda)"},
+  },
+  "MODULE_2_GEOGRAPHIE_ECONOMIQUE_ET_HUMAINE": {
+    "agriculture_du_terroir": {
+      "vivrieres": [
+        {"produit": "Manioc", "zones": "Kwilu, Kwango, Kasaï, Bas-Fleuve"},
+        {"produit": "Maïs", "zones": "Grand Katanga, Kasaï-Central, Lomami"},
         {"produit": "Riz", "zones": "Maniema (Kindu), Tshopo (Basoko), Ituri"}
       ],
-      "cultures_industrielles_et_perennes": [
+      "industrielles_perennes": [
         {"produit": "Café Robusta", "zones": "Grand Équateur (Gemena, Libenge, Businga, Lisala, Bumba), Bas-Uele (Aketi)"},
         {"produit": "Café Arabica et Cacao", "zones": "Nord-Kivu (Beni), Ituri, Sud-Kivu"},
         {"produit": "Caoutchouc (Hévéa)", "zones": "Équateur (Boende), Tshuapa, Mongala"},
-        {"produit": "Palmier à huile", "zones": "Kwilu (Lusanga), Equateur, Tshuapa, Mongala"},
-        {"produit": "Thé", "zones": "Hautes terres du Kivu (Masisi, Kabare)"},
-        {"produit": "Coton", "zones": "Nord-Ubangi, Bas-Uele (Zone de Bambesa)"},
+        {"produit": "Palmier à huile", "zones": "Kwilu (Lusanga), Equateur, Tshuapa"},
+        {"produit": "Coton", "zones": "Nord-Ubangi, Bas-Uele (Bambesa)"},
         {"produit": "Canne à sucre", "zones": "Kongo-Central (Kwilu-Ngongo)"}
       ]
     },
-    "infrastructures_de_transport_et_connexions": {
-      "reseau_ferroviaire_strategique": [
-        {"ligne": "Matadi-Kinshasa", "importance": "Lien rail-mer vital"},
-        {"ligne": "Kamina-Kindu", "importance": "Lien Sud-Est et Centre"},
-        {"ligne": "Kamina-Ilebo", "importance": "Lien vers la rivière Kasaï"},
-        {"ligne": "Tenke-Dilolo", "importance": "Voie de Lobito (Angola)"}
+    "transport_et_cloisons": {
+      "rail_sncc_onatra": [
+        {"ligne": "Matadi-Kinshasa", "longueur": "365 km", "role": "Évacuation maritime"},
+        {"ligne": "Kamina-Kindu", "role": "Desserte du Centre-Est"},
+        {"ligne": "Tenke-Dilolo", "role": "Sortie vers Lobito/Angola"}
       ],
-      "poles_fluviaux_et_lacustres": [
-        {"nom": "Kinshasa", "role": "Port de rupture de charge principal"},
-        {"nom": "Mbandaka", "role": "Carrefour fluvial de la Cuvette"},
-        {"nom": "Kisangani", "role": "Terminus du bief moyen"},
-        {"nom": "Ubundu", "role": "Point de jonction rail-fleuve"},
-        {"nom": "Kalemie", "role": "Port lacustre vers la Tanzanie"}
-      ]
+      "ports_strategiques": ["Kinshasa (Le Pool)", "Mbandaka (L'Equateur)", "Kisangani (La Tshopo)", "Boma et Banana (Mer)"]
     },
-    "geographie_humaine_et_sociale": {
-      "demographie": "Densité d'environ 42 hab/km², population majoritairement jeune.",
-      "identite_linguistique_nationale": [
-        {"langue": "Lingala", "ancrage": "Kinshasa, Équateur, le long du Fleuve"},
-        {"langue": "Swahili", "ancrage": "Est, Katanga, Maniema"},
-        {"langue": "Tshiluba", "ancrage": "Espace Grand Kasaï, Lomami"},
-        {"langue": "Kikongo", "ancrage": "Kongo-Central, Kwango, Kwilu"}
-      ],
-      "administration_et_developpement_local": {
-        "concept_pdl_145t": "Programme de Développement Local des 145 Territoires.",
-        "objectif": "Réduire les inégalités entre les milieux urbains et ruraux en dotant chaque territoire d'infrastructures de base.",
-        "structure": "La RDC compte 145 territoires qui sont les moteurs de la maîtrise du Congo profond."
-      }
+    "geographie_humaine": {
+      "langues_nationales": ["Lingala", "Swahili", "Tshiluba", "Kikongo"],
+      "pdl_145_territoires": "Stratégie de développement local pour briser l'isolement du Congo profond."
     }
+  },
+  "MODULE_3_ATLAS_DES_145_TERRITOIRES_ET_RICHESSES": {
+    "territoires_moteurs": [
+      {"nom": "Muanda", "province": "Kongo-Central", "richesse": "Pétrole, Sel, Tourisme littoral"},
+      {"nom": "Songololo", "province": "Kongo-Central", "richesse": "Bitume de Mavuma, Cimenteries, Frontière Lufu"},
+      {"nom": "Gemena", "province": "Sud-Ubangi", "richesse": "Café Robusta, Coton, Tabac"},
+      {"nom": "Bumba", "province": "Mongala", "richesse": "Riz, Port fluvial, Huile de palme"},
+      {"nom": "Walikale", "province": "Nord-Kivu", "richesse": "Cassitérite (Étain), Or, Forêt dense"},
+      {"nom": "Beni", "province": "Nord-Kivu", "richesse": "Cacao, Café Arabica, Commerce transfrontalier"},
+      {"nom": "Watsa", "province": "Haut-Uele", "richesse": "Or (Mine de Kibali)"},
+      {"nom": "Mutshatsha", "province": "Lualaba", "richesse": "Cobalt, Cuivre, Mines industrielles"},
+      {"nom": "Sakania", "province": "Haut-Katanga", "richesse": "Maïs, Cuivre, Port sec de Kasumbalesa"},
+      {"nom": "Kalemie", "province": "Tanganyika", "richesse": "Pêche, Port lacustre, Charbon de Lukuga"},
+      {"nom": "Lupatapata", "province": "Kasaï-Oriental", "richesse": "Diamant industriel (MIBA)"},
+      {"nom": "Ilebo", "province": "Kasaï", "richesse": "Rupture de charge Rail-Rivière, Huile de palme"},
+      {"nom": "Tshikapa", "province": "Kasaï", "richesse": "Diamant de joaillerie, Commerce frontalier"}
+    ]
   }
-
+}
