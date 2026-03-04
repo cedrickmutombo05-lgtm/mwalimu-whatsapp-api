@@ -1,5 +1,4 @@
 
-
 const express = require('express');
 const axios = require('axios');
 const { OpenAI } = require('openai');
@@ -11,9 +10,12 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// --- 🌍 1. CONNEXION À L'ARCHE (RENDER POSTGRES) ---
+// --- 🌍 1. L'ARCHE (DATABASE_URL INSÉRÉE) ---
+// Remplace le texte ci-dessous par ton lien postgres://...
+const DATABASE_URL = "TON_LIEN_POSTGRES_ICI";
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
@@ -24,28 +26,22 @@ let studentMemory = fs.existsSync(memoryFile) ? JSON.parse(fs.readFileSync(memor
 const saveMemory = () => {
   try {
     fs.writeFileSync(memoryFile, JSON.stringify(studentMemory, null, 2));
-  } catch (e) { console.error("Erreur sauvegarde mémoire"); }
+  } catch (e) { console.error("Erreur mémoire"); }
 };
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// ✅ SIGNATURE STRICTE : Pas d'astérisques au début/fin, texte en gras, EdTech avec T majuscule
+// ✅ SIGNATURE EXACTE : Sans astérisques aux extrémités
 const HEADER_MWALIMU = `🔵🟡🔴 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩\n\n---\n\n`;
 
-// --- 📚 3. RÉCUPÉRATION ROBUSTE DE L'ARCHE ---
+// --- 📚 3. RÉCUPÉRATION DES DONNÉES (L'ARCHE) ---
 async function getArcheData() {
-    let data = { parcs: [], infrastructures: [], histoire: [], geographie: [] };
     try {
-        // On récupère chaque table séparément pour éviter qu'une seule erreur bloque tout
-        const p = await pool.query("SELECT * FROM drc_parcs_nationaux").catch(() => ({rows: []}));
-        const i = await pool.query("SELECT * FROM drc_infrastructures").catch(() => ({rows: []}));
-        const h = await pool.query("SELECT * FROM drc_histoire_ancienne").catch(() => ({rows: []}));
-        const g = await pool.query("SELECT * FROM drc_geographie").catch(() => ({rows: []}));
-       
-        data = { parcs: p.rows, infrastructures: i.rows, histoire: h.rows, geographie: g.rows };
-        return data;
+        const geo = await pool.query('SELECT * FROM drc_geographie').catch(() => ({rows: []}));
+        const hist = await pool.query('SELECT * FROM drc_histoire_ancienne').catch(() => ({rows: []}));
+        return JSON.stringify({ geographie: geo.rows, histoire: hist.rows });
     } catch (err) {
-        return data; // Retourne au moins les tableaux vides au lieu d'une erreur fatale
+        return "Arche indisponible";
     }
 }
 
@@ -53,7 +49,7 @@ async function getArcheData() {
 cron.schedule('0 6 * * *', async () => {
   for (const id in studentMemory) {
     const prenom = studentMemory[id].profile.name || "Champion";
-    const motivation = `${HEADER_MWALIMU}Bonjour ${prenom} ! L'excellence t'attend aujourd'hui.`;
+    const motivation = `${HEADER_MWALIMU}Bonjour ${prenom} ! L'excellence est une habitude. Prêt pour ta leçon ?`;
     try {
       await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
         messaging_product: "whatsapp", to: id, text: { body: motivation }
@@ -62,7 +58,7 @@ cron.schedule('0 6 * * *', async () => {
   }
 });
 
-// --- 🔍 5. ANALYSE DE PROFIL ---
+// --- 🔍 5. ANALYSE DU PROFIL ---
 async function updateStudentProfile(text, from) {
   try {
     const res = await openai.chat.completions.create({
@@ -80,7 +76,7 @@ async function updateStudentProfile(text, from) {
   } catch (e) { }
 }
 
-// --- 💬 6. LE WEBHOOK WHATSAPP ---
+// --- 💬 6. WEBHOOK (INTERACTION LOGIQUE) ---
 app.post("/webhook", async (req, res) => {
   const body = req.body;
   if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
@@ -89,35 +85,33 @@ app.post("/webhook", async (req, res) => {
     const text = msg.text.body;
 
     if (!studentMemory[from]) {
-      studentMemory[from] = { history: [], profile: { name: null, grade: null }, mode: "chat" };
+      studentMemory[from] = { history: [], profile: { name: null, grade: null } };
     }
 
     await updateStudentProfile(text, from);
+    const arche = await getArcheData();
     const profile = studentMemory[from].profile;
-    const archeData = await getArcheData();
-
-    // Mode Quiz automatique
-    if (text.toLowerCase().includes("quiz") || text.toLowerCase().includes("évalue")) {
-        studentMemory[from].mode = "quiz";
-    }
 
     const systemPrompt = `Tu es Mwalimu EdTech, mentor en RDC.
-Élève : ${profile.name || "Inconnu"}, Classe : ${profile.grade || "Inconnue"}.
+Élève : ${profile.name || "Ami"}, Classe : ${profile.grade || "Inconnue"}.
+ARCHE DU SAVOIR : ${arche}
 
-ARCHE DE SAVOIR (Source Prioritaire) : ${JSON.stringify(archeData)}
-
-CONSIGNES :
-1. 🔴 IDENTITÉ : Si le nom/classe manque, demande-les poliment dès le début.
-2. 🔵 ARCHE : Utilise UNIQUEMENT l'Arche pour la Géo, l'Histoire, le Civisme et la Culture.
-   - SI L'ARCHE EST VIDE, explique poliment que tu consultes tes archives et pose une question générale en attendant.
-3. 🟡 INTERACTION : Pose TOUJOURS une question à l'élève pour maintenir le dialogue.
-4. STYLE : Structure avec 🔵, 🟡, 🔴. Pas de signature HEADER_MWALIMU dans ton texte.`;
+DIRECTIVES :
+1. Si le nom/classe manque, demande-les poliment.
+2. Pour la géo, l'histoire et la culture, utilise exclusivement l'Arche.
+3. Utilise le tutorat approfondi (explications claires).
+4. Réponds avec 🔵, 🟡, 🔴.
+5. Garde une suite logique avec les messages précédents.
+6. Termine toujours par une question.`;
 
     try {
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
-        // ✅ MÉMOIRE AUGMENTÉE : slice(-10) pour garder les 10 derniers messages
-        messages: [{ role: "system", content: systemPrompt }, ...studentMemory[from].history.slice(-10), { role: "user", content: text }]
+        messages: [
+            { role: "system", content: systemPrompt },
+            ...studentMemory[from].history.slice(-10),
+            { role: "user", content: text }
+        ]
       });
 
       const aiMsg = response.choices[0].message.content;
@@ -133,7 +127,8 @@ CONSIGNES :
   res.sendStatus(200);
 });
 
+// --- 🚀 7. LANCEMENT ---
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Mwalimu EdTech en ligne sur le port ${PORT}`);
+  console.log(`🚀 Mwalimu EdTech prêt sur le port ${PORT}`);
 });
