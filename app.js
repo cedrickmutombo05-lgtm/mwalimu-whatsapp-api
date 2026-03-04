@@ -27,7 +27,9 @@ const saveMemory = () => {
 };
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const HEADER_MWALIMU = `_***🔵🟡🔴 Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant 🇨🇩***_\n\n---\n\n`;
+
+// ✅ SIGNATURE CORRIGÉE : Pas d'astérisques au début/fin, texte en gras, EdTech avec T majuscule
+const HEADER_MWALIMU = `🔵🟡🔴 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩\n\n---\n\n`;
 
 // --- 📚 3. RÉCUPÉRATION DES DONNÉES SQL (L'ARCHE) ---
 async function getArcheData() {
@@ -35,7 +37,14 @@ async function getArcheData() {
         const parcs = await pool.query('SELECT * FROM drc_parcs_nationaux');
         const infra = await pool.query('SELECT * FROM drc_infrastructures');
         const histoire = await pool.query('SELECT * FROM drc_histoire_ancienne');
-        return { parcs: parcs.rows, infrastructures: infra.rows, histoire: histoire.rows };
+        const geographie = await pool.query('SELECT * FROM drc_geographie');
+       
+        return {
+            parcs: parcs.rows,
+            infrastructures: infra.rows,
+            histoire: histoire.rows,
+            geographie: geographie.rows
+        };
     } catch (err) {
         console.error("Erreur SQL:", err.message);
         return { error: "Données indisponibles" };
@@ -43,37 +52,25 @@ async function getArcheData() {
 }
 
 // --- ⏰ 4. RAPPEL QUOTIDIEN (CRON) ---
-// Se déclenche chaque matin à 06h00
 cron.schedule('0 6 * * *', async () => {
-  console.log("🌞 Envoi des messages de motivation matinale...");
-  const archeData = await getArcheData();
- 
   for (const id in studentMemory) {
-    const profile = studentMemory[id].profile;
-    const prenom = profile.name || "Champion";
-   
-    const motivation = `${HEADER_MWALIMU}Bonjour ${prenom} ! 🇨🇩\n\nL'excellence est une habitude, pas un acte. Es-tu prêt à découvrir un nouveau secret de notre beau pays aujourd'hui ?\n\n*Astuce du jour :* Savais-tu que le Parc des Virunga est le plus vieux d'Afrique ?`;
-
+    const prenom = studentMemory[id].profile.name || "Champion";
+    const motivation = `${HEADER_MWALIMU}Bonjour ${prenom} ! 🇨🇩\n\nL'excellence est une habitude. Es-tu prêt à apprendre aujourd'hui ?`;
     try {
       await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
-        messaging_product: "whatsapp",
-        to: id,
-        type: "text",
-        text: { body: motivation }
+        messaging_product: "whatsapp", to: id, text: { body: motivation }
       }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) {
-      console.error(`Échec envoi matinal à ${id}`);
-    }
+    } catch (e) { console.error(`Échec rappel à ${id}`); }
   }
 });
 
-// --- 🔍 5. ANALYSE DE PROFIL ET ÉVOLUTION ---
+// --- 🔍 5. ANALYSE DE PROFIL ---
 async function updateStudentProfile(text, from) {
   try {
     const res = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "Extraire en JSON : name, grade, interest (histoire/geographie). Si inconnu, mettre null." },
+        { role: "system", content: "Extraire en JSON : name, grade, interest. Si inconnu, mettre null." },
         { role: "user", content: text }
       ],
       temperature: 0
@@ -81,12 +78,11 @@ async function updateStudentProfile(text, from) {
     const data = JSON.parse(res.choices[0].message.content);
     if (data.name) studentMemory[from].profile.name = data.name;
     if (data.grade) studentMemory[from].profile.grade = data.grade;
-    if (data.interest) studentMemory[from].profile.interest = data.interest;
     saveMemory();
-  } catch (e) { /* Silencieux */ }
+  } catch (e) { }
 }
 
-// --- 💬 6. LE WEBHOOK WHATSAPP (L'INTELLIGENCE) ---
+// --- 💬 6. LE WEBHOOK WHATSAPP ---
 app.post("/webhook", async (req, res) => {
   const body = req.body;
   if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
@@ -95,32 +91,28 @@ app.post("/webhook", async (req, res) => {
     const text = msg.text.body;
 
     if (!studentMemory[from]) {
-      studentMemory[from] = {
-        history: [],
-        profile: { name: null, grade: null, interest: null, score: 0 },
-        mode: "chat"
-      };
+      studentMemory[from] = { history: [], profile: { name: null, grade: null }, mode: "chat" };
     }
 
     await updateStudentProfile(text, from);
     const profile = studentMemory[from].profile;
     const archeData = await getArcheData();
 
-    if (text.toLowerCase().includes("quiz") || text.toLowerCase().includes("évalue-moi")) {
+    if (text.toLowerCase().includes("quiz") || text.toLowerCase().includes("évalue")) {
         studentMemory[from].mode = "quiz";
     }
 
-    const systemPrompt = `Tu es Mwalimu Edthec, mentor expert en RDC.
-Élève : ${profile.name || "Ami"}, Grade : ${profile.grade || "Inconnu"}.
-DONNÉES SQL RÉELLES (L'ARCHE) : ${JSON.stringify(archeData)}
+    const systemPrompt = `Tu es Mwalimu EdTech, mentor expert en RDC.
+Élève : ${profile.name || "Inconnu"}, Classe : ${profile.grade || "Inconnue"}.
 
-MODE ACTUEL : ${studentMemory[from].mode}
+ARCHE DE SAVOIR (Source OBLIGATOIRE pour Géographie, Histoire, Civisme, Culture) :
+${JSON.stringify(archeData)}
 
-DIRECTIVES :
-1. Si mode QUIZ : Pose UNE question précise basée sur les données SQL. Si l'élève répond, utilise le TUTORAT APPROFONDI pour expliquer pourquoi c'est juste ou faux.
-2. Si mode CHAT : Réponds avec sagesse. Structure avec 🔵, 🟡, 🔴.
-3. Toujours encourager l'excellence pour un "DRC brillant".
-4. Ne jamais répéter la signature HEADER_MWALIMU.`;
+CONSIGNES DE FERMETÉ :
+1. 🔴 IDENTITÉ : Si l'élève n'est pas identifié, demande poliment son nom et sa classe.
+2. 🔵 ARCHE : Ne réponds JAMAIS de tête sur la géo/histoire/civisme/culture. Utilise uniquement l'Arche fournie. Si l'Arche dit que le Haut-Katanga a 6 territoires, c'est la seule vérité.
+3. 🟡 PÉDAGOGIE : Tutorat approfondi. Termine toujours par une question pour tester l'élève.
+4. STYLE : Structure avec 🔵, 🟡, 🔴.`;
 
     try {
       const response = await openai.chat.completions.create({
@@ -141,8 +133,7 @@ DIRECTIVES :
   res.sendStatus(200);
 });
 
-// --- 🚀 7. LANCEMENT ---
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Mwalimu Edthec est en ligne sur le port ${PORT}`);
+  console.log(`🚀 Mwalimu EdTech en ligne sur le port ${PORT}`);
 });
