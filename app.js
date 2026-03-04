@@ -28,39 +28,36 @@ const saveMemory = () => {
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// ✅ SIGNATURE CORRIGÉE : Pas d'astérisques au début/fin, texte en gras, EdTech avec T majuscule
+// ✅ SIGNATURE STRICTE : Pas d'astérisques au début/fin, texte en gras, EdTech avec T majuscule
 const HEADER_MWALIMU = `🔵🟡🔴 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩\n\n---\n\n`;
 
-// --- 📚 3. RÉCUPÉRATION DES DONNÉES SQL (L'ARCHE) ---
+// --- 📚 3. RÉCUPÉRATION ROBUSTE DE L'ARCHE ---
 async function getArcheData() {
+    let data = { parcs: [], infrastructures: [], histoire: [], geographie: [] };
     try {
-        const parcs = await pool.query('SELECT * FROM drc_parcs_nationaux');
-        const infra = await pool.query('SELECT * FROM drc_infrastructures');
-        const histoire = await pool.query('SELECT * FROM drc_histoire_ancienne');
-        const geographie = await pool.query('SELECT * FROM drc_geographie');
+        // On récupère chaque table séparément pour éviter qu'une seule erreur bloque tout
+        const p = await pool.query("SELECT * FROM drc_parcs_nationaux").catch(() => ({rows: []}));
+        const i = await pool.query("SELECT * FROM drc_infrastructures").catch(() => ({rows: []}));
+        const h = await pool.query("SELECT * FROM drc_histoire_ancienne").catch(() => ({rows: []}));
+        const g = await pool.query("SELECT * FROM drc_geographie").catch(() => ({rows: []}));
        
-        return {
-            parcs: parcs.rows,
-            infrastructures: infra.rows,
-            histoire: histoire.rows,
-            geographie: geographie.rows
-        };
+        data = { parcs: p.rows, infrastructures: i.rows, histoire: h.rows, geographie: g.rows };
+        return data;
     } catch (err) {
-        console.error("Erreur SQL:", err.message);
-        return { error: "Données indisponibles" };
+        return data; // Retourne au moins les tableaux vides au lieu d'une erreur fatale
     }
 }
 
-// --- ⏰ 4. RAPPEL QUOTIDIEN (CRON) ---
+// --- ⏰ 4. RAPPEL QUOTIDIEN ---
 cron.schedule('0 6 * * *', async () => {
   for (const id in studentMemory) {
     const prenom = studentMemory[id].profile.name || "Champion";
-    const motivation = `${HEADER_MWALIMU}Bonjour ${prenom} ! 🇨🇩\n\nL'excellence est une habitude. Es-tu prêt à apprendre aujourd'hui ?`;
+    const motivation = `${HEADER_MWALIMU}Bonjour ${prenom} ! L'excellence t'attend aujourd'hui.`;
     try {
       await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
         messaging_product: "whatsapp", to: id, text: { body: motivation }
       }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error(`Échec rappel à ${id}`); }
+    } catch (e) { }
   }
 });
 
@@ -70,7 +67,7 @@ async function updateStudentProfile(text, from) {
     const res = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "Extraire en JSON : name, grade, interest. Si inconnu, mettre null." },
+        { role: "system", content: "Extraire en JSON : name, grade. Si inconnu, null." },
         { role: "user", content: text }
       ],
       temperature: 0
@@ -98,26 +95,28 @@ app.post("/webhook", async (req, res) => {
     const profile = studentMemory[from].profile;
     const archeData = await getArcheData();
 
+    // Mode Quiz automatique
     if (text.toLowerCase().includes("quiz") || text.toLowerCase().includes("évalue")) {
         studentMemory[from].mode = "quiz";
     }
 
-    const systemPrompt = `Tu es Mwalimu EdTech, mentor expert en RDC.
+    const systemPrompt = `Tu es Mwalimu EdTech, mentor en RDC.
 Élève : ${profile.name || "Inconnu"}, Classe : ${profile.grade || "Inconnue"}.
 
-ARCHE DE SAVOIR (Source OBLIGATOIRE pour Géographie, Histoire, Civisme, Culture) :
-${JSON.stringify(archeData)}
+ARCHE DE SAVOIR (Source Prioritaire) : ${JSON.stringify(archeData)}
 
-CONSIGNES DE FERMETÉ :
-1. 🔴 IDENTITÉ : Si l'élève n'est pas identifié, demande poliment son nom et sa classe.
-2. 🔵 ARCHE : Ne réponds JAMAIS de tête sur la géo/histoire/civisme/culture. Utilise uniquement l'Arche fournie. Si l'Arche dit que le Haut-Katanga a 6 territoires, c'est la seule vérité.
-3. 🟡 PÉDAGOGIE : Tutorat approfondi. Termine toujours par une question pour tester l'élève.
-4. STYLE : Structure avec 🔵, 🟡, 🔴.`;
+CONSIGNES :
+1. 🔴 IDENTITÉ : Si le nom/classe manque, demande-les poliment dès le début.
+2. 🔵 ARCHE : Utilise UNIQUEMENT l'Arche pour la Géo, l'Histoire, le Civisme et la Culture.
+   - SI L'ARCHE EST VIDE, explique poliment que tu consultes tes archives et pose une question générale en attendant.
+3. 🟡 INTERACTION : Pose TOUJOURS une question à l'élève pour maintenir le dialogue.
+4. STYLE : Structure avec 🔵, 🟡, 🔴. Pas de signature HEADER_MWALIMU dans ton texte.`;
 
     try {
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
-        messages: [{ role: "system", content: systemPrompt }, ...studentMemory[from].history.slice(-6), { role: "user", content: text }]
+        // ✅ MÉMOIRE AUGMENTÉE : slice(-10) pour garder les 10 derniers messages
+        messages: [{ role: "system", content: systemPrompt }, ...studentMemory[from].history.slice(-10), { role: "user", content: text }]
       });
 
       const aiMsg = response.choices[0].message.content;
