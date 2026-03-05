@@ -11,8 +11,8 @@ require('dotenv').config();
 const app = express().use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Correction du T majuscule ici
-const HEADER_MWALIMU = "_***🔵🟡🔴 **Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩***_";
+// Header corrigé selon tes instructions (Italique, EdTech, sans astérisques aux extrémités)
+const HEADER_MWALIMU = "_🔵🟡🔴 *Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant* 🇨🇩_";
 
 // 1. CONNEXION SQL
 const pool = new Pool({
@@ -20,7 +20,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// 2. MÉMOIRE RÉSISTANTE
+// 2. MÉMOIRE RÉSISTANTE (JSON)
 const memoryPath = path.join(__dirname, 'student_memory.json');
 let studentMemory = fs.existsSync(memoryPath) ? JSON.parse(fs.readFileSync(memoryPath, 'utf8')) : {};
 
@@ -37,37 +37,25 @@ async function getDbData() {
     } catch (err) { return "Données indisponibles."; }
 }
 
-// 4. RAPPEL DE 5H00 DU MATIN
-cron.schedule('0 5 * * *', async () => {
-    for (const chatId in studentMemory) {
-        const profile = studentMemory[chatId].profile;
-        if (profile.name) {
-            const msg = `${HEADER_MWALIMU}\n\nBonjour ${profile.name} ! Il est 5h00. Ton précepteur est prêt. Qu'allons-nous découvrir aujourd'hui ?`;
-            try {
-                await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
-                    messaging_product: "whatsapp", to: chatId, text: { body: msg }
-                }, { headers: { 'Authorization': `Bearer ${process.env.TOKEN}` } });
-            } catch (e) { console.error("Erreur rappel"); }
-        }
-    }
-});
-
-// 5. WEBHOOK META (VÉRIFICATION)
+// 4. WEBHOOK META (VÉRIFICATION)
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === process.env.VERIFY_TOKEN) {
         res.status(200).send(req.query['hub.challenge']);
     } else { res.sendStatus(403); }
 });
 
-// 6. LOGIQUE DU PRÉCEPTEUR
+// 5. LOGIQUE DU PRÉCEPTEUR (SANS BÉGAIEMENT)
 app.post("/webhook", async (req, res) => {
     const body = req.body;
    
-    // --- CORRECTIF ANTI-BÉGAIEMENT ---
-    if (body.entry?.[0]?.changes?.[0]?.value?.statuses) return res.sendStatus(200);
+    // --- LA SOLUTION : RÉPONDRE IMMÉDIATEMENT À META ---
+    res.sendStatus(200);
+
+    // Bloquer les notifications de lecture/distribution
+    if (body.entry?.[0]?.changes?.[0]?.value?.statuses) return;
 
     const msgObj = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!msgObj) return res.sendStatus(404);
+    if (!msgObj || msgObj.type !== 'text') return;
 
     const from = msgObj.from;
     const text = msgObj.text.body;
@@ -94,26 +82,28 @@ app.post("/webhook", async (req, res) => {
         } catch (e) {}
 
         let reply = "";
-        if (!profile.name) reply = "Bienvenue ! Je suis Mwalimu Edthec, ton précepteur. Pour commencer, quel est ton nom ? Je suis là pour toi.";
+        if (!profile.name) reply = "Bienvenue ! Je suis Mwalimu EdTech, ton précepteur. Pour commencer, quel est ton nom ? Je suis là pour toi.";
         else if (!profile.grade) reply = `Enchanté ${profile.name} ! En quelle classe es-tu ?`;
         else if (!profile.location) reply = "C'est noté. Enfin, dans quelle ville ou province habites-tu ?";
 
         if (reply !== "") {
-            await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
+            // Un seul message envoyé ici
+            return axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
                 messaging_product: "whatsapp", to: from, text: { body: `${HEADER_MWALIMU}\n\n${reply}` }
             }, { headers: { 'Authorization': `Bearer ${process.env.TOKEN}` } });
-            return res.sendStatus(200);
         }
     }
 
-    // --- TUTORAT APPROFONDI ---
+    // --- TUTORAT APPROFONDI (RESTE DU CODE) ---
     const dbContent = await getDbData();
-    const prompt = `Tu es Mwalimu Edthec, le précepteur de ${profile.name} (${profile.grade}), ${profile.location}.\nTON ATTITUDE : Protectrice, ouverte. Dis "Je suis là pour toi".\nCONSIGNES :\n1. Utilise : ${dbContent}.\n2. Structure avec 🔵, 🟡, 🔴.\n3. Termine TOUJOURS par un Quiz A, B, C.`;
-
     try {
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
-            messages: [{ role: "system", content: prompt }, ...studentMemory[from].history.slice(-4), { role: "user", content: text }]
+            messages: [
+                { role: "system", content: `Tu es Mwalimu EdTech. Utilise : ${dbContent}. Structure : 🔵🟡🔴. Termine par un Quiz.` },
+                ...studentMemory[from].history.slice(-4),
+                { role: "user", content: text }
+            ]
         });
 
         const finalReply = `${HEADER_MWALIMU}\n\n${completion.choices[0].message.content}`;
@@ -124,11 +114,8 @@ app.post("/webhook", async (req, res) => {
         studentMemory[from].history.push({ role: "user", content: text }, { role: "assistant", content: completion.choices[0].message.content });
         saveMemory();
     } catch (e) { console.error("Erreur OpenAI"); }
-   
-    res.sendStatus(200);
 });
 
-// 7. DÉMARRAGE DU SERVEUR
 app.listen(process.env.PORT || 10000, () => {
-    console.log("Mwalimu Edthec est prêt.");
+    console.log("Mwalimu EdTech opérationnel.");
 });
