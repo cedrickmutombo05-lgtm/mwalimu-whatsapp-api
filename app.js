@@ -1,41 +1,82 @@
 
 /**
-* MWALIMU EdTech — app.js (Blindé)
-* - Stockage élèves + messages dans Postgres (scalable)
-* - Anti-doublon messages via table processed_messages (scalable multi-instances)
-* - Rappel 05h00 + advisory lock (évite double envoi)
-* - DB prioritaire pour admin (province/territoire/commune) + réponse ferme si DB contient la réponse
-* - “j’habite Lubumbashi” = info de profil, pas une question
-* - Sensible + ambigu => 1 question de précision (mais pas si province déjà citée)
+* MWALIMU EdTech — app.js (IA launch, standards internationaux)
+* WhatsApp Cloud API + OpenAI + PostgreSQL (DATABASE_URL)
+*
+* ✅ Always 200 OK fast to Meta, then process async
+* ✅ Dedup message_id in Postgres (multi-instance safe)
+* ✅ Optional webhook signature verification (X-Hub-Signature-256)
+* ✅ Strong onboarding state machine (no loop / no “Lubumbashi treated as question”)
+* ✅ Admin RDC questions => DB-first (provinces/territoires/communes) + “no excuses”
+* ✅ Warm, human replies + always end with action/menu
 */
 
 const express = require("express");
 const axios = require("axios");
-const { OpenAI } = require("openai");
-const cron = require("node-cron");
+const crypto = require("crypto");
 const { Pool } = require("pg");
+const { OpenAI } = require("openai");
 require("dotenv").config();
 
-const app = express().use(express.json());
+const app = express();
+
+/* -------------------- RAW BODY for signature verification -------------- */
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf; // keep raw body for signature check
+    },
+  })
+);
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+/* ----------------------------- CONFIG --------------------------------- */
+const PORT = process.env.PORT || 10000;
+
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const WHATSAPP_TOKEN = process.env.TOKEN;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+
+// Optional but recommended for security
+const APP_SECRET = process.env.META_APP_SECRET || "";
+
+// feature flags
+const ENABLE_SIGNATURE_CHECK = (process.env.ENABLE_SIGNATURE_CHECK || "false").toLowerCase() === "true";
+const LAUNCH_MODE = (process.env.LAUNCH_MODE || "ai").toLowerCase(); // ai | hybrid | db
+const AI_USAGE_PERCENT = Number(process.env.AI_USAGE_PERCENT || 80); // for hybrid mode
+
 /* ----------------------------- HEADER --------------------------------- */
-const HEADER_MWALIMU =
+const HEADER =
   "_🔵🟡🔴 *Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant* 🇨🇩_";
 
-/* -------------------------- WARM STYLE -------------------------------- */
 const WARM_STARTERS = [
   "Bonsoir champion(ne) 😊 Je suis content de te retrouver.",
-  "Bonsoir champion(ne) 🌟 On avance ensemble, tu vas y arriver.",
-  "Bonsoir 😊 Installe-toi, on va apprendre tranquillement.",
-  "Salut champion(ne) 👋 je suis avec toi pour étudier.",
-  "Bonsoir 😊 chaque petit effort te rapproche de ton objectif."
+  "Salut champion(ne) 👋 On avance ensemble, tu vas y arriver.",
+  "Bonsoir 🌟 Merci d’être là. On étudie tranquillement.",
+  "Heyy 😊 Je suis là avec toi, pas à pas.",
+  "Bonsoir 💪 Tu progresses, continue comme ça !",
 ];
-function getWarmStarter() {
-  return WARM_STARTERS[Math.floor(Math.random() * WARM_STARTERS.length)];
+const ENCOURAGE = ["Bravo 👏", "Excellent 🌟", "Très bon effort 💪", "Tu progresses bien 😊", "Super 🚀"];
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
-function buildReply(content) {
-  return `${HEADER_MWALIMU}\n\n${getWarmStarter()}\n\n${content}`;
+
+function menuText() {
+  return (
+    "Que veux-tu faire maintenant ?\n\n" +
+    "1️⃣ Leçon\n" +
+    "2️⃣ Exercice\n" +
+    "3️⃣ Quiz\n\n" +
+    "Réponds juste par 1, 2 ou 3 😊"
+  );
+}
+
+function pack(main, { includeMenu = true } = {}) {
+  let out = `${HEADER}\n\n${pick(WARM_STARTERS)}\n\n${main}`;
+  if (includeMenu) out += `\n\n${menuText()}`;
+  return out;
 }
 
 /* ----------------------------- DB ------------------------------------- */
@@ -44,7 +85,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-/* ---------------------- INIT TABLES (1 fois) -------------------------- */
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS students (
@@ -52,6 +92,7 @@ async function initDb() {
       name TEXT,
       grade TEXT,
       location TEXT,
+      stage TEXT DEFAULT 'onboarding', -- onboarding | menu | session
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
@@ -67,7 +108,6 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_messages_phone_created ON messages(phone, created_at DESC);
   `);
 
-  // Anti-doublon scalable (multi-instances)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS processed_messages (
       message_id TEXT PRIMARY KEY,
@@ -75,512 +115,394 @@ async function initDb() {
     );
   `);
 }
-initDb().catch((e) => console.error("initDb error:", e.message));
 
-/* ------------------- WHATSAPP SEND (centralisé) ------------------------ */
-async function sendWhatsApp(to, bodyText) {
+initDb().catch((e) => console.error("initDb:", e.message));
+
+async function getStudent(phone) {
+  const r = await pool.query(`SELECT phone,name,grade,location,stage FROM students WHERE phone=$1`, [phone]);
+  return r.rows[0] || { phone, name: null, grade: null, location: null, stage: "onboarding" };
+}
+
+async function upsertStudent({ phone, name, grade, location, stage }) {
+  await pool.query(
+    `INSERT INTO students(phone,name,grade,location,stage,updated_at)
+     VALUES ($1,$2,$3,$4,$5,NOW())
+     ON CONFLICT (phone) DO UPDATE SET
+       name=COALESCE(EXCLUDED.name, students.name),
+       grade=COALESCE(EXCLUDED.grade, students.grade),
+       location=COALESCE(EXCLUDED.location, students.location),
+       stage=COALESCE(EXCLUDED.stage, students.stage),
+       updated_at=NOW()`,
+    [phone, name || null, grade || null, location || null, stage || null]
+  );
+}
+
+async function saveMessage(phone, role, content) {
+  await pool.query(`INSERT INTO messages(phone,role,content) VALUES ($1,$2,$3)`, [phone, role, content]);
+}
+
+async function loadHistory(phone, limit = 6) {
+  const r = await pool.query(
+    `SELECT role, content FROM messages WHERE phone=$1 ORDER BY created_at DESC LIMIT $2`,
+    [phone, limit]
+  );
+  return r.rows.reverse().map((m) => ({ role: m.role, content: m.content }));
+}
+
+async function isDuplicateMessageId(messageId) {
+  if (!messageId) return false;
+  const r = await pool.query(
+    `INSERT INTO processed_messages(message_id) VALUES ($1)
+     ON CONFLICT (message_id) DO NOTHING
+     RETURNING message_id`,
+    [messageId]
+  );
+  return r.rowCount === 0;
+}
+
+/* ---------------------- WhatsApp send --------------------------------- */
+async function sendWhatsApp(to, text) {
   try {
     await axios.post(
-      `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
-      { messaging_product: "whatsapp", to, text: { body: bodyText } },
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      { messaging_product: "whatsapp", to, text: { body: text } },
       {
         headers: {
-          Authorization: `Bearer ${process.env.TOKEN}`,
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
           "Content-Type": "application/json",
         },
         timeout: 15000,
       }
     );
   } catch (e) {
-    console.error("Erreur WhatsApp:", e.response?.data || e.message);
+    console.error("WhatsApp send error:", e.response?.data || e.message);
   }
 }
 
-/* ------------- Anti-doublon webhook (scalable Postgres) --------------- */
-async function isDuplicateMessageId(messageId) {
-  if (!messageId) return false;
+/* ---------------------- Webhook signature check ------------------------ */
+// X-Hub-Signature-256: "sha256=<hex>"
+function verifySignature(req) {
+  if (!ENABLE_SIGNATURE_CHECK) return true;
+  if (!APP_SECRET) return false;
+
+  const header = req.get("x-hub-signature-256") || "";
+  const [algo, sig] = header.split("=");
+  if (algo !== "sha256" || !sig) return false;
+
+  const expected = crypto.createHmac("sha256", APP_SECRET).update(req.rawBody || Buffer.from("")).digest("hex");
+
+  // constant time compare
   try {
-    const r = await pool.query(
-      `INSERT INTO processed_messages(message_id) VALUES ($1)
-       ON CONFLICT (message_id) DO NOTHING
-       RETURNING message_id`,
-      [messageId]
-    );
-    return r.rowCount === 0; // si déjà existant => duplicate
-  } catch (e) {
-    // En cas d’erreur, on évite de spammer => on traite quand même
-    console.error("isDuplicateMessageId error:", e.message);
+    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  } catch {
     return false;
   }
 }
 
-/* ----------------------- JSON SAFE (profil) --------------------------- */
-function safeJsonParse(text) {
-  if (!text || typeof text !== "string") return null;
-  try {
-    return JSON.parse(text);
-  } catch (_) {}
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return null;
-  try {
-    return JSON.parse(m[0]);
-  } catch (_) {
-    return null;
-  }
-}
-
-/* ------------ Profil: “info” vs “question” (FIX Lubumbashi) ----------- */
-function looksLikeAQuestion(text) {
+/* ---------------------- Helpers: detect onboarding text ---------------- */
+function looksLikeQuestion(text) {
   const t = (text || "").trim().toLowerCase();
   if (t.includes("?")) return true;
-  const qWords = ["pourquoi", "comment", "combien", "où", "ou", "quel", "quelle", "quels", "quelles", "c'est quoi", "explique"];
-  return qWords.some((w) => t.startsWith(w) || t.includes(` ${w} `));
-}
-function isJustProfileInfo(text) {
-  const t = (text || "").toLowerCase();
-  const patterns = [
-    "j'habite", "je vis", "je suis à", "je suis a", "je suis de",
-    "mon nom", "je m'appelle", "m'appelle",
-    "je suis en", "classe", "option"
-  ];
-  return patterns.some((p) => t.includes(p)) && !looksLikeAQuestion(text);
+  const q = ["pourquoi", "comment", "combien", "où", "ou", "quel", "quelle", "quels", "quelles", "c'est quoi", "explique"];
+  return q.some((w) => t.startsWith(w) || t.includes(` ${w} `));
 }
 
-/* ------------------ Provinces & admin triggers ------------------------ */
-const PROVINCE_KEYWORDS = [
+function profileish(text) {
+  const t = (text || "").toLowerCase();
+  const patterns = ["prenom", "prénom", "mon nom", "je m'appelle", "m'appelle", "j'habite", "je vis", "je suis à", "je suis a", "je suis de", "classe", "niveau", "option", "je suis en", "suis en", "(1)", "(2)", "(3)"];
+  return patterns.some((p) => t.includes(p)) && !looksLikeQuestion(text);
+}
+
+function normalizeGrade(grade) {
+  if (!grade) return null;
+  return grade
+    .toString()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace("eme", "e")
+    .replace("ème", "e")
+    .replace("éme", "e");
+}
+
+/* ---------------------- Admin RDC topics => DB-first ------------------- */
+const PROVINCES = [
   "kongo central","bas-congo",
   "haut-katanga","haut katanga",
-  "lualaba",
-  "kinshasa",
-  "kasaï","kasai",
-  "kasaï central","kasai central",
-  "kasaï oriental","kasai oriental",
-  "ituri",
-  "tshopo",
-  "sud-kivu","sud kivu",
-  "nord-kivu","nord kivu",
-  "maniema",
-  "tanganyika",
-  "sankuru",
-  "mai-ndombe","mai ndombe",
-  "kwilu",
-  "kwango",
-  "mongala",
-  "equateur","équateur",
-  "bas-uele","bas uele",
-  "haut-uele","haut uele",
-  "lomami",
-  "tsuapa",
-  "sud-ubangi","sud ubangi",
-  "nord-ubangi","nord ubangi"
+  "lualaba","kinshasa",
+  "kasaï","kasai","kasaï central","kasai central","kasaï oriental","kasai oriental",
+  "ituri","tshopo","sud-kivu","sud kivu","nord-kivu","nord kivu",
+  "maniema","tanganyika","sankuru","mai-ndombe","mai ndombe",
+  "kwilu","kwango","mongala","equateur","équateur",
+  "bas-uele","bas uele","haut-uele","haut uele",
+  "lomami","tsuapa","sud-ubangi","sud ubangi","nord-ubangi","nord ubangi"
 ];
 
-function isSovereigntyQuestion(text) {
+function isAdminTopic(text) {
   const t = (text || "").toLowerCase();
-
-  // ✅ Coup 2 : dès qu’on parle d’organisation administrative => DB
-  const adminTriggers = [
-    "territoire","territoires",
-    "province","provinces",
-    "commune","communes",
-    "district","secteur","chefferie",
-    "ville","villes",
-    "frontière","frontiere","frontières","frontieres",
-    "carte"
-  ];
-  if (adminTriggers.some(k => t.includes(k))) return true;
-
-  // ✅ si province/lieu cité => DB
-  if (PROVINCE_KEYWORDS.some(p => t.includes(p))) return true;
-
-  // institutions/souveraineté classiques
-  const keywords = [
-    "rdc","république démocratique du congo","republique democratique du congo",
-    "souveraineté","souverainete",
-    "etat","état",
-    "constitution","parlement","assemblée","assemblee","sénat","senat",
-    "cour constitutionnelle",
-    "gouvernement","président","president","premier ministre",
-    "drapeau","hymne","armoiries",
-    "indépendance","independance","zaïre","zaire"
-  ];
-  return keywords.some(k => t.includes(k));
+  const triggers = ["territoire","territoires","province","provinces","commune","communes","district","secteur","chefferie","frontière","frontiere","carte"];
+  return triggers.some((k) => t.includes(k)) || PROVINCES.some((p) => t.includes(p));
 }
 
-/* ------------------ Sensible + ambigu (amélioré) ----------------------- */
-function isSensitiveCivicsQuestion(text) {
-  const t = (text || "").toLowerCase();
-  const words = [
-    "constitution","parlement","assemblée","assemblee","sénat","senat","bicam",
-    "président","president","premier ministre","gouvernement","opposition",
-    "élection","election","vote","loi","décret","decret","justice","cour constitutionnelle",
-    "souveraineté","souverainete",
-    "inflation","dette","budget","pib","taux de change","franc congolais",
-    "pauvreté","pauvrete","chômage","chomage","inégalité","inegalite",
-    "indépendance","independance","zaïre","zaire","histoire","géographie","geographie",
-    "province","territoire","frontière","frontiere"
-  ];
-  return words.some(w => t.includes(w));
-}
-
-function isAmbiguousSensitiveQuestion(text) {
-  const t = (text || "").toLowerCase().trim();
-
-  // ✅ si province déjà citée => pas ambigu
-  if (PROVINCE_KEYWORDS.some(p => t.includes(p))) return false;
-
-  if (t.length < 18) return true;
-
-  const vaguePatterns = [
-    "explique la politique","explique l'économie",
-    "parle-moi de la rdc","parle moi de la rdc","parle-moi du pouvoir",
-    "comment ça marche","comment ca marche",
-    "c'est quoi le système","cest quoi le systeme",
-    "forme de l'état","forme de l etat",
-    "système politique","systeme politique",
-    "bicam","gouvernement","parlement","constitution",
-    "élections","elections","budget","inflation","pib",
-    "frontières","frontieres","histoire"
-  ];
-  const hasVague = vaguePatterns.some(p => t.includes(p));
-
-  const hasPrecision =
-    /\b(1990|2001|2002|2003|2006|2011|2018|2023|2024|2025|2026)\b/.test(t) ||
-    t.includes("article") || t.includes("art.") ||
-    t.includes("assemblée nationale") || t.includes("assemblee nationale") ||
-    t.includes("sénat") || t.includes("senat") ||
-    t.includes("cour constitutionnelle");
-
-  return hasVague && !hasPrecision;
-}
-
-function buildClarifyQuestion(text) {
-  const t = (text || "").toLowerCase();
-
-  if (t.includes("territoire") || t.includes("territoires")) {
-    return "Tu veux (1) le nombre de territoires, (2) la liste des territoires, ou (3) une courte explication ? Réponds 1, 2 ou 3 😊";
-  }
-  if (t.includes("province") || t.includes("provinces")) {
-    return "Tu veux (1) le nombre de provinces, (2) la liste des provinces, ou (3) une explication ? Réponds 1, 2 ou 3 😊";
-  }
-  if (t.includes("bicam") || t.includes("parlement")) {
-    return "Tu veux comprendre (1) la composition du Parlement (Assemblée + Sénat) ou (2) le rôle de chaque chambre ? Réponds 1 ou 2 😊";
-  }
-  if (t.includes("constitution") || t.includes("article") || t.includes("art.")) {
-    return "Tu parles de la Constitution de 2006 (et ses révisions) ou d’un article précis ? Donne-moi l’article ou le thème 😊";
-  }
-  if (t.includes("élection") || t.includes("election") || t.includes("vote")) {
-    return "Tu veux parler des élections présidentielles, législatives ou provinciales ? 😊";
-  }
-  if (t.includes("inflation") || t.includes("pib") || t.includes("budget") || t.includes("taux de change")) {
-    return "Tu veux une explication simple, ou un exemple concret avec la vie quotidienne (prix, salaire, FC) ? 😊";
-  }
-  return "Tu veux que je t’explique le principe général, ou un point précis ? Donne-moi le point précis 😊";
-}
-
-/* -------------------- DB SEARCH (Coup 2 intégré) ----------------------- */
-function extractDbKey(question) {
-  const q = (question || "").toLowerCase();
-  // ✅ clé province si présente
-  for (const p of PROVINCE_KEYWORDS) {
-    if (q.includes(p)) return p;
-  }
-  // fallback: quelques mots admin
+function extractDbKey(text) {
+  const q = (text || "").toLowerCase();
+  for (const p of PROVINCES) if (q.includes(p)) return p;
   if (q.includes("territoire")) return "territoire";
   if (q.includes("province")) return "province";
   if (q.includes("commune")) return "commune";
-  return (question || "").trim();
+  return (text || "").trim();
 }
 
-async function searchDbSovereignty(question) {
+async function searchDbAdmin(text) {
+  const key = extractDbKey(text);
+  if (!key) return [];
   try {
-    const key = extractDbKey(question);
-    if (!key) return [];
-
     const geo = await pool.query(
-      `SELECT 'geo' AS source, *
-       FROM drc_geographie
+      `SELECT 'geo' AS source, * FROM drc_geographie
        WHERE CAST(drc_geographie AS TEXT) ILIKE $1
        LIMIT 12`,
       [`%${key}%`]
     );
-
     const hist = await pool.query(
-      `SELECT 'hist' AS source, *
-       FROM drc_histoire_ancienne
+      `SELECT 'hist' AS source, * FROM drc_histoire_ancienne
        WHERE CAST(drc_histoire_ancienne AS TEXT) ILIKE $1
        LIMIT 12`,
       [`%${key}%`]
     );
-
     return [...geo.rows, ...hist.rows];
   } catch (e) {
-    console.error("Erreur DB search:", e.message);
+    console.error("searchDbAdmin:", e.message);
     return [];
   }
 }
 
-/* ------------------ PROMPT MWALIMU (Coup 1 intégré) ------------------- */
-const MWALIMU_SYSTEM_PROMPT = `
-Tu es MWALIMU EDTECH, un précepteur congolais chaleureux, patient, proche de l’élève.
+/* ---------------------- OpenAI: profile extraction --------------------- */
+async function extractProfile(text) {
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: 'Réponds UNIQUEMENT en JSON valide: {"name":null|string,"grade":null|string,"location":null|string}.',
+        },
+        {
+          role: "user",
+          content: `Message: "${text}". Extrais prénom, classe (ex: 8e, 6e primaire), ville/province. Si inconnu -> null.`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
 
-STYLE
+    const raw = res.choices?.[0]?.message?.content || "{}";
+    const obj = JSON.parse(raw);
+
+    // block "Mwalimu" as a student's name
+    if (obj?.name && obj.name.toLowerCase().includes("mwalimu")) obj.name = null;
+
+    if (obj?.grade) obj.grade = normalizeGrade(obj.grade);
+    return { name: obj?.name || null, grade: obj?.grade || null, location: obj?.location || null };
+  } catch (e) {
+    console.error("extractProfile:", e.message);
+    return { name: null, grade: null, location: null };
+  }
+}
+
+/* ---------------------- OpenAI: tutoring answer ------------------------ */
+function shouldUseAI() {
+  if (LAUNCH_MODE === "ai") return true;
+  if (LAUNCH_MODE === "db") return false;
+  // hybrid
+  return Math.random() * 100 < AI_USAGE_PERCENT;
+}
+
+const SYSTEM_PROMPT = `
+Tu es MWALIMU EDTECH: un précepteur congolais chaleureux, très pédagogue.
+Règles:
 - Interdit: "Comment puis-je vous aider ?"
-- Ton humain, encourageant, rassurant.
-- Explications simples + 1 exemple.
-- Si tu n’es pas sûr d’un fait précis (nom/date/chiffre): tu le dis clairement.
+- Réponse courte, claire: 4-10 lignes si possible.
+- Toujours encouragement.
+- Toujours finir par une action (quoi répondre).
+- Si tu ne sais pas: dis-le clairement, ne devine pas.
 
-RÈGLE SOURCES (OBLIGATOIRE)
-- Tu commences TOUJOURS la réponse par une ligne:
-  "Source: ..."
-Formats autorisés:
-- "Source: Base Mwalimu (DB)"
-- "Source: Connaissance générale"
-- "Source: Base Mwalimu (DB) + Connaissance générale"
-
-RÈGLE ADMINISTRATIVE (IMPORTANT — COUP 1)
-- Pour provinces/territoires/communes/villes, tu réponds D’ABORD avec DB_CONTEXT.
-- Interdit de dire "ça peut changer" / "il faut vérifier" SI DB_CONTEXT contient déjà la réponse.
-- Si DB_CONTEXT est vide, tu dis exactement:
+ADMIN RDC (si DB_CONTEXT est fourni):
+- Réponds d’abord depuis DB_CONTEXT.
+- Interdit de dire "ça peut changer" si DB_CONTEXT contient la réponse.
+- Si DB_CONTEXT est vide: dis exactement
   "Je n’ai pas trouvé cette information dans la base Mwalimu."
-  Puis tu proposes: (1) ajouter le cours dans la base, ou (2) demander une précision.
+  puis propose: ajouter le cours ou préciser.
 
-PARALLÉLISME
-- Tu peux faire une comparaison avec d’autres pays si cela aide à comprendre (sans inventer de faits).
-
-PHRASES CHARNIÈRES (OBLIGATOIRE)
-- Après le mini-quiz, ajoute toujours une phrase de suivi, par exemple:
-  "Je suis là 😊 Réponds juste 1, 2, 3…"
-  "Prends ton temps et envoie-moi tes réponses."
-  "Si tu veux, je te donne aussi un autre exercice."
-
-STRUCTURE FIN
-- Termine par:
-  (1) 1 question courte de vérification
-  (2) mini-quiz (3 questions max)
-  (3) 1 phrase charnière (jamais silencieux)
+Structure conseillée:
+1) Explication simple
+2) Exemple
+3) Mini-quiz (max 3)
+4) Phrase charnière: "Je suis là 😊 ..."
 `;
 
-/* ------------------- STUDENTS + HISTORY (Postgres) --------------------- */
-async function getStudent(phone) {
-  const r = await pool.query(`SELECT phone, name, grade, location FROM students WHERE phone=$1`, [phone]);
-  return r.rows[0] || { phone, name: null, grade: null, location: null };
-}
-async function upsertStudent({ phone, name, grade, location }) {
-  await pool.query(
-    `INSERT INTO students(phone, name, grade, location, updated_at)
-     VALUES ($1,$2,$3,$4,NOW())
-     ON CONFLICT (phone)
-     DO UPDATE SET name=COALESCE(EXCLUDED.name, students.name),
-                   grade=COALESCE(EXCLUDED.grade, students.grade),
-                   location=COALESCE(EXCLUDED.location, students.location),
-                   updated_at=NOW()`,
-    [phone, name || null, grade || null, location || null]
-  );
-}
-async function saveMessage(phone, role, content) {
-  await pool.query(`INSERT INTO messages(phone, role, content) VALUES ($1,$2,$3)`, [phone, role, content]);
-}
-async function loadRecentHistory(phone, limit = 6) {
-  const r = await pool.query(
-    `SELECT role, content FROM messages WHERE phone=$1 ORDER BY created_at DESC LIMIT $2`,
-    [phone, limit]
-  );
-  // remettre dans l’ordre chronologique
-  return r.rows.reverse().map(m => ({ role: m.role, content: m.content }));
+async function tutorAnswer({ phone, student, userText, dbContext }) {
+  const history = await loadHistory(phone, 6);
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: `${SYSTEM_PROMPT}\n\nDB_CONTEXT=${dbContext || ""}` },
+      ...history,
+      { role: "user", content: userText },
+    ],
+  });
+
+  return completion.choices?.[0]?.message?.content?.trim() || "";
 }
 
-/* ------------------- LOCK POSTGRES (cron) ------------------------------ */
-async function tryAcquireLock(lockKeyInt) {
-  const r = await pool.query("SELECT pg_try_advisory_lock($1) AS ok", [lockKeyInt]);
-  return r.rows?.[0]?.ok === true;
-}
-async function releaseLock(lockKeyInt) {
-  await pool.query("SELECT pg_advisory_unlock($1)", [lockKeyInt]);
-}
-
-/* ------------------ RAPPEL MOTIVANT 05H00 ------------------------------ */
-cron.schedule(
-  "0 5 * * *",
-  async () => {
-    if ((process.env.ENABLE_DAILY_REMINDER || "true").toLowerCase() !== "true") return;
-
-    const LOCK_KEY = 90500;
-    const gotLock = await tryAcquireLock(LOCK_KEY);
-    if (!gotLock) return;
-
-    try {
-      // Pour 200k, on n’envoie pas à tous d’un coup ici (risque rate-limit WhatsApp).
-      // On envoie aux “actifs” (ex: derniers 2 jours). Ajuste si tu veux.
-      const r = await pool.query(`
-        SELECT DISTINCT phone
-        FROM messages
-        WHERE created_at >= NOW() - INTERVAL '2 days'
-        LIMIT 5000
-      `);
-
-      for (const row of r.rows) {
-        const to = row.phone;
-        const st = await getStudent(to);
-        const name = st.name || "champion";
-
-        const reminder =
-          `🔵🟡🔴 Bonjour ${name} 😊🌅\n\n` +
-          `Un petit mot pour te rappeler que chaque jour d’étude te rapproche de ton rêve.\n` +
-          `Je suis là avec toi aujourd’hui 📚\n\n` +
-          `Écris simplement :\n` +
-          `1️⃣ leçon\n2️⃣ exercice\n3️⃣ quiz`;
-
-        await sendWhatsApp(to, `${HEADER_MWALIMU}\n\n${reminder}`);
-      }
-    } catch (e) {
-      console.error("Erreur cron 05h00:", e.message);
-    } finally {
-      await releaseLock(LOCK_KEY);
-    }
-  },
-  { timezone: "Africa/Lubumbashi" }
-);
-
-/* ------------------- WEBHOOK VERIFY ----------------------------------- */
+/* ---------------------- Webhook verify -------------------------------- */
 app.get("/webhook", (req, res) => {
-  if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
+  if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
     return res.status(200).send(req.query["hub.challenge"]);
   }
   return res.sendStatus(403);
 });
 
-/* ------------------- WEBHOOK MESSAGE ---------------------------------- */
-app.post("/webhook", async (req, res) => {
-  const body = req.body;
+/* ---------------------- Webhook receive -------------------------------- */
+app.post("/webhook", (req, res) => {
+  // ✅ respond immediately to avoid retries
   res.sendStatus(200);
 
-  if (body.entry?.[0]?.changes?.[0]?.value?.statuses) return;
+  // Security check (optional)
+  if (!verifySignature(req)) {
+    console.error("Invalid webhook signature");
+    return;
+  }
 
-  const msgObj = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-  if (!msgObj || msgObj.type !== "text") return;
+  // process async
+  setImmediate(() => handleWebhook(req.body).catch((e) => console.error("handleWebhook:", e)));
+});
 
-  // ✅ Anti-doublon multi-instances (blindé)
-  if (await isDuplicateMessageId(msgObj.id)) return;
+async function handleWebhook(body) {
+  // ignore status updates
+  if (body?.entry?.[0]?.changes?.[0]?.value?.statuses) return;
 
-  const from = msgObj.from;
-  const text = msgObj.text?.body || "";
+  const msg = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  if (!msg || msg.type !== "text") return;
 
-  // Charger élève depuis DB
-  let profile = await getStudent(from);
+  // dedupe (multi-instances)
+  if (await isDuplicateMessageId(msg.id)) return;
 
-  /* ------------------ A) IDENTIFICATION (1 message global) ------------ */
-  if (!profile.name || !profile.grade || !profile.location) {
-    // 1) si l'élève envoie une info de profil simple => on enregistre + on confirme court
-    if (isJustProfileInfo(text)) {
-      // tenter d’extraire sans déclencher “cours sur Lubumbashi”
-      try {
-        const aicheck = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: 'Réponds UNIQUEMENT en JSON: {"name":null|string,"grade":null|string,"location":null|string}.' },
-            { role: "user", content: `Texte élève: "${text}". Extrais Nom, Classe, Ville. Si inconnu -> null.` }
-          ],
-          response_format: { type: "json_object" },
-        });
+  const from = msg.from;
+  const text = (msg.text?.body || "").trim();
+  if (!text) return;
 
-        const found = safeJsonParse(aicheck.choices?.[0]?.message?.content || "") || {};
+  // save user message
+  await saveMessage(from, "user", text);
 
-        // ✅ empêcher "Mwalimu" comme nom d’élève
-        if (found?.name && found.name.toLowerCase().includes("mwalimu")) found.name = null;
+  let student = await getStudent(from);
 
-        await upsertStudent({
-          phone: from,
-          name: found.name || null,
-          grade: found.grade || null,
-          location: found.location || null,
-        });
+  /* ---------------- ONBOARDING: strict and reliable ---------------- */
+  if (!student.name || !student.grade || !student.location || student.stage === "onboarding") {
+    // Always attempt extraction during onboarding (prevents loops)
+    if (profileish(text) || text.length <= 120) {
+      const found = await extractProfile(text);
+      await upsertStudent({ phone: from, name: found.name, grade: found.grade, location: found.location, stage: "onboarding" });
+      student = await getStudent(from);
+    }
 
-        profile = await getStudent(from);
-      } catch (e) {
-        console.error("Erreur extraction profil (info):", e.message);
-      }
-
-      let confirm = "Parfait 😊 j’ai bien noté. ";
-      if (!profile.name || !profile.grade || !profile.location) {
-        confirm +=
-          "Avant de commencer, dis-moi en un seul message :\n\n" +
-          "1️⃣ Ton prénom\n" +
-          "2️⃣ Ta classe\n" +
-          "3️⃣ Ta ville ou province\n\n" +
-          "Je suis là, prends ton temps ✍️";
-      } else {
-        confirm += "Super ! Tu veux commencer par (1) leçon (2) exercice (3) quiz ? 😊";
-      }
-
-      await sendWhatsApp(from, buildReply(confirm));
+    if (student.name && student.grade && student.location) {
+      await upsertStudent({ phone: from, stage: "menu" });
+      const ok =
+        `${pick(ENCOURAGE)} ${student.name} 😊\n\n` +
+        `J’ai noté : ${student.grade}, ${student.location}.\n` +
+        `On commence tranquillement 📚`;
+      const out = pack(ok, { includeMenu: true });
+      await sendWhatsApp(from, out);
+      await saveMessage(from, "assistant", out);
       return;
     }
 
-    // 2) Sinon, on demande DIRECTEMENT tout en une fois (prise de contact)
-    const ask =
-      "Avant de commencer 😊 dis-moi en un seul message :\n\n" +
-      "1️⃣ Ton prénom\n" +
-      "2️⃣ Ta classe (ex: 6e primaire, 8e, 1re, 4e des humanités…)\n" +
-      "3️⃣ Ta ville ou province\n\n" +
-      "Je suis là, prends ton temps ✍️";
+    // ask only missing fields
+    let ask = "Avant de commencer 😊 envoie-moi en un seul message :\n\n";
+    if (!student.name) ask += "1️⃣ Ton prénom\n";
+    if (!student.grade) ask += "2️⃣ Ta classe (ex: 8e, 6e primaire…)\n";
+    if (!student.location) ask += "3️⃣ Ta ville ou province\n";
+    ask += "\nJe suis là, prends ton temps ✍️";
 
-    await sendWhatsApp(from, buildReply(ask));
+    const out = pack(ask, { includeMenu: false });
+    await sendWhatsApp(from, out);
+    await saveMessage(from, "assistant", out);
     return;
   }
 
-  /* ----------- B) CHECKPOINT: sensible + ambigu => précision ----------- */
-  const sensitive = isSensitiveCivicsQuestion(text);
-  const ambiguous = sensitive && isAmbiguousSensitiveQuestion(text);
-  if (ambiguous) {
-    await sendWhatsApp(from, buildReply(buildClarifyQuestion(text)));
-    return;
-  }
-
-  /* -------------------- C) TUTORAT + DB LOGIC -------------------------- */
-  const sovereignty = isSovereigntyQuestion(text);
-
-  let dbContext = "";
-  if (sovereignty) {
-    const hits = await searchDbSovereignty(text);
-    dbContext = hits.length ? JSON.stringify(hits).slice(0, 9000) : "[]";
-  }
-
-  try {
-    const history = await loadRecentHistory(from, 6);
-
-    const systemContent = sovereignty
-      ? `${MWALIMU_SYSTEM_PROMPT}\n\nDB_CONTEXT=${dbContext}`
-      : `${MWALIMU_SYSTEM_PROMPT}\n\nDB_CONTEXT=`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemContent },
-        ...history,
-        { role: "user", content: text },
-      ],
-    });
-
-    const aiText =
-      completion.choices?.[0]?.message?.content ||
-      "Source: Connaissance générale\nJe suis là 😊 Peux-tu reformuler un tout petit peu ?";
-
-    await sendWhatsApp(from, buildReply(aiText));
-
-    // ✅ sauvegarde scalable
-    await saveMessage(from, "user", text);
-    await saveMessage(from, "assistant", aiText);
-  } catch (e) {
-    console.error("Erreur OpenAI:", e.message);
-    await sendWhatsApp(
-      from,
-      buildReply("Source: Connaissance générale\nOups 😅 petit souci technique. Réécris ta question, je suis là.")
+  /* ---------------- MENU quick path (international UX) ---------------- */
+  const t = text.toLowerCase();
+  if (text === "1" || t.includes("leçon") || t.includes("lecon")) {
+    const out = pack(
+      `${pick(ENCOURAGE)}\n\nChoisis une matière 😊\n1️⃣ Math\n2️⃣ Français\n3️⃣ Sciences\n\nRéponds 1, 2 ou 3.`,
+      { includeMenu: false }
     );
+    await sendWhatsApp(from, out);
+    await saveMessage(from, "assistant", out);
+    return;
   }
-});
+
+  if (text === "2" || t.includes("exercice") || t.includes("exo")) {
+    const out = pack(
+      `${pick(ENCOURAGE)}\n\nExercice rapide (niveau ${student.grade}) ✍️\n1) 8+7=?\n2) 12-5=?\n3) 6×3=?\n\nRéponds comme: 1) .. 2) .. 3) ..\nJe suis là 😊`,
+      { includeMenu: true }
+    );
+    await sendWhatsApp(from, out);
+    await saveMessage(from, "assistant", out);
+    return;
+  }
+
+  if (text === "3" || t.includes("quiz")) {
+    const out = pack(
+      `${pick(ENCOURAGE)}\n\n🧠 Mini-quiz RDC:\nA) Capitale RDC ?\nB) Langue officielle ?\nC) Couleurs du drapeau ?\n\nRéponds: A=..., B=..., C=...\nJe suis là 😊`,
+      { includeMenu: true }
+    );
+    await sendWhatsApp(from, out);
+    await saveMessage(from, "assistant", out);
+    return;
+  }
+
+  /* ---------------- Admin RDC => DB-first (then AI) ---------------- */
+  if (isAdminTopic(text)) {
+    const hits = await searchDbAdmin(text);
+    const dbContext = hits.length ? JSON.stringify(hits).slice(0, 9000) : "";
+
+    if (!hits.length) {
+      const out = pack(
+        "Je n’ai pas trouvé cette information dans la base Mwalimu.\n\nTu veux que j’ajoute ce cours dans la base, ou tu veux préciser la province/territoire ? 😊",
+        { includeMenu: true }
+      );
+      await sendWhatsApp(from, out);
+      await saveMessage(from, "assistant", out);
+      return;
+    }
+
+    // Launch with AI: summarize DB + teach + quiz
+    const ai = await tutorAnswer({ phone: from, student, userText: text, dbContext });
+
+    const out = pack(`${pick(ENCOURAGE)}\n\n${ai}`, { includeMenu: true });
+    await sendWhatsApp(from, out);
+    await saveMessage(from, "assistant", out);
+    return;
+  }
+
+  /* ---------------- General tutoring (launch with AI) ---------------- */
+  if (!shouldUseAI()) {
+    const out = pack(
+      "Je peux t’aider 😊\nTape 1 pour une leçon, 2 pour un exercice, 3 pour un quiz.\n\nOu pose-moi une question précise (matière + classe).",
+      { includeMenu: true }
+    );
+    await sendWhatsApp(from, out);
+    await saveMessage(from, "assistant", out);
+    return;
+  }
+
+  const ai = await tutorAnswer({ phone: from, student, userText: text, dbContext: "" });
+  const out = pack(`${pick(ENCOURAGE)}\n\n${ai}`, { includeMenu: true });
+  await sendWhatsApp(from, out);
+  await saveMessage(from, "assistant", out);
+}
 
 /* -------------------- START SERVER ------------------------------------ */
-app.listen(process.env.PORT || 10000, () => {
-  console.log("Mwalimu EdTech opérationnel.");
+app.listen(PORT, () => {
+  console.log("Mwalimu EdTech opérationnel (IA launch, production-grade).");
 });
