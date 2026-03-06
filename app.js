@@ -9,45 +9,28 @@ require("dotenv").config();
 const app = express().use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/* --- 1. CONNEXION À LA BASE DE DONNÉES (GÉOGRAPHIE RDC) --- */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-const HEADER = "_🔵🟡🔴 **Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
+// Le T de EdThec est maintenant en majuscule
+const HEADER = "_🔵🟡🔴 **Je suis Mwalimu EdThec, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
-/* --- 2. MÉMOIRE TEMPORAIRE (INTERACTION DIRECTE) --- */
 let sessionHistory = {};
 
-/* --- 3. RAPPEL DU MATIN (05H00) --- */
-cron.schedule("0 5 * * *", async () => {
+/* --- 1. RAPPEL DU MATIN (Ajusté à 06h00 juste) --- */
+cron.schedule("0 6 * * *", async () => {
   for (const phone in sessionHistory) {
     const rappel = `${HEADER}
-   
+
 🔵 Bonjour 😊 
-🟡 Un petit rappel : chaque jour d'étude te rapproche de ton rêve. 
-🔴 Écris-moi si tu veux réviser un cours aujourd'hui.`;
+🟡 Je suis **Mwalimu**, ton professeur numérique. Prêt pour une nouvelle journée de savoir ? 
+🔴 Écris-moi pour commencer notre leçon du jour !`;
     await sendWhatsApp(phone, rappel);
   }
-}, { timezone: "Africa/Lubumbashi" });
+}); // Fuseau horaire Lubumbashi supprimé
 
-/* --- 4. FONCTION DE RECHERCHE GÉOGRAPHIQUE --- */
-async function getGeoContext(text) {
-  try {
-    // Cherche dans ta DB si le message contient un mot-clé géo
-    const res = await pool.query(
-      "SELECT contenu FROM nom_de_ta_table_geo WHERE mots_cles % $1 LIMIT 1",
-      [text.toLowerCase()]
-    );
-    return res.rows.length > 0 ? res.rows[0].contenu : "Aucune donnée géo spécifique.";
-  } catch (err) {
-    console.error("Erreur DB Géo:", err.message);
-    return "";
-  }
-}
-
-/* --- 5. ENVOI WHATSAPP --- */
 async function sendWhatsApp(to, bodyText) {
   try {
     await axios.post(
@@ -58,17 +41,16 @@ async function sendWhatsApp(to, bodyText) {
   } catch (e) { console.error("Erreur WhatsApp:", e.message); }
 }
 
-/* --- 6. WEBHOOK PRINCIPAL --- */
+/* --- 2. WEBHOOK AVEC INTERACTION NATURELLE --- */
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
-
   const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   if (!msg || msg.type !== "text") return;
 
   const from = msg.from;
   const text = msg.text.body;
 
-  // Initialisation de la discussion
+  // Accueil : Demande du nom et de la classe pour adapter le style
   if (!sessionHistory[from]) {
     sessionHistory[from] = [];
     const welcome = `${HEADER}
@@ -76,48 +58,48 @@ app.post("/webhook", async (req, res) => {
 🔵 Bonsoir 😊 
 Je suis **Mwalimu**, ton professeur numérique.
 
-🟡 Je suis ici pour t'aider à comprendre tes cours, particulièrement la géographie de notre beau pays.
+🟡 Pour que je puisse adapter mes explications à ton niveau, dis-moi : **quel est ton nom et dans quelle classe es-tu ?**
 
-🔴 Sur quoi veux-tu que nous travaillions ensemble maintenant ?`;
+🔴 J'attends ta réponse pour commencer !`;
     return await sendWhatsApp(from, welcome);
   }
 
-  // Récupération du contexte géo dans ta DATABASE_URL
-  const geoContext = await getGeoContext(text);
+  // Recherche Géo en DB
+  let geoContext = "";
+  try {
+    const resGeo = await pool.query("SELECT contenu FROM geographie_rdc WHERE mots_cles % $1 LIMIT 1", [text.toLowerCase()]);
+    if (resGeo.rows.length > 0) geoContext = resGeo.rows[0].contenu;
+  } catch (e) { console.log("Recherche DB ignorée ou vide."); }
 
   try {
-    const completion = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: `Tu es MWALIMU, professeur numérique en RDC.
-          CONSIGNES :
-          - Utilise ce contexte géo si pertinent : ${geoContext}
-          - Méthode socratique : corrige l'élève, encourage-le et pose une question de suite logique.
-          - Structure chaque paragraphe avec les couleurs :
-          🔵 [Correction/Explication]
-          🟡 [Exemple/Encouragement]
-          🔴 [Question/Quiz]
-          - Utilise LaTeX pour les formules : $$v = d/t$$`
+          content: `Tu es MWALIMU EDTHEC, professeur numérique en RDC.
+          RÈGLES :
+          1. Adapte ton langage au niveau de l'élève (Primaire, Humanités, etc.).
+          2. NE JAMAIS afficher de mots comme [Correction], [Explication], [Exemple] ou [Question].
+          3. Structure chaque paragraphe UNIQUEMENT avec une boule de couleur :
+          🔵 [Analyse et correction directe]
+          🟡 [Exemple concret au Congo et encouragement]
+          🔴 [Question de relance ou quiz]
+          4. Contexte Géo : ${geoContext}`
         },
         ...sessionHistory[from].slice(-6),
         { role: "user", content: text }
       ]
     });
 
-    const reply = completion.choices[0].message.content;
-    await sendWhatsApp(from, `${HEADER}\n\n${reply}`);
+    const aiReply = response.choices[0].message.content;
+    await sendWhatsApp(from, `${HEADER}\n\n${aiReply}`);
 
-    // Sauvegarde de la suite logique
-    sessionHistory[from].push({ role: "user", content: text }, { role: "assistant", content: reply });
+    sessionHistory[from].push({ role: "user", content: text }, { role: "assistant", content: aiReply });
 
   } catch (error) {
-    sendWhatsApp(from, `${HEADER}\n\n🔵 Oups, j'ai eu un petit vertige technique. Repose ta question !`);
+    await sendWhatsApp(from, `${HEADER}\n\n🔵 Oups ! Ton professeur numérique a eu un petit vertige. Repose ta question !`);
   }
 });
 
-/* --- 7. LANCEMENT --- */
-app.listen(process.env.PORT || 10000, () => {
-  console.log("Mwalimu Turbo Géo est opérationnel sur Render !");
-});
+app.listen(process.env.PORT || 10000, () => console.log("Mwalimu EdThec Turbo Ready 🚀"));
