@@ -14,7 +14,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// Respect de la casse "Edthec" et suppression des astérisques autour des émojis
+// HEADER OFFICIEL SANS ASTÉRISQUES AUTOUR DES ÉMOJIS
 const HEADER = "_***🔵🟡🔴 **Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩***_";
 
 let sessionHistory = {};
@@ -22,11 +22,7 @@ let sessionHistory = {};
 /* --- 1. RAPPEL DU MATIN (06h00 juste) --- */
 cron.schedule("0 6 * * *", async () => {
   for (const phone in sessionHistory) {
-    const rappel = `${HEADER}
-
-🔵 Bonjour 😊 
-🟡 Je suis **Mwalimu**, ton professeur numérique. Prêt pour une nouvelle journée de savoir ? 
-🔴 Écris-moi pour commencer notre leçon du jour !`;
+    const rappel = `${HEADER}\n\n🔵 Bonjour 😊\n🟡 Je suis **Mwalimu**, ton précepteur. Prêt à faire briller ton intelligence aujourd'hui ?\n🔴 Écris-moi pour commencer notre leçon !`;
     await sendWhatsApp(phone, rappel);
   }
 });
@@ -41,7 +37,7 @@ async function sendWhatsApp(to, bodyText) {
   } catch (e) { console.error("Erreur WhatsApp:", e.message); }
 }
 
-/* --- 2. WEBHOOK AVEC INTERACTION NATURELLE --- */
+/* --- 2. WEBHOOK AVEC TUTORAT APPROFONDI --- */
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
   const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -50,39 +46,32 @@ app.post("/webhook", async (req, res) => {
   const from = msg.from;
   const text = msg.text.body;
 
-  // Accueil : Demande du nom et de la classe
+  // Initialisation de la mémoire
   if (!sessionHistory[from]) {
     sessionHistory[from] = [];
-    const welcome = `${HEADER}
-
-🔵 Bonsoir 😊 
-Je suis **Mwalimu**, ton professeur numérique.
-
-🟡 Pour que je puisse adapter mes explications à ton niveau, dis-moi : **quel est ton nom et dans quelle classe es-tu ?**
-
-🔴 J'attends ta réponse pour commencer !`;
+    const welcome = `${HEADER}\n\n🔵 Bonjour 😊\nJe suis **Mwalimu**, ton précepteur personnel.\n\n🟡 Pour mieux t'accompagner, dis-moi : **quel est ton nom et dans quelle classe es-tu ?**\n\n🔴 J'attends ta réponse avec impatience !`;
     return await sendWhatsApp(from, welcome);
   }
 
-  // RECHERCHE DANS TES TABLES RÉELLES (L'ordre de ta photo Render)
+  // EXTRACTION DES DONNÉES SQL (Ordre strict de ta photo)
   let drcContext = "";
   try {
-    const climat = await pool.query('SELECT * FROM drc_climat_vegetation LIMIT 1');
-    const eco = await pool.query('SELECT * FROM drc_economie LIMIT 1');
-    const hydro = await pool.query('SELECT * FROM drc_hydrographie LIMIT 1');
-    const identite = await pool.query('SELECT * FROM drc_identite_nationale LIMIT 1');
-    const parcs = await pool.query('SELECT * FROM drc_parcs_nationaux LIMIT 1');
-    const relief = await pool.query('SELECT * FROM drc_relief LIMIT 1');
+    const climat = await pool.query('SELECT * FROM drc_climat_vegetation LIMIT 2');
+    const eco = await pool.query('SELECT * FROM drc_economie LIMIT 2');
+    const hydro = await pool.query('SELECT * FROM drc_hydrographie LIMIT 2');
+    const identite = await pool.query('SELECT * FROM drc_identite_nationale LIMIT 2');
+    const relief = await pool.query('SELECT * FROM drc_relief LIMIT 2');
+    const population = await pool.query('SELECT * FROM drc_population_villes LIMIT 2');
 
     drcContext = JSON.stringify({
       climat: climat.rows,
       economie: eco.rows,
       hydrographie: hydro.rows,
       identite: identite.rows,
-      nature: parcs.rows,
-      sol: relief.rows
+      relief: relief.rows,
+      villes: population.rows
     });
-  } catch (e) { console.log("Recherche DB Tables ignorée."); }
+  } catch (e) { console.log("DB Scan bypass."); }
 
   try {
     const response = await openai.chat.completions.create({
@@ -90,17 +79,16 @@ Je suis **Mwalimu**, ton professeur numérique.
       messages: [
         {
           role: "system",
-          content: `Tu es MWALIMU EDTHEC, précepteur expert en RDC.
-          TON ATTITUDE : Humaine, chaleureuse, protectrice. Dis souvent "Je suis là pour toi".
-          RÈGLES :
-          1. Adapte ton langage au niveau de l'élève.
-          2. NE JAMAIS afficher [Correction], [Explication], [Exemple] ou [Question].
-          3. Structure chaque paragraphe UNIQUEMENT avec :
-          🔵 [Analyse profonde et correction douce]
-          🟡 [Exemple concret tiré de la RDC et encouragement]
-          🔴 [Quiz de relance A, B, C]
-          4. INTERDICTION d'utiliser les mots "Savoir" ou "Pédagogie".
-          5. CONTEXTE RDC (Tes tables) : ${drcContext}`
+          content: `Tu es MWALIMU EDTHEC, précepteur humain et protecteur pour les élèves de la RDC.
+          TON ATTITUDE : Chaleureuse, encourageante. Dis "Je suis là pour toi".
+          DIRECTIVES :
+          1. Structure ton message en 3 blocs EXACTS :
+             🔵 [Analyse profonde, réponse détaillée et correction si besoin]
+             🟡 [Lien avec le quotidien en RDC et message d'encouragement]
+             🔴 [Question Quiz A, B, C pour valider l'acquis]
+          2. INTERDICTION d'écrire les mots "Savoir", "Pédagogie", "Correction", "Exemple".
+          3. Utilise ces données réelles : ${drcContext}.
+          4. Une SEULE conclusion à la fin : "N'hésite pas si tu as d'autres questions !"`
         },
         ...sessionHistory[from].slice(-6),
         { role: "user", content: text }
@@ -108,15 +96,15 @@ Je suis **Mwalimu**, ton professeur numérique.
     });
 
     const aiReply = response.choices[0].message.content;
-    const finalReply = `${HEADER}\n\n${aiReply}\n\nJe suis là pour toi, n'hésite pas si tu as d'autres questions !`;
    
-    await sendWhatsApp(from, finalReply);
+    // Envoi propre sans doublons
+    await sendWhatsApp(from, `${HEADER}\n\n${aiReply}`);
 
     sessionHistory[from].push({ role: "user", content: text }, { role: "assistant", content: aiReply });
 
   } catch (error) {
-    await sendWhatsApp(from, `${HEADER}\n\n🔵 Oups ! Ton professeur numérique a eu un petit vertige. Repose ta question !`);
+    await sendWhatsApp(from, `${HEADER}\n\n🔵 Oups ! J'ai eu une petite absence. Repose-moi ta question, mon cher élève !`);
   }
 });
 
-app.listen(process.env.PORT || 10000, () => console.log("Mwalimu Edthec Turbo Ready 🚀"));
+app.listen(process.env.PORT || 10000, () => console.log("Mwalimu Edthec Turbo Fix Ready 🚀"));
