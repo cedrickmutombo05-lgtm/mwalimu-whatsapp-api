@@ -14,12 +14,12 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// Le T de EdThec est maintenant en majuscule
-const HEADER = "_🔵🟡🔴 **Je suis Mwalimu EdThec, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
+// Respect de la casse "Edthec" et suppression des astérisques autour des émojis
+const HEADER = "_***🔵🟡🔴 **Je suis Mwalimu Edthec, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩***_";
 
 let sessionHistory = {};
 
-/* --- 1. RAPPEL DU MATIN (Ajusté à 06h00 juste) --- */
+/* --- 1. RAPPEL DU MATIN (06h00 juste) --- */
 cron.schedule("0 6 * * *", async () => {
   for (const phone in sessionHistory) {
     const rappel = `${HEADER}
@@ -29,7 +29,7 @@ cron.schedule("0 6 * * *", async () => {
 🔴 Écris-moi pour commencer notre leçon du jour !`;
     await sendWhatsApp(phone, rappel);
   }
-}); // Fuseau horaire Lubumbashi supprimé
+});
 
 async function sendWhatsApp(to, bodyText) {
   try {
@@ -50,7 +50,7 @@ app.post("/webhook", async (req, res) => {
   const from = msg.from;
   const text = msg.text.body;
 
-  // Accueil : Demande du nom et de la classe pour adapter le style
+  // Accueil : Demande du nom et de la classe
   if (!sessionHistory[from]) {
     sessionHistory[from] = [];
     const welcome = `${HEADER}
@@ -64,12 +64,25 @@ Je suis **Mwalimu**, ton professeur numérique.
     return await sendWhatsApp(from, welcome);
   }
 
-  // Recherche Géo en DB
-  let geoContext = "";
+  // RECHERCHE DANS TES TABLES RÉELLES (L'ordre de ta photo Render)
+  let drcContext = "";
   try {
-    const resGeo = await pool.query("SELECT contenu FROM geographie_rdc WHERE mots_cles % $1 LIMIT 1", [text.toLowerCase()]);
-    if (resGeo.rows.length > 0) geoContext = resGeo.rows[0].contenu;
-  } catch (e) { console.log("Recherche DB ignorée ou vide."); }
+    const climat = await pool.query('SELECT * FROM drc_climat_vegetation LIMIT 1');
+    const eco = await pool.query('SELECT * FROM drc_economie LIMIT 1');
+    const hydro = await pool.query('SELECT * FROM drc_hydrographie LIMIT 1');
+    const identite = await pool.query('SELECT * FROM drc_identite_nationale LIMIT 1');
+    const parcs = await pool.query('SELECT * FROM drc_parcs_nationaux LIMIT 1');
+    const relief = await pool.query('SELECT * FROM drc_relief LIMIT 1');
+
+    drcContext = JSON.stringify({
+      climat: climat.rows,
+      economie: eco.rows,
+      hydrographie: hydro.rows,
+      identite: identite.rows,
+      nature: parcs.rows,
+      sol: relief.rows
+    });
+  } catch (e) { console.log("Recherche DB Tables ignorée."); }
 
   try {
     const response = await openai.chat.completions.create({
@@ -77,15 +90,17 @@ Je suis **Mwalimu**, ton professeur numérique.
       messages: [
         {
           role: "system",
-          content: `Tu es MWALIMU EDTHEC, professeur numérique en RDC.
+          content: `Tu es MWALIMU EDTHEC, précepteur expert en RDC.
+          TON ATTITUDE : Humaine, chaleureuse, protectrice. Dis souvent "Je suis là pour toi".
           RÈGLES :
-          1. Adapte ton langage au niveau de l'élève (Primaire, Humanités, etc.).
-          2. NE JAMAIS afficher de mots comme [Correction], [Explication], [Exemple] ou [Question].
-          3. Structure chaque paragraphe UNIQUEMENT avec une boule de couleur :
-          🔵 [Analyse et correction directe]
-          🟡 [Exemple concret au Congo et encouragement]
-          🔴 [Question de relance ou quiz]
-          4. Contexte Géo : ${geoContext}`
+          1. Adapte ton langage au niveau de l'élève.
+          2. NE JAMAIS afficher [Correction], [Explication], [Exemple] ou [Question].
+          3. Structure chaque paragraphe UNIQUEMENT avec :
+          🔵 [Analyse profonde et correction douce]
+          🟡 [Exemple concret tiré de la RDC et encouragement]
+          🔴 [Quiz de relance A, B, C]
+          4. INTERDICTION d'utiliser les mots "Savoir" ou "Pédagogie".
+          5. CONTEXTE RDC (Tes tables) : ${drcContext}`
         },
         ...sessionHistory[from].slice(-6),
         { role: "user", content: text }
@@ -93,7 +108,9 @@ Je suis **Mwalimu**, ton professeur numérique.
     });
 
     const aiReply = response.choices[0].message.content;
-    await sendWhatsApp(from, `${HEADER}\n\n${aiReply}`);
+    const finalReply = `${HEADER}\n\n${aiReply}\n\nJe suis là pour toi, n'hésite pas si tu as d'autres questions !`;
+   
+    await sendWhatsApp(from, finalReply);
 
     sessionHistory[from].push({ role: "user", content: text }, { role: "assistant", content: aiReply });
 
@@ -102,4 +119,4 @@ Je suis **Mwalimu**, ton professeur numérique.
   }
 });
 
-app.listen(process.env.PORT || 10000, () => console.log("Mwalimu EdThec Turbo Ready 🚀"));
+app.listen(process.env.PORT || 10000, () => console.log("Mwalimu Edthec Turbo Ready 🚀"));
