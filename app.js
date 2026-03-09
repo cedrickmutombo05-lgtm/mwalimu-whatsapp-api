@@ -9,16 +9,13 @@ require("dotenv").config();
 const app = express().use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// CONNEXION À LA BASE DE DONNÉES RENDER
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
-// HEADER ITALIQUE PUR - RÈGLE D'OR : PAS D'ASTÉRISQUES AVANT/APRÈS
 const HEADER = "_🔵🟡🔴 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** cd_";
 
-// LES CITATIONS DE RÉFÉRENCE (NE RIEN RETRANCHER)
 const citations = [
     "« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »",
     "« Science sans conscience n'est que ruine de l'âme. » - François Rabelais",
@@ -39,16 +36,26 @@ async function sendWhatsApp(to, bodyText) {
     }
 }
 
-/* =====================================================
-   RECHERCHE DANS LA BIBLIOTHÈQUE MWALIMU
-===================================================== */
+function lireHistorique(historique) {
+    if (!historique) return [];
+    if (Array.isArray(historique)) return historique;
+    if (typeof historique === "string") {
+        try {
+            return JSON.parse(historique);
+        } catch {
+            return [];
+        }
+    }
+    return [];
+}
+
 function extraireMotsCles(question) {
     const stopwords = [
         "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "en", "au",
         "aux", "dans", "sur", "sous", "avec", "pour", "par", "qui", "que", "quoi",
         "ou", "où", "est", "sont", "a", "ont", "je", "tu", "il", "elle", "nous",
         "vous", "ils", "elles", "mon", "ma", "mes", "ton", "ta", "tes", "son",
-        "sa", "ses", "notre", "votre", "leur", "leurs", "rdc", "congo", "congo?",
+        "sa", "ses", "notre", "votre", "leur", "leurs", "rdc", "congo",
         "quelle", "quelles", "quels", "quel", "comment", "pourquoi", "combien"
     ];
 
@@ -64,15 +71,11 @@ function extraireMotsCles(question) {
 async function chercherDansBibliotheque(question) {
     try {
         const motsCles = extraireMotsCles(question);
+        if (motsCles.length === 0) return null;
 
-        if (motsCles.length === 0) {
-            return null;
-        }
-
-        // 1. QUESTIONS / RÉPONSES DIRECTES
         const qr = await pool.query(
             `
-            SELECT question, reponse AS contenu
+            SELECT reponse AS contenu
             FROM questions_reponses
             WHERE EXISTS (
                 SELECT 1
@@ -89,7 +92,6 @@ async function chercherDansBibliotheque(question) {
             return qr.rows[0].contenu;
         }
 
-        // 2. LEÇONS STRUCTURÉES
         const lecon = await pool.query(
             `
             SELECT source, titre, contenu
@@ -162,7 +164,6 @@ async function chercherDansBibliotheque(question) {
     }
 }
 
-/* --- 1. RAPPEL À 07:00 PILE (LUBUMBASHI) --- */
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations");
@@ -176,7 +177,6 @@ cron.schedule("0 7 * * *", async () => {
     }
 }, { timezone: "Africa/Lubumbashi" });
 
-/* --- 2. LE CŒUR DU TUTORAT : WEBHOOK AVEC MÉMOIRE ET PÉDAGOGIE --- */
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -186,11 +186,9 @@ app.post("/webhook", async (req, res) => {
     const text = msg.text.body;
 
     try {
-        // BLOC DE MÉMORISATION : RÉCUPÉRATION DE L'ÉLÈVE
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
         let user = userRes.rows[0];
 
-        // ACCUEIL INCLUSIF SI NOUVEL ÉLÈVE
         if (!user) {
             await pool.query(
                 "INSERT INTO conversations (phone, historique) VALUES ($1, $2)",
@@ -200,19 +198,15 @@ app.post("/webhook", async (req, res) => {
             return await sendWhatsApp(from, welcome);
         }
 
-        // MISE À JOUR DU NOM DANS LA MÉMOIRE
         if (!user.nom && text.length < 50) {
             await pool.query("UPDATE conversations SET nom = $1 WHERE phone = $2", [text, from]);
             user.nom = text;
         }
 
-        // PRIORITÉ ABSOLUE À LA BIBLIOTHÈQUE MWALIMU
         const reponseBibliotheque = await chercherDansBibliotheque(text);
 
         if (reponseBibliotheque) {
-            const historiqueActuel = Array.isArray(JSON.parse(user.historique || "[]"))
-                ? JSON.parse(user.historique || "[]")
-                : [];
+            const historiqueActuel = lireHistorique(user.historique);
 
             const newHistory = [
                 ...historiqueActuel,
@@ -228,7 +222,6 @@ app.post("/webhook", async (req, res) => {
             return await sendWhatsApp(from, `${HEADER}\n\n${reponseBibliotheque}`);
         }
 
-        // VÉRIFICATION DE LA VÉRITÉ TERRAIN (SQL)
         let geoContext = "";
         const resGeo = await pool.query(
             "SELECT province, nom, description FROM drc_data WHERE province ILIKE $1 OR nom ILIKE $1 OR description ILIKE $1 LIMIT 3",
@@ -236,10 +229,11 @@ app.post("/webhook", async (req, res) => {
         );
 
         if (resGeo.rows.length > 0) {
-            geoContext = resGeo.rows.map(r => `[DONNÉE SOURCE RDC : ${r.province}, ${r.nom} : ${r.description}]`).join("\n");
+            geoContext = resGeo.rows
+                .map(r => `[DONNÉE SOURCE RDC : ${r.province}, ${r.nom} : ${r.description}]`)
+                .join("\n");
         }
 
-        // APPEL OPENAI : L'INTELLIGENCE PÉDAGOGIQUE
         const response = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
@@ -256,17 +250,15 @@ app.post("/webhook", async (req, res) => {
                     - Chaque paragraphe DOIT commencer par une boule (🔵, 🟡, 🔴).
                     - Ton direct, frontal, chaleureux et exigeant envers ${user.nom || "l'élève"}.`
                 },
-                // INJECTION DE LA MÉMOIRE DES ÉCHANGES (8 DERNIERS MESSAGES)
-                ...JSON.parse(user.historique || "[]").slice(-8),
+                ...lireHistorique(user.historique).slice(-8),
                 { role: "user", content: text }
             ]
         });
 
         const aiReply = response.choices[0].message.content;
 
-        // MISE À JOUR DE LA MÉMOIRE (SAUVEGARDE DU SOUVENIR)
         const newHistory = [
-            ...JSON.parse(user.historique || "[]"),
+            ...lireHistorique(user.historique),
             { role: "user", content: text },
             { role: "assistant", content: aiReply }
         ].slice(-10);
@@ -280,7 +272,7 @@ app.post("/webhook", async (req, res) => {
 
     } catch (error) {
         console.error(error);
-        await sendWhatsApp(from, `${HEADER}\n\n🔵 Oups ! Petit souci technique. Repose ta question, jeune patriote !`);
+        await sendWhatsApp(from, `${HEADER}\n\n🔵 Erreur technique : ${error.message}`);
     }
 });
 
