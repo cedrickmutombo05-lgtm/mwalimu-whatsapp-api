@@ -49,6 +49,13 @@ function lireHistorique(historique) {
     return [];
 }
 
+function nettoyerTexte(texte) {
+    return texte
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+}
+
 function extraireMotsCles(question) {
     const stopwords = [
         "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "en", "au",
@@ -56,23 +63,76 @@ function extraireMotsCles(question) {
         "ou", "où", "est", "sont", "a", "ont", "je", "tu", "il", "elle", "nous",
         "vous", "ils", "elles", "mon", "ma", "mes", "ton", "ta", "tes", "son",
         "sa", "ses", "notre", "votre", "leur", "leurs", "rdc", "congo",
-        "quelle", "quelles", "quels", "quel", "comment", "pourquoi", "combien"
+        "quelle", "quelles", "quels", "quel", "comment", "pourquoi", "combien",
+        "territoire", "territoires", "province", "provinces", "chef", "lieu",
+        "sont", "suis", "dans", "donne", "citer", "quels", "quelles"
     ];
 
     return question
         .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^\w\s]/g, " ")
+        .replace(/[^\w\s-]/g, " ")
         .split(/\s+/)
         .filter((mot) => mot.length > 2 && !stopwords.includes(mot));
 }
 
 async function chercherDansBibliotheque(question) {
     try {
+        const questionNettoyee = nettoyerTexte(question);
         const motsCles = extraireMotsCles(question);
+
         if (motsCles.length === 0) return null;
 
+        // 1. PRIORITÉ AUX PROVINCES / TERRITOIRES
+        const provincesConnues = [
+            "kinshasa", "kongo central", "kwango", "kwilu", "mai-ndombe", "mai ndombe",
+            "kasaï", "kasai", "kasaï-central", "kasai central", "kasaï-oriental", "kasai oriental",
+            "lomami", "sankuru", "maniema", "sud-kivu", "sud kivu", "nord-kivu", "nord kivu",
+            "itanganyika", "tanganyika", "haut-lomami", "haut lomami", "lualaba", "haut-katanga", "haut katanga",
+            "ituri", "bas-uele", "bas uele", "haut-uele", "haut uele", "tshopo", "tshuapa",
+            "mongala", "nord-ubangi", "nord ubangi", "sud-ubangi", "sud ubangi", "equateur", "équateur"
+        ];
+
+        const provinceTrouvee = provincesConnues.find((p) => questionNettoyee.includes(p));
+
+        if (provinceTrouvee) {
+            const prov = await pool.query(
+                `
+                SELECT province, chef_lieu, territoires
+                FROM drc_population_villes
+                WHERE LOWER(unaccent(province)) ILIKE '%' || $1 || '%'
+                LIMIT 1
+                `,
+                [provinceTrouvee]
+            ).catch(async () => {
+                return await pool.query(
+                    `
+                    SELECT province, chef_lieu, territoires
+                    FROM drc_population_villes
+                    WHERE LOWER(province) ILIKE '%' || $1 || '%'
+                    LIMIT 1
+                    `,
+                    [provinceTrouvee]
+                );
+            });
+
+            if (prov.rows.length > 0) {
+                const row = prov.rows[0];
+
+                if (questionNettoyee.includes("territoire")) {
+                    return `Les territoires de la province du ${row.province} sont : ${row.territoires}.`;
+                }
+
+                if (questionNettoyee.includes("chef lieu") || questionNettoyee.includes("chef-lieu")) {
+                    return `Le chef-lieu de la province du ${row.province} est ${row.chef_lieu}.`;
+                }
+
+                return `${row.province} a pour chef-lieu ${row.chef_lieu}. Ses territoires sont : ${row.territoires}.`;
+            }
+        }
+
+        // 2. QUESTIONS / RÉPONSES DIRECTES
         const qr = await pool.query(
             `
             SELECT reponse AS contenu
@@ -92,6 +152,7 @@ async function chercherDansBibliotheque(question) {
             return qr.rows[0].contenu;
         }
 
+        // 3. LEÇONS STRUCTURÉES
         const lecon = await pool.query(
             `
             SELECT source, titre, contenu
