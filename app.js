@@ -9,13 +9,16 @@ require("dotenv").config();
 const app = express().use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// CONNEXION À LA BASE DE DONNÉES RENDER
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
+// HEADER ITALIQUE PUR - RÈGLE D'OR : PAS D'ASTÉRISQUES AVANT/APRÈS
 const HEADER = "_🔵🟡🔴 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** cd_";
 
+// LES CITATIONS DE RÉFÉRENCE (NE RIEN RETRANCHER)
 const citations = [
     "« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »",
     "« Science sans conscience n'est que ruine de l'âme. » - François Rabelais",
@@ -23,15 +26,6 @@ const citations = [
     "« Le succès, c'est d'aller d'échec en échec sans perdre son enthousiasme. »",
     "« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »"
 ];
-
-// Helper pour parser l'historique en toute sécurité
-const safeParseHistory = (historyStr) => {
-    try {
-        return Array.isArray(JSON.parse(historyStr)) ? JSON.parse(historyStr) : [];
-    } catch (e) {
-        return [];
-    }
-};
 
 async function sendWhatsApp(to, bodyText) {
     try {
@@ -41,84 +35,252 @@ async function sendWhatsApp(to, bodyText) {
             { headers: { Authorization: `Bearer ${process.env.TOKEN}` } }
         );
     } catch (e) {
-        console.error("Erreur WhatsApp :", e.response?.data || e.message);
+        console.error("Erreur WhatsApp :", e.message);
     }
 }
 
-/* --- LOGIQUE DE RECHERCHE BIBLIOTHÈQUE --- */
+/* =====================================================
+   RECHERCHE DANS LA BIBLIOTHÈQUE MWALIMU
+===================================================== */
 function extraireMotsCles(question) {
-    const stopwords = ["le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "en", "au", "aux", "dans", "sur", "sous", "avec", "pour", "par", "qui", "que", "quoi", "ou", "où", "est", "sont", "a", "ont", "quel", "quelle", "comment", "pourquoi", "rdc", "congo"];
-    return question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, " ").split(/\s+/).filter(mot => mot.length > 2 && !stopwords.includes(mot));
+    const stopwords = [
+        "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "en", "au",
+        "aux", "dans", "sur", "sous", "avec", "pour", "par", "qui", "que", "quoi",
+        "ou", "où", "est", "sont", "a", "ont", "je", "tu", "il", "elle", "nous",
+        "vous", "ils", "elles", "mon", "ma", "mes", "ton", "ta", "tes", "son",
+        "sa", "ses", "notre", "votre", "leur", "leurs", "rdc", "congo", "congo?",
+        "quelle", "quelles", "quels", "quel", "comment", "pourquoi", "combien"
+    ];
+
+    return question
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\w\s]/g, " ")
+        .split(/\s+/)
+        .filter((mot) => mot.length > 2 && !stopwords.includes(mot));
 }
 
 async function chercherDansBibliotheque(question) {
     try {
-        const mots = extraireMotsCles(question);
-        if (mots.length === 0) return null;
+        const motsCles = extraireMotsCles(question);
 
-        // Recherche combinée QR + Leçons
-        const query = `
-            SELECT reponse AS contenu FROM questions_reponses WHERE EXISTS (SELECT 1 FROM unnest($1::text[]) AS m WHERE question ILIKE '%'||m||'%')
-            UNION ALL
-            SELECT contenu FROM (
-                SELECT unite_physique as t, description_details as contenu FROM drc_relief
-                UNION ALL SELECT element, caracteristiques FROM drc_hydrographie
-                UNION ALL SELECT zone_climatique, type_vegetation FROM drc_climat_vegetation
-            ) AS lib WHERE EXISTS (SELECT 1 FROM unnest($1::text[]) AS m WHERE t ILIKE '%'||m||'%' OR contenu ILIKE '%'||m||'%')
-            LIMIT 1`;
-       
-        const res = await pool.query(query, [mots]);
-        return res.rows.length > 0 ? res.rows[0].contenu : null;
-    } catch (e) {
-        console.error("Erreur bibliothèque:", e.message);
+        if (motsCles.length === 0) {
+            return null;
+        }
+
+        // 1. QUESTIONS / RÉPONSES DIRECTES
+        const qr = await pool.query(
+            `
+            SELECT question, reponse AS contenu
+            FROM questions_reponses
+            WHERE EXISTS (
+                SELECT 1
+                FROM unnest($1::text[]) AS mot
+                WHERE question ILIKE '%' || mot || '%'
+                   OR reponse ILIKE '%' || mot || '%'
+            )
+            LIMIT 1
+            `,
+            [motsCles]
+        );
+
+        if (qr.rows.length > 0) {
+            return qr.rows[0].contenu;
+        }
+
+        // 2. LEÇONS STRUCTURÉES
+        const lecon = await pool.query(
+            `
+            SELECT source, titre, contenu
+            FROM (
+                SELECT
+                    'relief' AS source,
+                    unite_physique AS titre,
+                    COALESCE(description_details, '') || ' ' ||
+                    COALESCE(altitudes_sommets, '') || ' ' ||
+                    COALESCE(provinces_liees, '') AS contenu
+                FROM drc_relief
+
+                UNION ALL
+
+                SELECT
+                    'hydrographie' AS source,
+                    element AS titre,
+                    COALESCE(caracteristiques, '') || ' ' ||
+                    COALESCE(provinces_et_localisation, '') AS contenu
+                FROM drc_hydrographie
+
+                UNION ALL
+
+                SELECT
+                    'climat_vegetation' AS source,
+                    zone_climatique AS titre,
+                    COALESCE(type_vegetation, '') || ' ' ||
+                    COALESCE(caracteristiques_meteo, '') || ' ' ||
+                    COALESCE(provinces_concernees, '') AS contenu
+                FROM drc_climat_vegetation
+
+                UNION ALL
+
+                SELECT
+                    'economie' AS source,
+                    secteur AS titre,
+                    COALESCE(ressources_cles, '') || ' ' ||
+                    COALESCE(provinces_productrices, '') || ' ' ||
+                    COALESCE(potentiel_et_acteurs, '') AS contenu
+                FROM drc_economie
+
+                UNION ALL
+
+                SELECT
+                    'population_villes' AS source,
+                    province AS titre,
+                    COALESCE(chef_lieu, '') || ' ' ||
+                    COALESCE(territoires, '') AS contenu
+                FROM drc_population_villes
+            ) AS bibliotheque
+            WHERE EXISTS (
+                SELECT 1
+                FROM unnest($1::text[]) AS mot
+                WHERE titre ILIKE '%' || mot || '%'
+                   OR contenu ILIKE '%' || mot || '%'
+            )
+            LIMIT 1
+            `,
+            [motsCles]
+        );
+
+        if (lecon.rows.length > 0) {
+            return lecon.rows[0].contenu;
+        }
+
+        return null;
+    } catch (error) {
+        console.error("Erreur recherche bibliothèque :", error.message);
         return null;
     }
 }
 
-/* --- WEBHOOK PRINCIPAL --- */
+/* --- 1. RAPPEL À 07:00 PILE (LUBUMBASHI) --- */
+cron.schedule("0 7 * * *", async () => {
+    try {
+        const res = await pool.query("SELECT phone, nom FROM conversations");
+        const citation = citations[Math.floor(Math.random() * citations.length)];
+        for (const user of res.rows) {
+            const msg = `${HEADER}\n\n🔵 **Bonjour ${user.nom || "cher élève"} !**\n\n🟡 *"${citation}"*\n\n🔴 Réveille ton génie ! Qu'as-tu prévu d'apprendre aujourd'hui ?`;
+            await sendWhatsApp(user.phone, msg);
+        }
+    } catch (e) {
+        console.log("Erreur Cron");
+    }
+}, { timezone: "Africa/Lubumbashi" });
+
+/* --- 2. LE CŒUR DU TUTORAT : WEBHOOK AVEC MÉMOIRE ET PÉDAGOGIE --- */
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!msg?.text?.body) return;
+    if (!msg || msg.type !== "text") return;
 
     const from = msg.from;
     const text = msg.text.body;
 
     try {
+        // BLOC DE MÉMORISATION : RÉCUPÉRATION DE L'ÉLÈVE
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
         let user = userRes.rows[0];
 
+        // ACCUEIL INCLUSIF SI NOUVEL ÉLÈVE
         if (!user) {
-            await pool.query("INSERT INTO conversations (phone, historique) VALUES ($1, $2)", [from, '[]']);
-            return await sendWhatsApp(from, `${HEADER}\n\n🔵 **Bienvenu(e) jeune patriote !** 😊`);
+            await pool.query(
+                "INSERT INTO conversations (phone, historique) VALUES ($1, $2)",
+                [from, JSON.stringify([])]
+            );
+            const welcome = `${HEADER}\n\n🔵 **Bienvenu (e) jeune patriote !** 😊\n\n🟡 Je suis **Mwalimu EdTech**, ton précepteur personnel.`;
+            return await sendWhatsApp(from, welcome);
         }
 
-        // 1. Priorité Bibliothèque
-        const reponseLocal = await chercherDansBibliotheque(text);
-        if (reponseLocal) {
-            return await sendWhatsApp(from, `${HEADER}\n\n${reponseLocal}`);
+        // MISE À JOUR DU NOM DANS LA MÉMOIRE
+        if (!user.nom && text.length < 50) {
+            await pool.query("UPDATE conversations SET nom = $1 WHERE phone = $2", [text, from]);
+            user.nom = text;
         }
 
-        // 2. Sinon OpenAI avec Contexte
-        const history = safeParseHistory(user.historique);
-        const completion = await openai.chat.completions.create({
+        // PRIORITÉ ABSOLUE À LA BIBLIOTHÈQUE MWALIMU
+        const reponseBibliotheque = await chercherDansBibliotheque(text);
+
+        if (reponseBibliotheque) {
+            const historiqueActuel = Array.isArray(JSON.parse(user.historique || "[]"))
+                ? JSON.parse(user.historique || "[]")
+                : [];
+
+            const newHistory = [
+                ...historiqueActuel,
+                { role: "user", content: text },
+                { role: "assistant", content: reponseBibliotheque }
+            ].slice(-10);
+
+            await pool.query(
+                "UPDATE conversations SET historique = $1, updated_at = NOW() WHERE phone = $2",
+                [JSON.stringify(newHistory), from]
+            );
+
+            return await sendWhatsApp(from, `${HEADER}\n\n${reponseBibliotheque}`);
+        }
+
+        // VÉRIFICATION DE LA VÉRITÉ TERRAIN (SQL)
+        let geoContext = "";
+        const resGeo = await pool.query(
+            "SELECT province, nom, description FROM drc_data WHERE province ILIKE $1 OR nom ILIKE $1 OR description ILIKE $1 LIMIT 3",
+            [`%${text.toLowerCase()}%`]
+        );
+
+        if (resGeo.rows.length > 0) {
+            geoContext = resGeo.rows.map(r => `[DONNÉE SOURCE RDC : ${r.province}, ${r.nom} : ${r.description}]`).join("\n");
+        }
+
+        // APPEL OPENAI : L'INTELLIGENCE PÉDAGOGIQUE
+        const response = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
-                { role: "system", content: "Tu es MWALIMU EDTECH. Explique d'abord, donne un exemple congolais, puis la réponse. Utilise 🔵, 🟡, 🔴." },
-                ...history.slice(-8),
+                {
+                    role: "system",
+                    content: `Tu es MWALIMU EDTECH, précepteur expert.
+                    MÉTHODE DE TUTORAT APPROFONDI :
+                    1. Ne donne JAMAIS la réponse brute en premier.
+                    2. Étape 1 : Explique le concept avec aisance.
+                    3. Étape 2 : Donne un exemple concret du vécu congolais de l'élève.
+                    4. Étape 3 : Donne la réponse finale en utilisant prioritairement ces données : ${geoContext}.
+                    5. Si la question est générale (Maths, Philo), utilise ta connaissance mais garde le ton de précepteur.
+                    STYLE VISUEL :
+                    - Chaque paragraphe DOIT commencer par une boule (🔵, 🟡, 🔴).
+                    - Ton direct, frontal, chaleureux et exigeant envers ${user.nom || "l'élève"}.`
+                },
+                // INJECTION DE LA MÉMOIRE DES ÉCHANGES (8 DERNIERS MESSAGES)
+                ...JSON.parse(user.historique || "[]").slice(-8),
                 { role: "user", content: text }
             ]
         });
 
-        const aiReply = completion.choices[0].message.content;
-        const newHistory = [...history, { role: "user", content: text }, { role: "assistant", content: aiReply }].slice(-10);
-       
-        await pool.query("UPDATE conversations SET historique = $1, nom = COALESCE(nom, $2) WHERE phone = $3", [JSON.stringify(newHistory), text.slice(0, 20), from]);
+        const aiReply = response.choices[0].message.content;
+
+        // MISE À JOUR DE LA MÉMOIRE (SAUVEGARDE DU SOUVENIR)
+        const newHistory = [
+            ...JSON.parse(user.historique || "[]"),
+            { role: "user", content: text },
+            { role: "assistant", content: aiReply }
+        ].slice(-10);
+
+        await pool.query(
+            "UPDATE conversations SET historique = $1, updated_at = NOW() WHERE phone = $2",
+            [JSON.stringify(newHistory), from]
+        );
+
         await sendWhatsApp(from, `${HEADER}\n\n${aiReply}`);
 
-    } catch (e) {
-        console.error(e);
-        await sendWhatsApp(from, `${HEADER}\n\n🔴 Petit souci technique, réessaie !`);
+    } catch (error) {
+        console.error(error);
+        await sendWhatsApp(from, `${HEADER}\n\n🔵 Oups ! Petit souci technique. Repose ta question, jeune patriote !`);
     }
 });
 
