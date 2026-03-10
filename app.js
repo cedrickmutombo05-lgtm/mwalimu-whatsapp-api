@@ -38,9 +38,7 @@ async function sendWhatsApp(to, bodyText) {
             { messaging_product: "whatsapp", to, text: { body: bodyText } },
             { headers: { Authorization: `Bearer ${process.env.TOKEN}` } }
         );
-    } catch (e) {
-        console.error("Erreur WhatsApp :", e.response?.data || e.message);
-    }
+    } catch (e) { console.error("Erreur WhatsApp :", e.message); }
 }
 
 /* 1. RAPPEL DU MATIN (Lubumbashi 07:00) */
@@ -55,23 +53,22 @@ cron.schedule("0 7 * * *", async () => {
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-/* 2. RECHERCHE DANS LA BIBLIOTHÈQUE (LOGIQUE CORRIGÉE) */
+/* 2. RECHERCHE DANS LA BIBLIOTHÈQUE (Version Optimisée) */
 async function chercherDansBibliotheque(question) {
     const q = question.toLowerCase().trim();
     if (q.length < 3) return null;
 
     try {
-        // 1. Recherche par province (Bas-Uele, Haut-Katanga, etc.)
+        // Recherche Provinces/Territoires
         const provRes = await pool.query("SELECT province, chef_lieu, territoires FROM drc_population_villes");
         const match = provRes.rows.find(p => q.includes(p.province.toLowerCase()));
        
         if (match) {
-            if (q.includes("territoire")) return `Les territoires de la province du ${match.province} sont : ${match.territoires}.`;
-            if (q.includes("chef-lieu") || q.includes("chef lieu")) return `Le chef-lieu du ${match.province} est ${match.chef_lieu}.`;
-            return `La province du ${match.province} a pour chef-lieu ${match.chef_lieu}. Ses territoires sont : ${match.territoires}.`;
+            if (q.includes("territoire")) return `Les territoires du ${match.province} sont : ${match.territoires}.`;
+            return `Province : ${match.province}. Chef-lieu : ${match.chef_lieu}. Territoires : ${match.territoires}.`;
         }
 
-        // 2. Recherche Questions/Réponses classiques
+        // Questions/Réponses classiques
         let res = await pool.query("SELECT reponse FROM questions_reponses WHERE LOWER(question) ILIKE $1 LIMIT 1", [`%${q}%`]);
         if (res.rows.length > 0) return res.rows[0].reponse;
 
@@ -79,7 +76,7 @@ async function chercherDansBibliotheque(question) {
     } catch (e) { return null; }
 }
 
-/* 3. WEBHOOK PRINCIPAL (ANTI-BOUCLE) */
+/* 3. WEBHOOK PRINCIPAL (Logique de Flux Robuste) */
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -92,19 +89,19 @@ app.post("/webhook", async (req, res) => {
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = userRes.rows[0];
 
-        // ÉTAPE 1 : Si l'utilisateur n'existe pas du tout
+        // ÉTAPE A : Nouvel utilisateur
         if (!user) {
-            await pool.query("INSERT INTO conversations (phone, historique, nom) VALUES ($1, $2, $3)", [from, '[]', '']);
-            return await sendWhatsApp(from, `${HEADER}\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Je vais t'accompagner dans tes études.\n\n🔴 Pour commencer, comment t'appelles-tu et en quelle classe es-tu ?`);
+            await pool.query("INSERT INTO conversations (phone, historique, nom) VALUES ($1, '[]', '')", [from]);
+            return await sendWhatsApp(from, `${HEADER}\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Je suis là pour t'accompagner. Quel est ton nom et ta classe ?`);
         }
 
-        // ÉTAPE 2 : Si le nom n'est pas encore enregistré
+        // ÉTAPE B : Capture du Nom (Si vide)
         if (!user.nom || user.nom.trim() === "") {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await sendWhatsApp(from, `${HEADER}\n\n🔵 Enchanté ${text} ! 🎉\n\n🟡 Quel est ton plus grand rêve pour l'avenir ?\n\n🔴 Pose-moi ta première question quand tu es prêt !`);
+            return await sendWhatsApp(from, `${HEADER}\n\n🔵 Ravi de te connaître, ${text} ! 🎉\n\n🟡 Quel est ton rêve pour plus tard ?\n\n🔴 Je t'écoute, pose ta question.`);
         }
 
-        // ÉTAPE 3 : Dialogue normal (Pas de boucle ici)
+        // ÉTAPE C : Mode Discussion Continue (Plus de boucles)
         const history = safeParseHistory(user.historique);
         const reponseBase = await chercherDansBibliotheque(text);
 
@@ -113,20 +110,21 @@ app.post("/webhook", async (req, res) => {
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu EdTech. Ton élève s'appelle ${user.nom}.
-                    Sois chaleureux, humain et ne répète pas les mêmes phrases.
-                    Si une info est donnée via INFO_BASE, utilise-la.
-                    Sinon, réponds par toi-même de manière éducative.
-                    Ne demande JAMAIS le nom de l'élève, tu le connais déjà.`
+                    content: `Tu es Mwalimu EdTech. Ton élève est ${user.nom}.
+                    DIRECTIVES :
+                    - Ne redemande JAMAIS le nom ou comment il va en boucle.
+                    - Si une INFO_BASE est fournie, intègre-la dans une réponse chaleureuse.
+                    - Si l'élève pose une question sur un territoire, donne les faits et encourage-le.
+                    - Reste concis (3 lignes).`
                 },
                 ...history,
-                { role: "user", content: reponseBase ? `INFO_BASE : ${reponseBase}. Question : ${text}` : text }
+                { role: "user", content: reponseBase ? `INFO_BASE : ${reponseBase}. L'élève demande : ${text}` : text }
             ]
         });
 
         const aiReply = completion.choices[0].message.content;
 
-        // Mise à jour de la mémoire
+        // Sauvegarde de l'échange
         const newHistory = [...history, { role: "user", content: text }, { role: "assistant", content: aiReply }].slice(-10);
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(newHistory), from]);
 
@@ -134,7 +132,7 @@ app.post("/webhook", async (req, res) => {
 
     } catch (e) {
         console.error(e);
-        await sendWhatsApp(from, `${HEADER}\n\n🔴 Petit souci technique, mon cher ${user?.nom || 'ami'}. Repose ta question.`);
+        await sendWhatsApp(from, `${HEADER}\n\n🔴 Petit souci technique, mon cher ${user?.nom || 'ami'}. On reprend ?`);
     }
 });
 
