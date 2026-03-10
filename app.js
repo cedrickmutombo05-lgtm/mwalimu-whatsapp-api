@@ -26,10 +26,24 @@ const citations = [
 const safeParseHistory = (historyStr) => {
     try {
         if (!historyStr) return [];
+        if (Array.isArray(historyStr)) return historyStr;
         const parsed = JSON.parse(historyStr);
         return Array.isArray(parsed) ? parsed : [];
-    } catch { return []; }
+    } catch (e) {
+        return [];
+    }
 };
+
+function normalizeText(text) {
+    return (text || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[-']/g, " ")
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
 
 async function sendWhatsApp(to, bodyText) {
     try {
@@ -38,45 +52,157 @@ async function sendWhatsApp(to, bodyText) {
             { messaging_product: "whatsapp", to, text: { body: bodyText } },
             { headers: { Authorization: `Bearer ${process.env.TOKEN}` } }
         );
-    } catch (e) { console.error("Erreur WhatsApp :", e.message); }
+    } catch (e) {
+        console.error("Erreur WhatsApp :", e.message);
+    }
 }
 
-/* 1. RAPPEL DU MATIN (Lubumbashi 07:00) */
+/* --- 1. RAPPEL DU MATIN (LUBUMBASHI 07:00) --- */
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
+        const citation = citations[Math.floor(Math.random() * citations.length)];
         for (const user of res.rows) {
-            const citation = citations[Math.floor(Math.random() * citations.length)];
-            const msg = `${HEADER}\n\n🔵 Bonjour cher ${user.nom} !\n\n🟡 ${citation}\n\n🔴 Prêt pour tes révisions ? Qu'étudions-nous ce matin ?`;
+            const msg = `${HEADER}\n\n🔵 Bonjour mon cher ${user.nom} !\n\n🟡 ${citation}\n\n🔴 Je suis prêt pour tes révisions.`;
             await sendWhatsApp(user.phone, msg);
         }
-    } catch (e) { console.error("Erreur Cron"); }
+    } catch (e) {
+        console.error("Erreur Cron :", e.message);
+    }
 }, { timezone: "Africa/Lubumbashi" });
 
-/* 2. RECHERCHE DANS LA BIBLIOTHÈQUE (Version Optimisée) */
+/* --- 2. RECHERCHE BIBLIOTHÈQUE --- */
 async function chercherDansBibliotheque(question) {
-    const q = question.toLowerCase().trim();
-    if (q.length < 3) return null;
+    const q = normalizeText(question);
 
     try {
-        // Recherche Provinces/Territoires
-        const provRes = await pool.query("SELECT province, chef_lieu, territoires FROM drc_population_villes");
-        const match = provRes.rows.find(p => q.includes(p.province.toLowerCase()));
-       
-        if (match) {
-            if (q.includes("territoire")) return `Les territoires du ${match.province} sont : ${match.territoires}.`;
-            return `Province : ${match.province}. Chef-lieu : ${match.chef_lieu}. Territoires : ${match.territoires}.`;
+        // 1. Correspondance exacte ou quasi exacte dans questions_reponses
+        let res = await pool.query(
+            `
+            SELECT question, reponse
+            FROM questions_reponses
+            ORDER BY LENGTH(question) ASC
+            `
+        );
+
+        const questionTrouvee = res.rows.find(row => {
+            const dbq = normalizeText(row.question);
+            return dbq === q || dbq.includes(q) || q.includes(dbq);
+        });
+
+        if (questionTrouvee) {
+            return questionTrouvee.reponse;
         }
 
-        // Questions/Réponses classiques
-        let res = await pool.query("SELECT reponse FROM questions_reponses WHERE LOWER(question) ILIKE $1 LIMIT 1", [`%${q}%`]);
-        if (res.rows.length > 0) return res.rows[0].reponse;
+        // 2. Provinces / territoires / chefs-lieux
+        res = await pool.query(
+            `SELECT province, chef_lieu, territoires FROM drc_population_villes`
+        );
+
+        const provinceTrouvee = res.rows.find(row => {
+            const p = normalizeText(row.province);
+            return p && q.includes(p);
+        });
+
+        if (provinceTrouvee) {
+            if (q.includes("territoire")) {
+                return `Les territoires de la province du ${provinceTrouvee.province} sont : ${provinceTrouvee.territoires}.`;
+            }
+
+            if (q.includes("chef lieu") || q.includes("chef lieu")) {
+                return `Le chef-lieu de la province du ${provinceTrouvee.province} est ${provinceTrouvee.chef_lieu}.`;
+            }
+
+            return `${provinceTrouvee.province} a pour chef-lieu ${provinceTrouvee.chef_lieu}. Ses territoires sont : ${provinceTrouvee.territoires}.`;
+        }
+
+        // 3. Hydrographie
+        res = await pool.query(
+            `SELECT element, caracteristiques FROM drc_hydrographie`
+        );
+
+        const hydroTrouvee = res.rows.find(row => {
+            const element = normalizeText(row.element);
+            const car = normalizeText(row.caracteristiques);
+            return (element && q.includes(element)) || (car && q.includes(element)) || (element && element.includes(q));
+        });
+
+        if (hydroTrouvee) {
+            return hydroTrouvee.caracteristiques;
+        }
+
+        // 4. Relief
+        res = await pool.query(
+            `SELECT unite_physique, description_details, altitudes_sommets, provinces_liees FROM drc_relief`
+        );
+
+        const reliefTrouve = res.rows.find(row => {
+            const titre = normalizeText(row.unite_physique);
+            const desc = normalizeText(
+                `${row.description_details || ""} ${row.altitudes_sommets || ""} ${row.provinces_liees || ""}`
+            );
+            return (titre && q.includes(titre)) || (desc && q.includes(titre)) || (titre && titre.includes(q));
+        });
+
+        if (reliefTrouve) {
+            return `${reliefTrouve.description_details || ""} ${reliefTrouve.altitudes_sommets || ""}`.trim();
+        }
+
+        // 5. Climat et végétation
+        res = await pool.query(
+            `SELECT zone_climatique, type_vegetation, caracteristiques_meteo FROM drc_climat_vegetation`
+        );
+
+        const climatTrouve = res.rows.find(row => {
+            const titre = normalizeText(`${row.zone_climatique || ""} ${row.type_vegetation || ""}`);
+            const desc = normalizeText(row.caracteristiques_meteo || "");
+            return (titre && q.includes(titre)) || (desc && q.includes(titre)) || (titre && titre.includes(q));
+        });
+
+        if (climatTrouve) {
+            return `${climatTrouve.zone_climatique || ""}. ${climatTrouve.type_vegetation || ""}. ${climatTrouve.caracteristiques_meteo || ""}`.trim();
+        }
+
+        // 6. Économie
+        res = await pool.query(
+            `SELECT secteur, ressources_cles, provinces_productrices, potentiel_et_acteurs FROM drc_economie`
+        );
+
+        const ecoTrouve = res.rows.find(row => {
+            const titre = normalizeText(row.secteur || "");
+            const desc = normalizeText(
+                `${row.ressources_cles || ""} ${row.provinces_productrices || ""} ${row.potentiel_et_acteurs || ""}`
+            );
+            return (titre && q.includes(titre)) || (desc && q.includes(titre)) || (titre && titre.includes(q));
+        });
+
+        if (ecoTrouve) {
+            return `${ecoTrouve.ressources_cles || ""}. ${ecoTrouve.potentiel_et_acteurs || ""}`.trim();
+        }
+
+        // 7. drc_data en dernier
+        res = await pool.query(
+            `SELECT province, nom, description FROM drc_data`
+        );
+
+        const dataTrouvee = res.rows.find(row => {
+            const nom = normalizeText(row.nom || "");
+            const desc = normalizeText(row.description || "");
+            return (nom && q.includes(nom)) || (desc && q.includes(nom)) || (nom && nom.includes(q));
+        });
+
+        if (dataTrouvee) {
+            return dataTrouvee.description;
+        }
 
         return null;
-    } catch (e) { return null; }
+    } catch (e) {
+        console.error("Erreur bibliothèque :", e.message);
+        return null;
+    }
 }
 
-/* 3. WEBHOOK PRINCIPAL (Logique de Flux Robuste) */
+/* --- 3. WEBHOOK : INTERACTION HUMAINE ET MÉMOIRE --- */
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -86,53 +212,81 @@ app.post("/webhook", async (req, res) => {
     const text = msg.text.body;
 
     try {
-        const userRes = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
+        const userRes = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
         let user = userRes.rows[0];
 
-        // ÉTAPE A : Nouvel utilisateur
+        // A. Accueil nouvel élève
         if (!user) {
-            await pool.query("INSERT INTO conversations (phone, historique, nom) VALUES ($1, '[]', '')", [from]);
-            return await sendWhatsApp(from, `${HEADER}\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Je suis là pour t'accompagner. Quel est ton nom et ta classe ?`);
+            await pool.query(
+                "INSERT INTO conversations (phone, historique, nom) VALUES ($1, $2, $3)",
+                [from, '[]', '']
+            );
+            const welcome = `${HEADER}\n\n🔵 Bonjour jeune patriote !\n\n🟡 Je suis Mwalimu.\n\n🔴 Dis-moi ton nom et ta classe.`;
+            return await sendWhatsApp(from, welcome);
         }
 
-        // ÉTAPE B : Capture du Nom (Si vide)
+        // B. Collecte du nom
         if (!user.nom || user.nom.trim() === "") {
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await sendWhatsApp(from, `${HEADER}\n\n🔵 Ravi de te connaître, ${text} ! 🎉\n\n🟡 Quel est ton rêve pour plus tard ?\n\n🔴 Je t'écoute, pose ta question.`);
+            await pool.query("UPDATE conversations SET nom = $1 WHERE phone = $2", [text, from]);
+            const ambition = `${HEADER}\n\n🔵 Ravi de te connaître, ${text}.\n\n🟡 Quel est ton rêve ?\n\n🔴 Que veux-tu devenir plus tard ?`;
+            return await sendWhatsApp(from, ambition);
         }
 
-        // ÉTAPE C : Mode Discussion Continue (Plus de boucles)
+        // C. Recherche base d'abord
+        const infoBase = await chercherDansBibliotheque(text);
         const history = safeParseHistory(user.historique);
-        const reponseBase = await chercherDansBibliotheque(text);
 
+        if (infoBase) {
+            const newHistory = [
+                ...history,
+                { role: "user", content: text },
+                { role: "assistant", content: infoBase }
+            ].slice(-10);
+
+            await pool.query(
+                "UPDATE conversations SET historique = $1, updated_at = NOW() WHERE phone = $2",
+                [JSON.stringify(newHistory), from]
+            );
+
+            return await sendWhatsApp(from, `${HEADER}\n\n${infoBase}`);
+        }
+
+        // D. IA seulement si la base ne trouve rien
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu EdTech. Ton élève est ${user.nom}.
-                    DIRECTIVES :
-                    - Ne redemande JAMAIS le nom ou comment il va en boucle.
-                    - Si une INFO_BASE est fournie, intègre-la dans une réponse chaleureuse.
-                    - Si l'élève pose une question sur un territoire, donne les faits et encourage-le.
-                    - Reste concis (3 lignes).`
+                    content: `Tu es MWALIMU EDTECH.
+1. Réponds directement.
+2. Maximum 3 lignes.
+3. Réponds uniquement à la question posée.
+4. N'invente jamais.
+5. Si tu ne sais pas, dis exactement : "Je n’ai pas encore cette donnée dans ma bibliothèque."`
                 },
-                ...history,
-                { role: "user", content: reponseBase ? `INFO_BASE : ${reponseBase}. L'élève demande : ${text}` : text }
+                ...history.slice(-8),
+                { role: "user", content: text }
             ]
         });
 
         const aiReply = completion.choices[0].message.content;
 
-        // Sauvegarde de l'échange
-        const newHistory = [...history, { role: "user", content: text }, { role: "assistant", content: aiReply }].slice(-10);
-        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(newHistory), from]);
+        const newHistory = [
+            ...history,
+            { role: "user", content: text },
+            { role: "assistant", content: aiReply }
+        ].slice(-10);
+
+        await pool.query(
+            "UPDATE conversations SET historique = $1, updated_at = NOW() WHERE phone = $2",
+            [JSON.stringify(newHistory), from]
+        );
 
         await sendWhatsApp(from, `${HEADER}\n\n${aiReply}`);
 
     } catch (e) {
         console.error(e);
-        await sendWhatsApp(from, `${HEADER}\n\n🔴 Petit souci technique, mon cher ${user?.nom || 'ami'}. On reprend ?`);
+        await sendWhatsApp(from, `${HEADER}\n\n🔴 Petit souci technique. Répète ta question.`);
     }
 });
 
