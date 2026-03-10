@@ -14,18 +14,16 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// RÈGLE D'OR : Italique, boules au début, drapeau à la fin, pas d'astérisques superflus
+// RÈGLE D'OR : Italique, boules au début, drapeau à la fin, pas d'astérisques autour du bloc
 const HEADER = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
     "« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »",
     "« Science sans conscience n'est que ruine de l'âme. » - François Rabelais",
     "« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba",
-    "« Le succès, c'est d'aller d'échec en échec sans perdre son enthousiasme. »",
     "« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »"
 ];
 
-// GESTION ROBUSTE DE L'HISTORIQUE
 const safeParseHistory = (historyStr) => {
     try {
         const parsed = JSON.parse(historyStr || '[]');
@@ -43,7 +41,7 @@ async function sendWhatsApp(to, bodyText) {
     } catch (e) { console.error("Erreur WhatsApp :", e.response?.data || e.message); }
 }
 
-/* --- 1. RAPPEL DU MATIN (RÉTABLI À 7H00 LUBUMBASHI) --- */
+/* --- 1. RAPPEL DU MATIN (7H00 LUBUMBASHI) --- */
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations");
@@ -55,7 +53,7 @@ cron.schedule("0 7 * * *", async () => {
     } catch (e) { console.log("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-/* --- 2. LOGIQUE DE RECHERCHE BIBLIOTHÈQUE (INTELLIGENTE) --- */
+/* --- 2. LOGIQUE DE RECHERCHE BIBLIOTHÈQUE --- */
 function extraireMotsCles(question) {
     const stopwords = ["le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "en", "au", "aux", "dans", "sur", "sous", "avec", "pour", "par", "qui", "que", "quoi", "ou", "où", "est", "sont", "a", "ont", "quel", "quelle", "comment", "pourquoi", "rdc", "congo"];
     return question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, " ").split(/\s+/).filter(mot => mot.length > 2 && !stopwords.includes(mot));
@@ -74,7 +72,7 @@ async function chercherDansBibliotheque(question) {
     } catch (e) { return null; }
 }
 
-/* --- 3. WEBHOOK : IDENTITÉ ET TUTORAT APPROFONDI --- */
+/* --- 3. WEBHOOK : LOGIQUE D'IDENTITÉ ET TUTORAT --- */
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -87,21 +85,21 @@ app.post("/webhook", async (req, res) => {
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
         let user = userRes.rows[0];
 
-        // ÉTAPE A : ACCUEIL NOUVEL ÉLÈVE
+        // ÉTAPE A : ACCUEIL ET DEMANDE D'IDENTITÉ
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, historique) VALUES ($1, $2)", [from, '[]']);
-            const welcome = `${HEADER}\n\n🔵 **Bienvenu(e) jeune patriote !** 😊\n\n🟡 Je suis **Mwalimu EdTech**, ton précepteur personnel.\n\n🔴 Pour commencer, **quel est ton nom et ta classe ?**`;
+            const welcome = `${HEADER}\n\n🔵 **Bienvenu(e) jeune patriote !** 😊\n\n🟡 Je suis **Mwalimu EdTech**, ton mentor personnel.\n\n🔴 Pour commencer, **quel est ton nom et ta classe ?**`;
             return await sendWhatsApp(from, welcome);
         }
 
-        // ÉTAPE B : ENREGISTREMENT IDENTITÉ
-        if (!user.nom) {
+        // ÉTAPE B : ENREGISTREMENT DU NOM ET DE LA CLASSE (SI VIDE)
+        if (!user.nom || user.nom.trim() === "" || user.nom.length < 2) {
             await pool.query("UPDATE conversations SET nom = $1 WHERE phone = $2", [text, from]);
-            const confirm = `${HEADER}\n\n🔵 Ravi de te connaître, **${text}** !\n\n🟡 Je suis prêt à t'aider. Quelle est ta première question sur notre beau pays ?`;
+            const confirm = `${HEADER}\n\n🔵 Ravi de te connaître, **${text}** !\n\n🟡 Je suis maintenant prêt à t'accompagner. Quelle est ta question ?`;
             return await sendWhatsApp(from, confirm);
         }
 
-        // ÉTAPE C : RÉCUPÉRATION DU CONTEXTE SQL
+        // ÉTAPE C : RÉCUPÉRATION DU CONTEXTE (ANTI-BOUCLE)
         const infoLocal = await chercherDansBibliotheque(text);
         let contextAdditionnel = infoLocal ? `[DONNÉE SOURCE RDC : ${infoLocal}]` : "";
 
@@ -113,9 +111,9 @@ app.post("/webhook", async (req, res) => {
                 {
                     role: "system",
                     content: `Tu es MWALIMU EDTECH, le mentor de ${user.nom}.
-                    1. Sois chaleureux et utilise 🔵, 🟡, 🔴.
-                    2. Utilise cette donnée : ${contextAdditionnel}.
-                    3. Tutorat approfondi : explique, illustre par un fait congolais, et conclus.`
+                    INSTRUCTION : Ne parle JAMAIS du Bas-Uele sauf si l'élève le demande.
+                    MÉTHODE : 1. Réponds précisément. 2. Utilise : ${contextAdditionnel}. 3. Sois chaleureux.
+                    STYLE : Utilise 🔵, 🟡, 🔴.`
                 },
                 ...history.slice(-6),
                 { role: "user", content: text }
@@ -131,7 +129,7 @@ app.post("/webhook", async (req, res) => {
         await sendWhatsApp(from, `${HEADER}\n\n${aiReply}`);
 
     } catch (e) {
-        console.error(e);
+        console.error("Erreur:", e);
         await sendWhatsApp(from, `${HEADER}\n\n🔴 Oups ! Repose ta question, jeune patriote !`);
     }
 });
