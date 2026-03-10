@@ -14,7 +14,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// RÈGLE D'OR : Italique, boules au début, drapeau à la fin, pas d'astérisques de gras autour du header
+// RÈGLE D'OR : Italique, boules au début, drapeau à la fin, pas d'astérisques superflus
 const HEADER = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const safeParseHistory = (historyStr) => {
@@ -34,22 +34,19 @@ async function sendWhatsApp(to, bodyText) {
     } catch (e) { console.error("Erreur WhatsApp :", e.message); }
 }
 
-/* --- 1. LOGIQUE DE RECHERCHE STRICTE (ANTI-BAS-UELE) --- */
+/* --- 1. LOGIQUE DE RECHERCHE STRICTE --- */
 async function chercherDansBibliotheque(question) {
     const stopwords = ["le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "en", "au", "aux", "dans", "sur", "sous", "avec", "pour", "par", "qui", "que", "quoi", "ou", "où", "est", "sont", "a", "ont", "quel", "quelle", "comment", "pourquoi", "rdc", "congo"];
     const mots = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, " ").split(/\s+/).filter(mot => mot.length > 3 && !stopwords.includes(mot));
-   
     if (mots.length === 0) return null;
-
     try {
-        // Recherche exacte sur le nom ou la description pour éviter les faux positifs
-        const query = `SELECT description FROM drc_data WHERE EXISTS (SELECT 1 FROM unnest($1::text[]) AS m WHERE nom ILIKE m OR nom ILIKE '%'||m||'%') LIMIT 1`;
+        const query = `SELECT description FROM drc_data WHERE EXISTS (SELECT 1 FROM unnest($1::text[]) AS m WHERE nom ILIKE '%'||m||'%') LIMIT 1`;
         const res = await pool.query(query, [mots]);
         return res.rows.length > 0 ? res.rows[0].description : null;
     } catch (e) { return null; }
 }
 
-/* --- 2. WEBHOOK : ACCUEIL ET IDENTITÉ --- */
+/* --- 2. WEBHOOK : L'INITIATIVE DU CONTACT --- */
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -62,34 +59,33 @@ app.post("/webhook", async (req, res) => {
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
         let user = userRes.rows[0];
 
-        // ÉTAPE A : ACCUEIL STRICT (DEMANDE NOM/CLASSE)
+        // ÉTAPE A : PREMIER CONTACT - MWALIMU PREND LES DEVANTS
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, historique, nom) VALUES ($1, $2, $3)", [from, '[]', '']);
             const welcome = `${HEADER}\n\nBonjour ! Je suis **Mwalimu**, ton précepteur numérique. 😊\n\n🔵 **Quel est ton nom et ta classe ?** 🟡🔴`;
             return await sendWhatsApp(from, welcome);
         }
 
-        // ÉTAPE B : ENREGISTREMENT SI LE NOM EST VIDE
-        if (!user.nom || user.nom === '') {
+        // ÉTAPE B : MWALIMU ACCUEILLE L'ÉLÈVE PAR SON NOM
+        if (!user.nom || user.nom.trim() === "") {
             await pool.query("UPDATE conversations SET nom = $1 WHERE phone = $2", [text, from]);
-            const confirm = `${HEADER}\n\n🔵 Ravi de te connaître, **${text}** ! 🤝\n\n🟡 Je suis prêt à t'aider. Quelle est ta première question sur notre grand Congo ? 🔴`;
+            const confirm = `${HEADER}\n\n🔵 Ravi de te connaître, **${text}** ! 🤝\n\n🟡 Je suis désormais ton mentor pour t'accompagner vers l'excellence. Quelle est ta première question pour moi aujourd'hui ? 🔴`;
             return await sendWhatsApp(from, confirm);
         }
 
-        // ÉTAPE C : RÉCUPÉRATION DU SAVOIR (FILTRÉ)
+        // ÉTAPE C : TUTORAT APPROFONDI
         const infoLocal = await chercherDansBibliotheque(text);
-        const promptSystem = `Tu es MWALIMU EDTECH, le mentor de ${user.nom}.
-        IMPORTANT : Ne mentionne JAMAIS le Bas-Uele sauf si l'utilisateur le demande explicitement.
-        RÈGLE : Si tu n'as pas d'info précise, utilise ta culture générale sur la RDC.
-        MÉTHODE : Explique, donne un exemple congolais, termine par une question d'éveil.
-        STYLE : 🔵, 🟡, 🔴.`;
-
         const history = safeParseHistory(user.historique);
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
-                { role: "system", content: promptSystem },
-                ...(infoLocal ? [{ role: "system", content: `CONTEXTE RDC : ${infoLocal}` }] : []),
+                {
+                    role: "system",
+                    content: `Tu es MWALIMU EDTECH, le mentor familier de ${user.nom}.
+                    INTERDICTION : Ne jamais parler du Bas-Uele sauf si l'élève le demande.
+                    CONTEXTE : ${infoLocal || "Culture générale RDC"}.
+                    MÉTHODE : Explique, illustre par un fait congolais, termine par une question d'éveil. 🔵🟡🔴`
+                },
                 ...history.slice(-6),
                 { role: "user", content: text }
             ]
