@@ -21,6 +21,7 @@ const citations = [
     "« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »",
     "« Science sans conscience n'est que ruine de l'âme. » - François Rabelais",
     "« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba",
+    "« Le succès, c'est d'aller d'échec en échec sans perdre son enthousiasme. »",
     "« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »"
 ];
 
@@ -72,7 +73,7 @@ async function chercherDansBibliotheque(question) {
     } catch (e) { return null; }
 }
 
-/* --- 3. WEBHOOK : LOGIQUE D'IDENTITÉ ET TUTORAT --- */
+/* --- 3. WEBHOOK : IDENTITÉ ET TUTORAT APPROFONDI --- */
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -85,25 +86,25 @@ app.post("/webhook", async (req, res) => {
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
         let user = userRes.rows[0];
 
-        // ÉTAPE A : ACCUEIL ET DEMANDE D'IDENTITÉ
+        // ÉTAPE A : ACCUEIL NOUVEL ÉLÈVE (PRÉSENTATION CORRIGÉE)
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, historique) VALUES ($1, $2)", [from, '[]']);
-            const welcome = `${HEADER}\n\n🔵 **Bienvenu(e) jeune patriote !** 😊\n\n🟡 Je suis **Mwalimu EdTech**, ton mentor personnel.\n\n🔴 Pour commencer, **quel est ton nom et ta classe ?**`;
+            const welcome = `${HEADER}\n\nBonjour ! Je suis **Mwalimu**, ton précepteur numérique. 😊\n\n🔵 **Quel est ton nom et ta classe ?** 🟡🔴`;
             return await sendWhatsApp(from, welcome);
         }
 
-        // ÉTAPE B : ENREGISTREMENT DU NOM ET DE LA CLASSE (SI VIDE)
-        if (!user.nom || user.nom.trim() === "" || user.nom.length < 2) {
+        // ÉTAPE B : ENREGISTREMENT IDENTITÉ (NOM ET CLASSE)
+        if (!user.nom || user.nom.trim() === "") {
             await pool.query("UPDATE conversations SET nom = $1 WHERE phone = $2", [text, from]);
-            const confirm = `${HEADER}\n\n🔵 Ravi de te connaître, **${text}** !\n\n🟡 Je suis maintenant prêt à t'accompagner. Quelle est ta question ?`;
+            const confirm = `${HEADER}\n\n🔵 Ravi de faire ta connaissance, **${text}** ! 🤝\n\n🟡 Je suis prêt à t'aider dans ton apprentissage. Quelle est ta première question pour moi aujourd'hui ? 🔴`;
             return await sendWhatsApp(from, confirm);
         }
 
-        // ÉTAPE C : RÉCUPÉRATION DU CONTEXTE (ANTI-BOUCLE)
+        // ÉTAPE C : RÉCUPÉRATION DU CONTEXTE (SANS BOUCLE)
         const infoLocal = await chercherDansBibliotheque(text);
         let contextAdditionnel = infoLocal ? `[DONNÉE SOURCE RDC : ${infoLocal}]` : "";
 
-        // ÉTAPE D : GÉNÉRATION DE LA RÉPONSE
+        // ÉTAPE D : GÉNÉRATION DE LA RÉPONSE PÉDAGOGIQUE
         const history = safeParseHistory(user.historique);
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -111,9 +112,10 @@ app.post("/webhook", async (req, res) => {
                 {
                     role: "system",
                     content: `Tu es MWALIMU EDTECH, le mentor de ${user.nom}.
-                    INSTRUCTION : Ne parle JAMAIS du Bas-Uele sauf si l'élève le demande.
-                    MÉTHODE : 1. Réponds précisément. 2. Utilise : ${contextAdditionnel}. 3. Sois chaleureux.
-                    STYLE : Utilise 🔵, 🟡, 🔴.`
+                    1. Tutorat approfondi : explique clairement, donne un exemple congolais, termine par une question d'éveil.
+                    2. Utilise cette donnée : ${contextAdditionnel}.
+                    3. Ne parle pas du Bas-Uele sauf demande explicite.
+                    4. Style : Chaleureux, utilise 🔵, 🟡, 🔴.`
                 },
                 ...history.slice(-6),
                 { role: "user", content: text }
@@ -129,7 +131,7 @@ app.post("/webhook", async (req, res) => {
         await sendWhatsApp(from, `${HEADER}\n\n${aiReply}`);
 
     } catch (e) {
-        console.error("Erreur:", e);
+        console.error(e);
         await sendWhatsApp(from, `${HEADER}\n\n🔴 Oups ! Repose ta question, jeune patriote !`);
     }
 });
