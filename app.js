@@ -30,31 +30,26 @@ async function envoyerWhatsApp(to, texte) {
 
 // --- NETTOYAGE INTELLIGENT ---
 async function extraireInfo(type, texte) {
-    const prompt = type === "nom"
-        ? `Extrais uniquement le prénom de: "${texte}". Réponds par UN SEUL MOT.`
-        : `Extrais uniquement le métier de: "${texte}". Réponds par UN SEUL MOT.`;
+    const prompt = `Extrais uniquement le ${type} (un seul mot ou groupe de mots court). Texte: "${texte}". Réponds directement sans ponctuation.`;
     try {
         const res = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: "user", content: prompt }]
         });
-        return res.choices[0].message.content.replace(/[\.\!\?]/g, "").trim();
+        return res.choices[0].message.content.trim();
     } catch (e) { return texte; }
 }
 
-// --- RECHERCHE "PASSE-PARTOUT" DANS TA BIBLIOTHÈQUE ---
+// --- RECHERCHE BIBLIOTHÈQUE OPTIMISÉE ---
 async function consulterBibliotheque(phrase) {
-    const mots = phrase.toLowerCase().split(" ");
-    // On cherche les mots-clés importants (plus de 3 lettres)
-    const motsCles = mots.filter(m => m.length > 3);
-   
-    for (let motClé of motsCles) {
+    const mots = phrase.toLowerCase().split(" ").filter(m => m.length > 3);
+    for (let motClé of mots) {
         try {
             const query = `
-                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | Territoires: ' || territoires as res
-                FROM drc_population_villes WHERE LOWER(province) LIKE $1
+                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | LISTE COMPLÈTE DES TERRITOIRES: ' || territoires as res
+                FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
                 UNION ALL
-                SELECT caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
+                SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
                 UNION ALL
                 SELECT reponse FROM questions_reponses WHERE LOWER(question) LIKE $1
                 LIMIT 1
@@ -95,7 +90,7 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔵 Magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet} exemplaire.\n\n🔴 Quelle est ta question ?`);
         }
 
-        // --- PHASE DE RÉPONSE : UTILISATION DE TES DONNÉES ---
+        // --- PHASE DE TUTORAT HUMAIN ---
         const infoBase = await consulterBibliotheque(text);
         let hist = []; try { hist = JSON.parse(user.historique || "[]"); } catch(e) {}
 
@@ -104,12 +99,14 @@ app.post("/webhook", async (req, res) => {
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, mentor de ${user.nom} (futur ${user.reve}).
-                    RÈGLE : Si l'INFO_BASE est fournie, tu dois l'utiliser pour donner une réponse précise et complète. Ne dis JAMAIS que tu n'as pas accès aux données si l'INFO_BASE contient l'info.
+                    content: `Tu es Mwalimu, le mentor de ${user.nom} (futur ${user.reve}).
+                    IDENTITÉ : Tu es un tuteur congolais chaleureux, patriote et pédagogue. Tu ne donnes pas juste des listes, tu expliques l'importance des choses pour le pays.
                    
-                    INFO_BASE : ${infoBase || "Cherche dans tes connaissances sur la RDC"}.
+                    RÈGLE DE DONNÉES : Si l'INFO_BASE est fournie, tu dois citer TOUS les éléments listés sans exception. Si l'INFO_BASE contient 10 territoires, cite les 10.
                    
-                    Structure avec 🔵, 🟡, 🔴.`
+                    INFO_BASE : ${infoBase || "Pas de données SQL, utilise ta culture congolaise"}.
+                   
+                    STRUCTURE : 🔵 Intro humaine | 🟡 Leçons et faits (Données SQL) | 🔴 Conclusion inspirante.`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -123,7 +120,7 @@ app.post("/webhook", async (req, res) => {
         await envoyerWhatsApp(from, reponse);
 
     } catch (e) {
-        await envoyerWhatsApp(from, "🔴 Désolé, j'ai eu une petite distraction. Reformule ?");
+        await envoyerWhatsApp(from, "🔴 Mon cher élève, j'ai eu une petite distraction. Peux-tu reformuler ?");
     }
 });
 
