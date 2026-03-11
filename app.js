@@ -28,11 +28,11 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// --- NETTOYAGE INTELLIGENT (NOM & RÊVE) ---
+// --- NETTOYAGE INTELLIGENT ---
 async function extraireInfo(type, texte) {
     const prompt = type === "nom"
-        ? `Extrais uniquement le prénom. Texte: "${texte}". Réponds par UN SEUL MOT.`
-        : `Extrais uniquement le métier/ambition. Texte: "${texte}". Réponds par UN SEUL MOT (ex: Avocat).`;
+        ? `Extrais uniquement le prénom de: "${texte}". Réponds par UN SEUL MOT.`
+        : `Extrais uniquement le métier de: "${texte}". Réponds par UN SEUL MOT.`;
     try {
         const res = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -42,23 +42,28 @@ async function extraireInfo(type, texte) {
     } catch (e) { return texte; }
 }
 
-// --- RECHERCHE BIBLIOTHÈQUE (Géo, Histoire, Culture) ---
-async function consulterBibliotheque(question) {
-    const q = question.toLowerCase().trim();
-    try {
-        // On cherche d'abord dans les provinces pour la géo
-        const query = `
-            SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | Territoires: ' || territoires as res
-            FROM drc_population_villes WHERE LOWER(province) ILIKE $1 OR LOWER(territoires) ILIKE $1
-            UNION ALL
-            SELECT caracteristiques FROM drc_hydrographie WHERE LOWER(element) ILIKE $1
-            UNION ALL
-            SELECT reponse FROM questions_reponses WHERE LOWER(question) ILIKE $1
-            LIMIT 1
-        `;
-        const res = await pool.query(query, [`%${q}%`]);
-        return res.rows.length > 0 ? res.rows[0].res : null;
-    } catch (e) { return null; }
+// --- RECHERCHE "PASSE-PARTOUT" DANS TA BIBLIOTHÈQUE ---
+async function consulterBibliotheque(phrase) {
+    const mots = phrase.toLowerCase().split(" ");
+    // On cherche les mots-clés importants (plus de 3 lettres)
+    const motsCles = mots.filter(m => m.length > 3);
+   
+    for (let motClé of motsCles) {
+        try {
+            const query = `
+                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | Territoires: ' || territoires as res
+                FROM drc_population_villes WHERE LOWER(province) LIKE $1
+                UNION ALL
+                SELECT caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
+                UNION ALL
+                SELECT reponse FROM questions_reponses WHERE LOWER(question) LIKE $1
+                LIMIT 1
+            `;
+            const res = await pool.query(query, [`%${motClé}%`]);
+            if (res.rows.length > 0) return res.rows[0].res;
+        } catch (e) { continue; }
+    }
+    return null;
 }
 
 app.post("/webhook", async (req, res) => {
@@ -87,10 +92,10 @@ app.post("/webhook", async (req, res) => {
         if (!user.reve) {
             const reveNet = await extraireInfo("reve", text);
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNet, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un ${reveNet} exemplaire.\n\n🔴 Quelle est ta question ?`);
+            return await envoyerWhatsApp(from, `🔵 Magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet} exemplaire.\n\n🔴 Quelle est ta question ?`);
         }
 
-        // --- PHASE DE RÉPONSE ---
+        // --- PHASE DE RÉPONSE : UTILISATION DE TES DONNÉES ---
         const infoBase = await consulterBibliotheque(text);
         let hist = []; try { hist = JSON.parse(user.historique || "[]"); } catch(e) {}
 
@@ -100,12 +105,11 @@ app.post("/webhook", async (req, res) => {
                 {
                     role: "system",
                     content: `Tu es Mwalimu, mentor de ${user.nom} (futur ${user.reve}).
-                    RÈGLE ABSOLUE : Si une INFO_BASE est fournie ci-dessous, tu DOIS l'utiliser sans la modifier.
-                    Si l'INFO_BASE liste 6 territoires, n'en cite pas 5. Ne contredis JAMAIS l'INFO_BASE.
+                    RÈGLE : Si l'INFO_BASE est fournie, tu dois l'utiliser pour donner une réponse précise et complète. Ne dis JAMAIS que tu n'as pas accès aux données si l'INFO_BASE contient l'info.
                    
-                    INFO_BASE : ${infoBase || "Aucune donnée dans la bibliothèque, réponds avec sagesse"}.
+                    INFO_BASE : ${infoBase || "Cherche dans tes connaissances sur la RDC"}.
                    
-                    Structure tes paragraphes avec 🔵, 🟡, 🔴.`
+                    Structure avec 🔵, 🟡, 🔴.`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -115,10 +119,11 @@ app.post("/webhook", async (req, res) => {
         const reponse = completion.choices[0].message.content;
         const newHist = [...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10);
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(newHist), from]);
+       
         await envoyerWhatsApp(from, reponse);
 
     } catch (e) {
-        await envoyerWhatsApp(from, "🔴 Désolé, j'ai eu une petite distraction. Reformule ta question ?");
+        await envoyerWhatsApp(from, "🔴 Désolé, j'ai eu une petite distraction. Reformule ?");
     }
 });
 
