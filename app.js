@@ -13,7 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// RÈGLE D'OR : Le Header immuable
+// LA RÈGLE D'OR : Le Header immuable
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -33,7 +33,7 @@ async function envoyerWhatsApp(to, texte) {
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         },
         { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur WhatsApp"); }
+    } catch (e) { console.error("Erreur WhatsApp:", e.message); }
 }
 
 // --- RAPPEL DU MATIN (Lubumbashi 07:00) ---
@@ -84,32 +84,34 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor.\n\n🟡 Pour commencer, quel est ton nom et ta classe ? 🇨🇩");
         }
 
-        // 2. Capture du Nom
+        // 2. Capture du Nom (Nettoyage pour ne garder que le prénom)
         if (!user.nom) {
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté ${text} !\n\n🟡 Quel est ton rêve pour le futur du Congo ? 🌟`);
+            const nomNettoye = text.replace(/je m'appelle|je suis|mon nom est|je mappelle/gi, "").trim();
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
+            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNettoye} !\n\n🟡 Quel est ton rêve pour le futur du Congo ? 🌟`);
         }
 
-        // 3. Capture du Rêve
+        // 3. Capture du Rêve (Nettoyage de la phrase)
         if (!user.reve || user.reve === "") {
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est magnifique !\n\n🟡 Je t'aiderai à devenir un ${text} exemplaire.\n\n🔴 Quelle est ta question pour aujourd'hui ?`);
+            const reveNettoye = text.replace(/devenir|je veux être|je souhaite être|je veux devenir/gi, "").trim();
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNettoye, from]);
+            return await envoyerWhatsApp(from, `🔵 C'est magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir une ${reveNettoye} exemplaire.\n\n🔴 Quelle est ta question pour aujourd'hui ?`);
         }
 
-        // 4. Tutorat Intelligent (Avec Boules en paragraphes)
+        // 4. Tutorat Intelligent
         const infoBase = await consulterBibliotheque(text);
-        let hist = []; try { hist = JSON.parse(user.historique || "[]"); } catch(e) {}
+        let hist = []; try { hist = JSON.parse(user.historique || "[]"); } catch(e) { hist = []; }
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, mentor de ${user.nom}.
-                    RÈGLES DE RÉPONSE :
-                    - Utilise 🔵, 🟡, 🔴 au début de chaque paragraphe.
-                    - Info base RDC: ${infoBase || "Utilise ta culture générale"}.
-                    - Sois humain, court et encourageant.`
+                    content: `Tu es Mwalimu, mentor de ${user.nom}. Son rêve : ${user.reve}.
+                    INSTRUCTIONS :
+                    - Utilise 🔵, 🟡, 🔴 au début de CHAQUE paragraphe.
+                    - Utilise les infos de la base si présentes : ${infoBase || "Connaissances générales RDC"}.
+                    - Sois encourageant, court (3-4 lignes).`
                 },
                 ...hist.slice(-6),
                 { role: "user", content: text }
@@ -124,7 +126,7 @@ app.post("/webhook", async (req, res) => {
 
     } catch (e) {
         console.error(e);
-        await envoyerWhatsApp(from, "🔴 Je suis là, mais j'ai eu une petite distraction.\n\n🔵 Peux-tu reformuler ta question, cher élève ?");
+        await envoyerWhatsApp(from, "🔴 Désolé, j'ai eu une petite distraction.\n\n🔵 Peux-tu reformuler ta question, mon cher élève ?");
     }
 });
 
