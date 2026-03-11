@@ -13,15 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// LA RÈGLE D'OR : Le Header immuable
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
-
-const citations = [
-    "« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »",
-    "« Science sans conscience n'est que ruine de l'âme. »",
-    "« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »",
-    "« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba"
-];
 
 // --- ENVOI WHATSAPP ---
 async function envoyerWhatsApp(to, texte) {
@@ -33,31 +25,35 @@ async function envoyerWhatsApp(to, texte) {
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         },
         { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur WhatsApp:", e.message); }
+    } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN (Lubumbashi 07:00) ---
-cron.schedule("0 7 * * *", async () => {
+// --- NETTOYAGE INTELLIGENT (NOM & RÊVE) ---
+async function extraireInfo(type, texte) {
+    const prompt = type === "nom"
+        ? `Extrais uniquement le prénom. Texte: "${texte}". Réponds par UN SEUL MOT.`
+        : `Extrais uniquement le métier/ambition. Texte: "${texte}". Réponds par UN SEUL MOT (ex: Avocat).`;
     try {
-        const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
-        for (const user of res.rows) {
-            const citation = citations[Math.floor(Math.random() * citations.length)];
-            const msg = `🔵 Bonjour cher ${user.nom} !\n\n🟡 ${citation}\n\n🔴 Prêt pour tes révisions ? Qu'étudions-nous ce matin ?`;
-            await envoyerWhatsApp(user.phone, msg);
-        }
-    } catch (e) { console.error("Erreur Cron"); }
-}, { timezone: "Africa/Lubumbashi" });
+        const res = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }]
+        });
+        return res.choices[0].message.content.replace(/[\.\!\?]/g, "").trim();
+    } catch (e) { return texte; }
+}
 
-// --- RECHERCHE BIBLIOTHÈQUE ---
+// --- RECHERCHE BIBLIOTHÈQUE (Géo, Histoire, Culture) ---
 async function consulterBibliotheque(question) {
     const q = question.toLowerCase().trim();
     try {
+        // On cherche d'abord dans les provinces pour la géo
         const query = `
-            SELECT reponse as res FROM questions_reponses WHERE LOWER(question) ILIKE $1
+            SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | Territoires: ' || territoires as res
+            FROM drc_population_villes WHERE LOWER(province) ILIKE $1 OR LOWER(territoires) ILIKE $1
             UNION ALL
             SELECT caracteristiques FROM drc_hydrographie WHERE LOWER(element) ILIKE $1
             UNION ALL
-            SELECT 'Chef-lieu: ' || chef_lieu || ' | Territoires: ' || territoires FROM drc_population_villes WHERE LOWER(province) ILIKE $1
+            SELECT reponse FROM questions_reponses WHERE LOWER(question) ILIKE $1
             LIMIT 1
         `;
         const res = await pool.query(query, [`%${q}%`]);
@@ -65,7 +61,6 @@ async function consulterBibliotheque(question) {
     } catch (e) { return null; }
 }
 
-// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -78,55 +73,52 @@ app.post("/webhook", async (req, res) => {
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = userRes.rows[0];
 
-        // 1. Nouvel élève
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, historique, reve) VALUES ($1, '', '[]', '')", [from]);
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor.\n\n🟡 Pour commencer, quel est ton nom et ta classe ? 🇨🇩");
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor.\n\n🟡 Quel est ton nom et ta classe ? 🇨🇩");
         }
 
-        // 2. Capture du Nom (Nettoyage pour ne garder que le prénom)
         if (!user.nom) {
-            const nomNettoye = text.replace(/je m'appelle|je suis|mon nom est|je mappelle/gi, "").trim();
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNettoye} !\n\n🟡 Quel est ton rêve pour le futur du Congo ? 🌟`);
+            const nomNet = await extraireInfo("nom", text);
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNet, from]);
+            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNet} !\n\n🟡 Quel est ton rêve pour le futur du Congo ? 🌟`);
         }
 
-        // 3. Capture du Rêve (Nettoyage de la phrase)
-        if (!user.reve || user.reve === "") {
-            const reveNettoye = text.replace(/devenir|je veux être|je souhaite être|je veux devenir/gi, "").trim();
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNettoye, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir une ${reveNettoye} exemplaire.\n\n🔴 Quelle est ta question pour aujourd'hui ?`);
+        if (!user.reve) {
+            const reveNet = await extraireInfo("reve", text);
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNet, from]);
+            return await envoyerWhatsApp(from, `🔵 Magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un ${reveNet} exemplaire.\n\n🔴 Quelle est ta question ?`);
         }
 
-        // 4. Tutorat Intelligent
+        // --- PHASE DE RÉPONSE ---
         const infoBase = await consulterBibliotheque(text);
-        let hist = []; try { hist = JSON.parse(user.historique || "[]"); } catch(e) { hist = []; }
+        let hist = []; try { hist = JSON.parse(user.historique || "[]"); } catch(e) {}
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, mentor de ${user.nom}. Son rêve : ${user.reve}.
-                    INSTRUCTIONS :
-                    - Utilise 🔵, 🟡, 🔴 au début de CHAQUE paragraphe.
-                    - Utilise les infos de la base si présentes : ${infoBase || "Connaissances générales RDC"}.
-                    - Sois encourageant, court (3-4 lignes).`
+                    content: `Tu es Mwalimu, mentor de ${user.nom} (futur ${user.reve}).
+                    RÈGLE ABSOLUE : Si une INFO_BASE est fournie ci-dessous, tu DOIS l'utiliser sans la modifier.
+                    Si l'INFO_BASE liste 6 territoires, n'en cite pas 5. Ne contredis JAMAIS l'INFO_BASE.
+                   
+                    INFO_BASE : ${infoBase || "Aucune donnée dans la bibliothèque, réponds avec sagesse"}.
+                   
+                    Structure tes paragraphes avec 🔵, 🟡, 🔴.`
                 },
-                ...hist.slice(-6),
+                ...hist.slice(-4),
                 { role: "user", content: text }
             ]
         });
 
         const reponse = completion.choices[0].message.content;
         const newHist = [...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10);
-       
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(newHist), from]);
         await envoyerWhatsApp(from, reponse);
 
     } catch (e) {
-        console.error(e);
-        await envoyerWhatsApp(from, "🔴 Désolé, j'ai eu une petite distraction.\n\n🔵 Peux-tu reformuler ta question, mon cher élève ?");
+        await envoyerWhatsApp(from, "🔴 Désolé, j'ai eu une petite distraction. Reformule ta question ?");
     }
 });
 
