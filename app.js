@@ -8,8 +8,6 @@ require("dotenv").config();
 
 const app = express().use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Configuration de la base de données avec un timeout pour éviter les blocages
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
@@ -25,6 +23,7 @@ const citations = [
     "« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba"
 ];
 
+// --- ENVOI WHATSAPP ---
 async function envoyerWhatsApp(to, texte) {
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
@@ -34,10 +33,10 @@ async function envoyerWhatsApp(to, texte) {
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         },
         { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur d'envoi WhatsApp"); }
+    } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// RAPPEL DU MATIN
+// --- RAPPEL DU MATIN (7h00 Lubumbashi) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
@@ -48,14 +47,14 @@ cron.schedule("0 7 * * *", async () => {
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// RECHERCHE BIBLIOTHÈQUE (AVEC SÉCURITÉ)
+// --- RECHERCHE BIBLIOTHÈQUE (Plus flexible) ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const mots = phrase.toLowerCase().split(" ").filter(m => m.length > 3);
     for (let motClé of mots) {
         try {
             const query = `
-                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | TERRITOIRES: ' || territoires as res
+                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | LISTE DES TERRITOIRES: ' || territoires as res
                 FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
                 UNION ALL
                 SELECT caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
@@ -65,7 +64,7 @@ async function consulterBibliotheque(phrase) {
             `;
             const res = await pool.query(query, [`%${motClé}%`]);
             if (res.rows.length > 0) return res.rows[0].res;
-        } catch (e) { console.error("Recherche base échouée"); return null; }
+        } catch (e) { console.error("SQL Error"); }
     }
     return null;
 }
@@ -97,7 +96,7 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔵 C'est magnifique !\n\n🟡 Je t'accompagnerai pour devenir un(e) ${text} d'exception.\n\n🔴 Quelle est ta question ?`);
         }
 
-        // --- PHASE TUTORAT ---
+        // --- PHASE TUTORAT : L'âme de Mwalimu ---
         const infoBase = await consulterBibliotheque(text);
         let hist = JSON.parse(user.historique || "[]");
 
@@ -106,12 +105,12 @@ app.post("/webhook", async (req, res) => {
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, un précepteur congolais vivant et passionné.
+                    content: `Tu es Mwalimu, un précepteur congolais vivant, patriote et pédagogue.
                     - ÉLÈVE : ${user.nom}, futur ${user.reve}.
-                    - TON : Chaleureux, mentor, utilise "Mon cher élève", "Notre beau pays".
-                    - RIGUEUR : Ne résume JAMAIS les listes de l'INFO_BASE. Cite TOUS les territoires.
+                    - MISSION : Expliquer avec le vécu congolais. Sois un tuteur présent et disponible.
+                    - RIGUEUR : Ne résume JAMAIS les listes de l'INFO_BASE. Cite TOUS les éléments fournis.
                     - SOURCE : ${infoBase || "Pas de données SQL. Réponds avec ta culture de tuteur congolais."}
-                    - STRUCTURE : 🔵 Accueil humain | 🟡 Leçon vivante et complète | 🔴 Motivation liée au rêve.`
+                    - STRUCTURE : 🔵 Accueil chaleureux | 🟡 Leçon détaillée | 🔴 Encouragement vers son rêve.`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -125,17 +124,7 @@ app.post("/webhook", async (req, res) => {
         await envoyerWhatsApp(from, reponse);
 
     } catch (e) {
-        console.error("ERREUR:", e);
-        // Si tout échoue, on envoie quand même une réponse humaine via l'IA sans passer par la base
-        try {
-            const secours = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [{ role: "system", content: "Tu es Mwalimu, tuteur congolais. Réponds chaleureusement à l'élève malgré un petit souci technique." }, { role: "user", content: text }]
-            });
-            await envoyerWhatsApp(from, secours.choices[0].message.content);
-        } catch (e2) {
-            await envoyerWhatsApp(from, "🔴 Mon cher élève, mon esprit est un peu fatigué. Reposons la question tout de suite !");
-        }
+        await envoyerWhatsApp(from, "🔴 Mon cher élève, j'ai eu une petite distraction technique. Reposons la question !");
     }
 });
 
