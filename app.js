@@ -28,25 +28,13 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// --- NETTOYAGE INTELLIGENT ---
-async function extraireInfo(type, texte) {
-    const prompt = `Extrais uniquement le ${type} (un seul mot ou groupe de mots court). Texte: "${texte}". Réponds directement sans ponctuation.`;
-    try {
-        const res = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: prompt }]
-        });
-        return res.choices[0].message.content.trim();
-    } catch (e) { return texte; }
-}
-
-// --- RECHERCHE BIBLIOTHÈQUE OPTIMISÉE ---
+// --- RECHERCHE BIBLIOTHÈQUE ---
 async function consulterBibliotheque(phrase) {
     const mots = phrase.toLowerCase().split(" ").filter(m => m.length > 3);
     for (let motClé of mots) {
         try {
             const query = `
-                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | LISTE COMPLÈTE DES TERRITOIRES: ' || territoires as res
+                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | LISTE COMPLÈTE: ' || territoires as res
                 FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
                 UNION ALL
                 SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
@@ -61,6 +49,7 @@ async function consulterBibliotheque(phrase) {
     return null;
 }
 
+// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -79,20 +68,18 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!user.nom) {
-            const nomNet = await extraireInfo("nom", text);
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNet, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNet} !\n\n🟡 Quel est ton rêve pour le futur du Congo ? 🌟`);
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Enchanté ${text} !\n\n🟡 Quel est ton rêve pour le futur du Congo ? 🌟`);
         }
 
         if (!user.reve) {
-            const reveNet = await extraireInfo("reve", text);
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNet, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet} exemplaire.\n\n🔴 Quelle est ta question ?`);
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Magnifique !\n\n🟡 Je t'aiderai à devenir un(e) ${text} d'exception.\n\n🔴 Quelle est ta question ?`);
         }
 
-        // --- PHASE DE TUTORAT HUMAIN ---
+        // --- TUTORAT HUMAIN ET PRÉCIS ---
         const infoBase = await consulterBibliotheque(text);
-        let hist = []; try { hist = JSON.parse(user.historique || "[]"); } catch(e) {}
+        let hist = JSON.parse(user.historique || "[]");
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -100,13 +87,16 @@ app.post("/webhook", async (req, res) => {
                 {
                     role: "system",
                     content: `Tu es Mwalimu, le mentor de ${user.nom} (futur ${user.reve}).
-                    IDENTITÉ : Tu es un tuteur congolais chaleureux, patriote et pédagogue. Tu ne donnes pas juste des listes, tu expliques l'importance des choses pour le pays.
+                    PERSONNALITÉ : Tu es un précepteur congolais vivant, passionné et bienveillant. Parle comme un tuteur qui veut que son élève réussisse ses examens d'État. Utilise un ton humain ("Mon cher ${user.nom}", "Apprends bien ceci").
                    
-                    RÈGLE DE DONNÉES : Si l'INFO_BASE est fournie, tu dois citer TOUS les éléments listés sans exception. Si l'INFO_BASE contient 10 territoires, cite les 10.
+                    RÈGLE DE RIGUEUR : Tu ne dois JAMAIS résumer les listes. Si l'INFO_BASE contient 10 territoires, tu les cites TOUS les 10 un par un.
                    
-                    INFO_BASE : ${infoBase || "Pas de données SQL, utilise ta culture congolaise"}.
+                    INFO_BASE : ${infoBase || "Aucune donnée précise, utilise ta culture congolaise"}.
                    
-                    STRUCTURE : 🔵 Intro humaine | 🟡 Leçons et faits (Données SQL) | 🔴 Conclusion inspirante.`
+                    STRUCTURE :
+                    🔵 ACCUEIL : Chaleureux, mentionne le vécu ou l'importance du sujet pour la RDC.
+                    🟡 DÉTAILS : Utilise les données de l'INFO_BASE de manière exhaustive.
+                    🔴 ENCOURAGEMENT : Lie la réponse au rêve de l'élève (avocat, etc.) et motive-le.`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -120,7 +110,7 @@ app.post("/webhook", async (req, res) => {
         await envoyerWhatsApp(from, reponse);
 
     } catch (e) {
-        await envoyerWhatsApp(from, "🔴 Mon cher élève, j'ai eu une petite distraction. Peux-tu reformuler ?");
+        await envoyerWhatsApp(from, "🔴 Mon cher élève, j'ai eu une petite distraction technique. Reposons la question !");
     }
 });
 
