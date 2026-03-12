@@ -15,7 +15,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// LA RÈGLE D'OR : Le Header sacré
+// LA RÈGLE D'OR : Le Header sacré respecté scrupuleusement
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -40,13 +40,14 @@ async function envoyerWhatsApp(to, texte) {
     }
 }
 
-// --- LE RAPPEL DU MATIN (Réactivé) ---
+// --- LE RAPPEL DU MATIN ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const messageMatin = `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt pour une nouvelle journée d'apprentissage pour notre grand Congo ?`;
+            // On utilise une formulation inclusive pour le rappel automatique
+            const messageMatin = `🔵 Bonjour mon cher élève / ma chère élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une nouvelle journée d'apprentissage pour notre grand Congo ?`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) {
@@ -54,19 +55,19 @@ cron.schedule("0 7 * * *", async () => {
     }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE BIBLIOTHÈQUE (Dynamique - Lit uniquement la DB) ---
+// --- RECHERCHE BIBLIOTHÈQUE ---
 async function consulterBibliotheque(phrase) {
     const mots = phrase.toLowerCase().split(" ").filter(m => m.length > 3);
     for (let motCle of mots) {
         try {
-            const query = `
+            const queryGeo = `
                 SELECT 'PROVINCE: ' || province || ' | CHEF-LIEU: ' || chef_lieu || ' | TERRITOIRES: ' || territoires as res
                 FROM drc_population_villes
                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1
                 LIMIT 1
             `;
-            const res = await pool.query(query, [`%${motCle}%`]);
-            if (res.rows.length > 0) return res.rows[0].res;
+            const resGeo = await pool.query(queryGeo, [`%${motCle}%`]);
+            if (resGeo.rows.length > 0) return resGeo.rows[0].res;
 
             const queryAutre = `
                 SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
@@ -96,26 +97,39 @@ app.post("/webhook", async (req, res) => {
 
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, historique) VALUES ($1, '', '[]')", [from]);
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour nous lancer dans cette aventure, quel est ton prénom et ta classe ?");
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour nous lancer dans cette aventure, quel est ton prénom et ta classe ? 🇨🇩");
         }
 
         const infoBase = await consulterBibliotheque(text);
-        let hist = JSON.parse(user.historique || "[]");
+       
+        // Gestion robuste de l'historique (Correction de l'erreur JSON)
+        let hist = [];
+        if (user.historique) {
+            if (typeof user.historique === 'string') {
+                try { hist = JSON.parse(user.historique); } catch (e) { hist = []; }
+            } else if (Array.isArray(user.historique)) {
+                hist = user.historique;
+            }
+        }
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, un précepteur congolais qui tire sa science exclusivement de sa BIBLIOTHÈQUE (INFO_BASE).
+                    content: `Tu es Mwalimu, un précepteur congolais d'exception.
+                   
+                    CONSIGNES D'ADRESSAGE :
+                    - Si l'élève est une fille (ex: Dora), utilise "ma chère élève".
+                    - Si c'est un garçon, utilise "mon cher élève".
+                    - Sois toujours chaleureux, patriotique et pédagogue.
                    
                     CONSIGNES DE RIGUEUR :
-                    1. Utilise l'INFO_BASE comme source unique de vérité.
-                    2. Ne mélange JAMAIS le 'CHEF-LIEU' avec la liste des 'TERRITOIRES'.
-                    3. Si l'élève pose une question sur une province, ne réponds pas sur une autre.
-                    4. Ton langage doit être celui d'un mentor : chaleureux, patriotique (vécu congolais) et exigeant.
+                    1. La BIBLIOTHÈQUE (INFO_BASE) est ta seule source de vérité factuelle.
+                    2. Ne confonds JAMAIS le 'CHEF-LIEU' (Ville) avec la liste des 'TERRITOIRES'.
+                    3. Si l'INFO_BASE donne une liste de territoires, cite-les TOUS sans exception ni résumé.
                    
-                    INFO_BASE : ${infoBase ? infoBase : "Aucune donnée trouvée. Réponds avec ta culture de tuteur."}`
+                    INFO_BASE : ${infoBase ? infoBase : "Donnée non trouvée. Réponds avec ta sagesse de mentor."}`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -129,9 +143,10 @@ app.post("/webhook", async (req, res) => {
         await envoyerWhatsApp(from, reponse);
 
     } catch (e) {
-        await envoyerWhatsApp(from, `🔴 Mon cher élève, j'ai eu une distraction technique. Détails : ${e.message}`);
+        console.error(e);
+        await envoyerWhatsApp(from, `🔴 Mon cher élève / Ma chère élève, j'ai eu une distraction technique. Détails : ${e.message}`);
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu opérationnel sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Mwalimu EdTech en ligne sur le port ${PORT}`));
