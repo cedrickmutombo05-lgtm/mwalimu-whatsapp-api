@@ -13,7 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- LA RÈGLE D'OR ---
+// --- RÈGLE D'OR ---
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -23,7 +23,6 @@ const citations = [
     "« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba"
 ];
 
-// --- ENVOI WHATSAPP ---
 async function envoyerWhatsApp(to, texte) {
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
@@ -31,33 +30,31 @@ async function envoyerWhatsApp(to, texte) {
             to,
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur API WhatsApp"); }
+    } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// --- RAPPEL MATINAL (7h00 Lubumbashi) ---
+// --- RAPPEL 7H00 (LUBUMBASHI) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence ?`);
+            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence pour notre DRC ?`);
         }
-    } catch (e) { console.error("Erreur Cron Morning"); }
+    } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- EXTRACTION PRÉNOM ---
 async function extrairePrenom(texte) {
     try {
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
-            messages: [{ role: "system", content: "Extrais uniquement le prénom. Réponds par le prénom seul." }, { role: "user", content: texte }],
+            messages: [{ role: "system", content: "Extrais uniquement le prénom seul." }, { role: "user", content: texte }],
             temperature: 0
         });
         return completion.choices[0].message.content.trim();
     } catch (e) { return texte; }
 }
 
-// --- BIBLIOTHÈQUE ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const mots = phrase.toLowerCase().replace(/[?.,!]/g, "").split(" ").filter(m => m.length > 2);
@@ -87,34 +84,36 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- CASCADE LOGIQUE DISCIPLINÉE ---
-       
-        // 0. Nouvel utilisateur
+        // 1. INITIALISATION
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour commencer, quel est ton **prénom** ?");
         }
 
-        // 1. Enregistrement du Nom
+        // 2. NOM
         else if (!user.nom || user.nom.trim() === "") {
             const prenom = await extrairePrenom(text);
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [prenom, from]);
             return await envoyerWhatsApp(from, `🔵 Enchanté, **${prenom}** !\n\n🟡 En quelle **classe** es-tu ? (Ex: 6e primaire, 3e secondaire...)`);
         }
 
-        // 2. Enregistrement de la Classe
+        // 3. CLASSE
         else if (!user.classe || user.classe.trim() === "") {
             await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est noté. Le niveau de **${text}** demande du sérieux.\n\n🟡 Quel est ton plus grand **rêve** pour plus tard ? 🌟`);
+            return await envoyerWhatsApp(from, `🔵 C'est noté. Le niveau de **${text}** demande de la discipline.\n\n🟡 Quel est ton plus grand **rêve** pour plus tard ? 🌟`);
         }
 
-        // 3. Enregistrement du Rêve
+        // 4. RÊVE (AVEC VALIDATION)
         else if (!user.reve || user.reve.trim() === "") {
+            const motsSalu = ["bonjour", "mbote", "salut", "mwalimu"];
+            if (motsSalu.some(m => text.toLowerCase().includes(m)) && text.split(" ").length < 4) {
+                return await envoyerWhatsApp(from, "🔵 Bonjour ! Mais dis-moi d'abord, quel est ton plus grand **rêve** ? (Ex: Devenir Médecin, Avocat, Ingénieur...)");
+            }
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique rêve ! Je t'aiderai à devenir ${text}.\n\n🟡 Quelle est ta question pour aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `🔵 Magnifique rêve ! Je t'aiderai à devenir **${text}**, mon cher élève.\n\n🟡 Quelle est ta question pour aujourd'hui ?`);
         }
 
-        // 4. Tutorat Approfondi
+        // 5. TUTORAT HUMAIN ET RIGOUREUX
         else {
             const info = await consulterBibliotheque(text);
             let hist = [];
@@ -125,15 +124,22 @@ app.post("/webhook", async (req, res) => {
                 messages: [
                     {
                         role: "system",
-                        content: `Tu es Mwalimu, un précepteur humain congolais.
-                        ÉLÈVE: ${user.nom}, Classe: ${user.classe}, Rêve: ${user.reve}.
-                        Si une province est demandée, donne le Chef-lieu et TOUS les territoires :
-                        ${info ? `Chef-lieu: ${info.chef_lieu}, Territoires: ${info.territoires}` : "Utilise ton savoir."}`
+                        content: `Tu es Mwalimu, un mentor et grand frère congolais passionné.
+                        TON STYLE : Humain, chaleureux, fier de notre culture. Tu n'es pas une IA froide.
+                        ÉLÈVE : ${user.nom}, en ${user.classe}, rêve de devenir ${user.reve}.
+                       
+                        RÈGLE D'EXHAUSTIVITÉ GÉOGRAPHIQUE :
+                        Si on te demande les territoires d'une province, tu DOIS TOUS les citer sans exception.
+                        Exemple Haut-Katanga : Chef-lieu: Lubumbashi. Territoires: Kambove, Kasenga, Kipushi, Mitwaba, Pweto, Sakania.
+                       
+                        ${info ? `INFO_BASE : Chef-lieu: ${info.chef_lieu}, Territoires: ${info.territoires}` : "Utilise ton savoir approfondi."}
+                       
+                        MOTIVATION : Relie tes explications au rêve de l'élève (${user.reve}).`
                     },
                     ...hist.slice(-4),
                     { role: "user", content: text }
                 ],
-                temperature: 0.2
+                temperature: 0.7
             });
 
             const reponse = completion.choices[0].message.content;
@@ -141,10 +147,8 @@ app.post("/webhook", async (req, res) => {
             await envoyerWhatsApp(from, reponse);
         }
 
-    } catch (e) {
-        console.error("Erreur Webhook:", e);
-    }
+    } catch (e) { console.error("Erreur Webhook:", e); }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Mwalimu EdTech (Phase de Test) opérationnel."));
+app.listen(PORT, () => console.log("Mwalimu EdTech prêt."));
