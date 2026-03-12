@@ -13,7 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- RÈGLE D'OR ---
+// --- RÈGLE D'OR : LE HEADER MWALIMU ---
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -41,35 +41,8 @@ cron.schedule("0 7 * * *", async () => {
             const cit = citations[Math.floor(Math.random() * citations.length)];
             await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence pour notre DRC ?`);
         }
-    } catch (e) { console.error("Erreur Cron"); }
+    } catch (e) { console.error("Erreur Cron Morning"); }
 }, { timezone: "Africa/Lubumbashi" });
-
-async function extrairePrenom(texte) {
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "system", content: "Extrais uniquement le prénom seul." }, { role: "user", content: texte }],
-            temperature: 0
-        });
-        return completion.choices[0].message.content.trim();
-    } catch (e) { return texte; }
-}
-
-async function consulterBibliotheque(phrase) {
-    if (!phrase) return null;
-    const mots = phrase.toLowerCase().replace(/[?.,!]/g, "").split(" ").filter(m => m.length > 2);
-    for (let mot of mots) {
-        try {
-            const res = await pool.query(
-                `SELECT province, chef_lieu, territoires FROM drc_population_villes
-                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1 LIMIT 1`,
-                [`%${mot}%`]
-            );
-            if (res.rows.length > 0) return res.rows[0];
-        } catch (e) { continue; }
-    }
-    return null;
-}
 
 // --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
@@ -92,30 +65,24 @@ app.post("/webhook", async (req, res) => {
 
         // 2. NOM
         else if (!user.nom || user.nom.trim() === "") {
-            const prenom = await extrairePrenom(text);
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [prenom, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté, **${prenom}** !\n\n🟡 En quelle **classe** es-tu ? (Ex: 6e primaire, 3e secondaire...)`);
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Enchanté, **${text}** !\n\n🟡 En quelle **classe** es-tu ?`);
         }
 
         // 3. CLASSE
         else if (!user.classe || user.classe.trim() === "") {
             await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est noté. Le niveau de **${text}** demande de la discipline.\n\n🟡 Quel est ton plus grand **rêve** pour plus tard ? 🌟`);
+            return await envoyerWhatsApp(from, `🔵 C'est noté. Le niveau de **${text}** demande du courage.\n\n🟡 Quel est ton plus grand **rêve** pour plus tard ? 🌟`);
         }
 
-        // 4. RÊVE (AVEC VALIDATION)
+        // 4. RÊVE
         else if (!user.reve || user.reve.trim() === "") {
-            const motsSalu = ["bonjour", "mbote", "salut", "mwalimu"];
-            if (motsSalu.some(m => text.toLowerCase().includes(m)) && text.split(" ").length < 4) {
-                return await envoyerWhatsApp(from, "🔵 Bonjour ! Mais dis-moi d'abord, quel est ton plus grand **rêve** ? (Ex: Devenir Médecin, Avocat, Ingénieur...)");
-            }
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique rêve ! Je t'aiderai à devenir **${text}**, mon cher élève.\n\n🟡 Quelle est ta question pour aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `🔵 Magnifique rêve ! Je t'aiderai à devenir **${text}**.\n\n🟡 Quelle est ta question pour aujourd'hui ?`);
         }
 
-        // 5. TUTORAT HUMAIN ET RIGOUREUX
+        // 5. TUTORAT VIVANT (PRÉCEPTEUR HUMAIN)
         else {
-            const info = await consulterBibliotheque(text);
             let hist = [];
             try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
@@ -124,22 +91,27 @@ app.post("/webhook", async (req, res) => {
                 messages: [
                     {
                         role: "system",
-                        content: `Tu es Mwalimu, un mentor et grand frère congolais passionné.
-                        TON STYLE : Humain, chaleureux, fier de notre culture. Tu n'es pas une IA froide.
-                        ÉLÈVE : ${user.nom}, en ${user.classe}, rêve de devenir ${user.reve}.
+                        content: `Tu es Mwalimu, un précepteur humain, grand frère et mentor congolais.
                        
-                        RÈGLE D'EXHAUSTIVITÉ GÉOGRAPHIQUE :
-                        Si on te demande les territoires d'une province, tu DOIS TOUS les citer sans exception.
-                        Exemple Haut-Katanga : Chef-lieu: Lubumbashi. Territoires: Kambove, Kasenga, Kipushi, Mitwaba, Pweto, Sakania.
+                        TON IDENTITÉ :
+                        - Tu parles avec le cœur, en utilisant le vécu de la RDC (ex: parler des réalités du pays, de l'importance de reconstruire notre nation).
+                        - Tu es chaleureux, pas un robot encyclopédique.
+                        - Tu encourages ${user.nom} pour son rêve de devenir ${user.reve}.
                        
-                        ${info ? `INFO_BASE : Chef-lieu: ${info.chef_lieu}, Territoires: ${info.territoires}` : "Utilise ton savoir approfondi."}
+                        RÈGLE D'OR DU FORMATAGE :
+                        - Chaque paragraphe d'explication DOIT impérativement commencer par une boule de couleur différente (🔵, 🟡, ou 🔴).
+                        - Exemple :
+                          🔵 [Ton introduction chaleureuse]
+                          🟡 [Ton explication détaillée avec vécu congolais]
+                          🔴 [Ton encouragement lié au rêve de l'élève]
                        
-                        MOTIVATION : Relie tes explications au rêve de l'élève (${user.reve}).`
+                        RIGOURE GEOGRAPHIQUE :
+                        - Donne toujours le Chef-lieu et TOUS les territoires si on te pose une question sur une province.`
                     },
                     ...hist.slice(-4),
                     { role: "user", content: text }
                 ],
-                temperature: 0.7
+                temperature: 0.8
             });
 
             const reponse = completion.choices[0].message.content;
@@ -151,4 +123,4 @@ app.post("/webhook", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Mwalimu EdTech prêt."));
+app.listen(PORT, () => console.log("Mwalimu prêt."));
