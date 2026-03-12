@@ -15,7 +15,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// LA RÈGLE D'OR : Le Header sacré respecté scrupuleusement
+// LA RÈGLE D'OR : Le Header sacré (Strictement respecté)
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -40,26 +40,29 @@ async function envoyerWhatsApp(to, texte) {
     }
 }
 
-// --- LE RAPPEL DU MATIN ---
+// --- LE RAPPEL DU MATIN (Lubumbashi 07:00) ---
 cron.schedule("0 7 * * *", async () => {
     try {
-        const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
+        const res = await pool.query("SELECT phone, nom, sexe FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            // On utilise une formulation inclusive pour le rappel automatique
-            const messageMatin = `🔵 Bonjour mon cher élève / ma chère élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une nouvelle journée d'apprentissage pour notre grand Congo ?`;
+            const salutation = user.sexe === 'F' ? "ma chère élève" : "mon cher élève";
+            const messageMatin = `🔵 Bonjour ${salutation} ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une nouvelle journée d'excellence pour notre grand Congo ?`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) {
-        console.error("Erreur Cron Rappel Matin");
+        console.error("Erreur Cron");
     }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE BIBLIOTHÈQUE ---
+// --- RECHERCHE BIBLIOTHÈQUE (Version "Zéro Échec") ---
 async function consulterBibliotheque(phrase) {
-    const mots = phrase.toLowerCase().split(" ").filter(m => m.length > 3);
+    const texteNettoyé = phrase.toLowerCase().replace(/[?.,!]/g, "");
+    const mots = texteNettoyé.split(" ").filter(m => m.length > 2);
+   
     for (let motCle of mots) {
         try {
+            // Recherche Géographique
             const queryGeo = `
                 SELECT 'PROVINCE: ' || province || ' | CHEF-LIEU: ' || chef_lieu || ' | TERRITOIRES: ' || territoires as res
                 FROM drc_population_villes
@@ -69,8 +72,9 @@ async function consulterBibliotheque(phrase) {
             const resGeo = await pool.query(queryGeo, [`%${motCle}%`]);
             if (resGeo.rows.length > 0) return resGeo.rows[0].res;
 
+            // Recherche Hydrographie & FAQ
             const queryAutre = `
-                SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
+                SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques as res FROM drc_hydrographie WHERE LOWER(element) LIKE $1
                 UNION ALL
                 SELECT reponse FROM questions_reponses WHERE LOWER(question) LIKE $1
                 LIMIT 1
@@ -96,20 +100,15 @@ app.post("/webhook", async (req, res) => {
         let user = userRes.rows[0];
 
         if (!user) {
-            await pool.query("INSERT INTO conversations (phone, nom, historique) VALUES ($1, '', '[]')", [from]);
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour nous lancer dans cette aventure, quel est ton prénom et ta classe ? 🇨🇩");
+            await pool.query("INSERT INTO conversations (phone, nom, historique, reve, sexe) VALUES ($1, '', '[]', '', '')", [from]);
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour nous lancer dans cette aventure, quel est ton prénom ?");
         }
 
         const infoBase = await consulterBibliotheque(text);
        
-        // Gestion robuste de l'historique (Correction de l'erreur JSON)
         let hist = [];
         if (user.historique) {
-            if (typeof user.historique === 'string') {
-                try { hist = JSON.parse(user.historique); } catch (e) { hist = []; }
-            } else if (Array.isArray(user.historique)) {
-                hist = user.historique;
-            }
+            hist = (typeof user.historique === 'string') ? JSON.parse(user.historique) : user.historique;
         }
 
         const completion = await openai.chat.completions.create({
@@ -117,19 +116,16 @@ app.post("/webhook", async (req, res) => {
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, un précepteur congolais d'exception.
+                    content: `Tu es Mwalimu, un précepteur congolais d'exception qui explique avec le vécu de notre pays.
+                    ÉLÈVE : ${user.nom}, sexe ${user.sexe === 'F' ? 'Féminin' : 'Masculin'}.
+                    ADRESSAGE : "${user.sexe === 'F' ? 'ma chère élève' : 'mon cher élève'}".
                    
-                    CONSIGNES D'ADRESSAGE :
-                    - Si l'élève est une fille (ex: Dora), utilise "ma chère élève".
-                    - Si c'est un garçon, utilise "mon cher élève".
-                    - Sois toujours chaleureux, patriotique et pédagogue.
+                    RÈGLES D'OR DE RÉPONSE :
+                    1. Si l'INFO_BASE est vide, ne dis pas "je n'ai pas de données". Utilise tes connaissances de tuteur pour expliquer le vécu congolais.
+                    2. Si l'INFO_BASE contient des territoires, cite-les TOUS. Matadi est une VILLE, Kimvula et Luozi sont des TERRITOIRES.
+                    3. Sois présent, vivant et encourageant. Rappelle à l'élève son rêve de devenir ${user.reve}.
                    
-                    CONSIGNES DE RIGUEUR :
-                    1. La BIBLIOTHÈQUE (INFO_BASE) est ta seule source de vérité factuelle.
-                    2. Ne confonds JAMAIS le 'CHEF-LIEU' (Ville) avec la liste des 'TERRITOIRES'.
-                    3. Si l'INFO_BASE donne une liste de territoires, cite-les TOUS sans exception ni résumé.
-                   
-                    INFO_BASE : ${infoBase ? infoBase : "Donnée non trouvée. Réponds avec ta sagesse de mentor."}`
+                    INFO_BASE : ${infoBase ? infoBase : "Utilise tes connaissances de précepteur humain sur la RDC."}`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -143,10 +139,10 @@ app.post("/webhook", async (req, res) => {
         await envoyerWhatsApp(from, reponse);
 
     } catch (e) {
-        console.error(e);
-        await envoyerWhatsApp(from, `🔴 Mon cher élève / Ma chère élève, j'ai eu une distraction technique. Détails : ${e.message}`);
+        const salutation = user?.sexe === 'F' ? "ma chère élève" : "mon cher élève";
+        await envoyerWhatsApp(from, `🔴 Désolé ${salutation}, j'ai eu une distraction technique : ${e.message}`);
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu EdTech en ligne sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Mwalimu EdTech prêt.`));
