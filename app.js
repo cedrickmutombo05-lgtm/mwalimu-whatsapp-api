@@ -40,13 +40,13 @@ async function envoyerWhatsApp(to, texte) {
     }
 }
 
-// --- LE RAPPEL DU MATIN (Lubumbashi 07:00) ---
+// --- LE RAPPEL DU MATIN (Réactivé) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const messageMatin = `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt pour une nouvelle journée d'apprentissage ?`;
+            const messageMatin = `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt pour une nouvelle journée d'apprentissage pour notre grand Congo ?`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) {
@@ -54,57 +54,29 @@ cron.schedule("0 7 * * *", async () => {
     }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- EXTRACTION INTELLIGENTE ---
-async function extraireInfo(type, texte) {
-    const prompt = type === "nom"
-        ? `Extrais uniquement le prénom de: "${texte}". Réponds par UN SEUL MOT.`
-        : `Extrais uniquement le métier ou rêve de: "${texte}". Réponds par UN SEUL MOT.`;
-    try {
-        const res = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: prompt }]
-        });
-        return res.choices[0].message.content.replace(/[.\!\\?]/g, "").trim();
-    } catch (e) {
-        return texte;
-    }
-}
-
-// --- RECHERCHE BIBLIOTHÈQUE ---
+// --- RECHERCHE BIBLIOTHÈQUE (Dynamique - Lit uniquement la DB) ---
 async function consulterBibliotheque(phrase) {
-    const texte = phrase.toLowerCase();
-    const mots = texte.split(" ").filter(m => m.length > 3);
-   
+    const mots = phrase.toLowerCase().split(" ").filter(m => m.length > 3);
     for (let motCle of mots) {
         try {
-            // Requête ciblée pour extraire la structure géographique exacte
-            const queryGeo = `
-                SELECT province, chef_lieu, territoires
+            const query = `
+                SELECT 'PROVINCE: ' || province || ' | CHEF-LIEU: ' || chef_lieu || ' | TERRITOIRES: ' || territoires as res
                 FROM drc_population_villes
-                WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
+                WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1
                 LIMIT 1
             `;
-            const resGeo = await pool.query(queryGeo, [`%${motCle}%`]);
-           
-            if (resGeo.rows.length > 0) {
-                const r = resGeo.rows[0];
-                // On formate pour que l'IA distingue bien le Chef-lieu de la liste des territoires
-                return `INFO_GEO_OFFICIELLE : Province de ${r.province} | Chef-lieu (Ville) : ${r.chef_lieu} | Territoires : ${r.territoires}`;
-            }
+            const res = await pool.query(query, [`%${motCle}%`]);
+            if (res.rows.length > 0) return res.rows[0].res;
 
-            // Recherche secondaire (Hydrographie et FAQ)
-            const queryDivers = `
-                SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques as res FROM drc_hydrographie WHERE LOWER(element) LIKE $1
+            const queryAutre = `
+                SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
                 UNION ALL
                 SELECT reponse FROM questions_reponses WHERE LOWER(question) LIKE $1
                 LIMIT 1
             `;
-            const resDiv = await pool.query(queryDivers, [`%${motCle}%`]);
-            if (resDiv.rows.length > 0) return resDiv.rows[0].res;
-
-        } catch (e) {
-            continue;
-        }
+            const resAutre = await pool.query(queryAutre, [`%${motCle}%`]);
+            if (resAutre.rows.length > 0) return resAutre.rows[0].res;
+        } catch (e) { continue; }
     }
     return null;
 }
@@ -122,42 +94,28 @@ app.post("/webhook", async (req, res) => {
         const userRes = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = userRes.rows[0];
 
-        // 1. Inscription
         if (!user) {
-            await pool.query("INSERT INTO conversations (phone, nom, historique, reve) VALUES ($1, '', '[]', '')", [from]);
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour nous lancer dans cette aventure, quel est ton prénom ?");
+            await pool.query("INSERT INTO conversations (phone, nom, historique) VALUES ($1, '', '[]')", [from]);
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour nous lancer dans cette aventure, quel est ton prénom et ta classe ?");
         }
 
-        // 2. Capture du Nom
-        if (!user.nom || user.nom.trim() === "") {
-            const nomNet = await extraireInfo("nom", text);
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNet, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNet} !\n\n🟡 Quel est ton grand rêve pour le futur de notre nation ?`);
-        }
-
-        // 3. Capture du Rêve
-        if (!user.reve || user.reve.trim() === "") {
-            const reveNet = await extraireInfo("reve", text);
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNet, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est un rêve magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet}. Comment puis-je t'aider aujourd'hui ?`);
-        }
-
-        // 4. Tutorat Vivant (Le coeur du système)
         const infoBase = await consulterBibliotheque(text);
-        let hist = [];
-        try { hist = JSON.parse(user.historique || "[]"); } catch(e) { hist = []; }
+        let hist = JSON.parse(user.historique || "[]");
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, un précepteur congolais vivant, patriote et pédagogue.
-                    - ÉLÈVE : ${user.nom}, futur ${user.reve}.
-                    - TON : Chaleureux, mentor, utilise "Mon cher élève", "Notre beau pays".
-                    - RIGUEUR : Ne résume JAMAIS les listes de l'INFO_BASE. Cite TOUS les éléments fournis sans exception. Ne confonds pas le Chef-lieu avec les Territoires.
-                    - SOURCE : ${infoBase ? infoBase : "Pas de données SQL. Réponds avec ta culture de tuteur."}
-                    - STRUCTURE : 🔵 Accueil humain | 🟡 Leçon détaillée | 🔴 Encouragement vers son rêve.`
+                    content: `Tu es Mwalimu, un précepteur congolais qui tire sa science exclusivement de sa BIBLIOTHÈQUE (INFO_BASE).
+                   
+                    CONSIGNES DE RIGUEUR :
+                    1. Utilise l'INFO_BASE comme source unique de vérité.
+                    2. Ne mélange JAMAIS le 'CHEF-LIEU' avec la liste des 'TERRITOIRES'.
+                    3. Si l'élève pose une question sur une province, ne réponds pas sur une autre.
+                    4. Ton langage doit être celui d'un mentor : chaleureux, patriotique (vécu congolais) et exigeant.
+                   
+                    INFO_BASE : ${infoBase ? infoBase : "Aucune donnée trouvée. Réponds avec ta culture de tuteur."}`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -170,9 +128,8 @@ app.post("/webhook", async (req, res) => {
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(newHist), from]);
         await envoyerWhatsApp(from, reponse);
 
-    } catch (error) {
-        console.error("ERREUR:", error);
-        await envoyerWhatsApp(from, `🔴 Mon cher élève, j'ai eu une distraction technique. Détails : ${error.message}`);
+    } catch (e) {
+        await envoyerWhatsApp(from, `🔴 Mon cher élève, j'ai eu une distraction technique. Détails : ${e.message}`);
     }
 });
 
