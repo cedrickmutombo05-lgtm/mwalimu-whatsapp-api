@@ -36,7 +36,7 @@ async function envoyerWhatsApp(to, texte) {
             headers: { Authorization: `Bearer ${process.env.TOKEN}` }
         });
     } catch (e) {
-        console.error("Erreur WhatsApp");
+        console.error("Erreur WhatsApp :", e.response ? e.response.data : e.message);
     }
 }
 
@@ -46,7 +46,7 @@ cron.schedule("0 7 * * *", async () => {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const messageMatin = `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt pour une nouvelle journée d'apprentissage ?`;
+            const messageMatin = `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt pour une nouvelle journée d'excellence pour notre grand Congo ?`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) {
@@ -58,7 +58,7 @@ cron.schedule("0 7 * * *", async () => {
 async function extraireInfo(type, texte) {
     const prompt = type === "nom"
         ? `Extrais uniquement le prénom de: "${texte}". Réponds par UN SEUL MOT.`
-        : `Extrais uniquement le métier de: "${texte}". Réponds par UN SEUL MOT.`;
+        : `Extrais uniquement le métier ou rêve de: "${texte}". Réponds par UN SEUL MOT.`;
     try {
         const res = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -93,7 +93,7 @@ async function consulterBibliotheque(phrase) {
     return null;
 }
 
-// --- WEBHOOK ---
+// --- WEBHOOK PRINCIPAL ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -116,19 +116,24 @@ app.post("/webhook", async (req, res) => {
         if (!user.nom || user.nom.trim() === "") {
             const nomNet = await extraireInfo("nom", text);
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNet, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNet} !\n\n🟡 Quel est ton grand rêve pour le futur de notre nation ?`);
+            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNet} !\n\n🟡 Quel est ton grand rêve pour le futur de notre nation ? 🌟`);
         }
 
         // 3. Capture du Rêve
         if (!user.reve || user.reve.trim() === "") {
             const reveNet = await extraireInfo("reve", text);
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNet, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est un rêve magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet}. Comment puis-je t'aider aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `🔵 C'est un rêve magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet} d'exception. Quelle question as-tu pour ton tuteur aujourd'hui ?`);
         }
 
-        // 4. Tutorat Vivant (Le coeur du système)
+        // 4. Tutorat Vivant
         const infoBase = await consulterBibliotheque(text);
-        let hist = JSON.parse(user.historique || "[]");
+        let hist = [];
+        try {
+            hist = JSON.parse(user.historique || "[]");
+        } catch (e) {
+            hist = [];
+        }
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -139,7 +144,7 @@ app.post("/webhook", async (req, res) => {
                     - ÉLÈVE : ${user.nom}, futur ${user.reve}.
                     - TON : Chaleureux, mentor, utilise "Mon cher élève", "Notre beau pays".
                     - RIGUEUR : Ne résume JAMAIS les listes de l'INFO_BASE. Cite TOUS les éléments fournis sans exception.
-                    - SOURCE : ${infoBase || "Pas de données SQL. Réponds avec ta culture de tuteur."}
+                    - SOURCE : ${infoBase ? infoBase : "Pas de données SQL. Réponds avec ta culture de tuteur."}
                     - STRUCTURE : 🔵 Accueil humain | 🟡 Leçon détaillée | 🔴 Encouragement vers son rêve.`
                 },
                 ...hist.slice(-4),
@@ -153,8 +158,11 @@ app.post("/webhook", async (req, res) => {
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(newHist), from]);
         await envoyerWhatsApp(from, reponse);
 
-    } catch (e) {
-        await envoyerWhatsApp(from, "🔴 Mon cher élève, j'ai eu une distraction technique. Reposons la question !");
+    } catch (error) {
+        console.error("ERREUR WHATSAPP:", error);
+        // Diagnostic envoyé directement à l'utilisateur (Cédric) pour debug
+        const messageErreur = `🔴 Mon cher élève, j'ai eu une distraction technique.\n\nDétails : ${error.message}`;
+        await envoyerWhatsApp(from, messageErreur);
     }
 });
 
