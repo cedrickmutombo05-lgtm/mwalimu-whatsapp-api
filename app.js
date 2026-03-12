@@ -34,14 +34,14 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// --- RAPPEL MATINAL ---
+// --- RAPPEL MATINAL (7h00 Lubumbashi) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom, sexe FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
             const salut = user.sexe === 'F' ? "ma chère élève" : "mon cher élève";
-            await envoyerWhatsApp(user.phone, `🔵 Bonjour ${salut} ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence ?`);
+            await envoyerWhatsApp(user.phone, `🔵 Bonjour ${salut} ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence pour notre grand Congo ?`);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
@@ -58,7 +58,7 @@ async function consulterBibliotheque(phrase) {
             );
             if (res.rows.length > 0) {
                 const r = res.rows[0];
-                return `PROVINCE: ${r.province} | CHEF-LIEU: ${r.chef_lieu} | TERRITOIRES: ${r.territoires}`;
+                return `PROVINCE: ${r.province} | CHEF-LIEU: ${r.chef_lieu} | TOUS LES TERRITOIRES: ${r.territoires}`;
             }
         } catch (e) { continue; }
     }
@@ -78,34 +78,40 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // 1. CRÉATION DU PROFIL
+        // 0. INITIALISATION
         if (!user) {
-            await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique, sexe) VALUES ($1, '', '', '', '[]', '')", [from]);
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour commencer notre voyage, quel est ton prénom ?");
+            await pool.query("INSERT INTO conversations (phone, nom, sexe, classe, reve, historique) VALUES ($1, '', '', '', '', '[]')", [from]);
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour commencer, quel est ton **prénom** ?");
         }
 
-        // 2. PROTOCOLE D'ACCUEIL (VIVANT & HUMAIN)
-        if (!user.nom) {
+        // 1. ÉTAPE NOM
+        if (!user.nom || user.nom === "") {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté ${text} !\n\n🟡 En quelle classe es-tu ? (Ex: 6e primaire, 3e secondaire...)`);
-        }
-        if (!user.classe) {
-            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est noté. Et quel est ton plus grand rêve pour plus tard ? 🌟`);
-        }
-        if (!user.reve) {
-            // Détection automatique du sexe pour l'adressage futur
-            const aiSexe = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [{ role: "user", content: `L'élève s'appelle ${user.nom} et veut devenir ${text}. Déduis le sexe (M ou F). Réponds juste par la lettre.` }]
-            });
-            const sexe = aiSexe.choices[0].message.content.trim().toUpperCase();
-            await pool.query("UPDATE conversations SET reve=$1, sexe=$2 WHERE phone=$3", [text, sexe, from]);
-            const salut = sexe === 'F' ? "ma chère élève" : "mon cher élève";
-            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir ${text}, ${salut}.\n\n🟡 Quelle est ta question pour aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `🔵 Enchanté, **${text}** !\n\n🟡 Es-tu un garçon ou une fille ? (Réponds par 'Garçon' ou 'Fille')`);
         }
 
-        // 3. TUTORAT APPROFONDI
+        // 2. ÉTAPE SEXE
+        if (!user.sexe || user.sexe === "") {
+            const s = text.toLowerCase().includes("fille") ? "F" : "M";
+            await pool.query("UPDATE conversations SET sexe=$1 WHERE phone=$2", [s, from]);
+            const salut = s === "F" ? "ma chère élève" : "mon cher élève";
+            return await envoyerWhatsApp(from, `🔵 C'est noté, ${salut} ${user.nom}.\n\n🟡 En quelle **classe** es-tu ? (Ex: 6e primaire, 3e secondaire...)`);
+        }
+
+        // 3. ÉTAPE CLASSE
+        if (!user.classe || user.classe === "") {
+            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Très bien ! Le niveau de **${text}** demande du sérieux.\n\n🟡 Quel est ton plus grand **rêve** pour plus tard ? 🌟`);
+        }
+
+        // 4. ÉTAPE RÊVE
+        if (!user.reve || user.reve === "") {
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
+            const salut = user.sexe === "F" ? "ma chère élève" : "mon cher élève";
+            return await envoyerWhatsApp(from, `🔵 Magnifique rêve ! Je t'aiderai à devenir ${text}, ${salut}.\n\n🟡 Quelle est ta question aujourd'hui ?`);
+        }
+
+        // 5. TUTORAT
         const infoBase = await consulterBibliotheque(text);
         let hist = JSON.parse(user.historique || "[]");
 
@@ -118,14 +124,13 @@ app.post("/webhook", async (req, res) => {
                     ÉLÈVE: ${user.nom}, Classe: ${user.classe}, Rêve: ${user.reve}.
                     ADRESSAGE: "${user.sexe === 'F' ? 'ma chère élève' : 'mon cher élève'}".
 
-                    RÈGLES DE RÉPONSE :
-                    1. IDENTIFICATION : Présente toujours le Chef-lieu (Ville) séparément des territoires.
-                    2. INTÉGRITÉ : Liste TOUS les territoires fournis dans l'INFO_BASE. Ne résume jamais.
-                    3. VÉCU CONGOLAIS : Parle avec chaleur. Explique que le chef-lieu est le cœur administratif et les territoires sont nos racines.
-                    4. ASPIRATION : Rappelle que cette connaissance est vitale pour son avenir de ${user.reve}.
-                    5. ZÉRO EXCUSE : Ne dis jamais "l'info n'est pas dans la base". Si la base est vide, utilise ta sagesse de mentor.
-
-                    INFO_BASE : ${infoBase || "Utilise ton savoir de précepteur sur le Congo."}`
+                    RÈGLES DE RIGUEUR :
+                    1. Présente toujours le Chef-lieu (Ville) séparément des territoires.
+                    2. Liste TOUS les territoires fournis dans l'INFO_BASE sans exception.
+                    3. Utilise le rêve de l'élève (${user.reve}) pour le motiver.
+                    4. Ne dis JAMAIS que l'info manque dans la base.
+                   
+                    INFO_BASE : ${infoBase || "Aucune donnée. Utilise ta sagesse de mentor congolais."}`
                 },
                 ...hist.slice(-4),
                 { role: "user", content: text }
@@ -141,9 +146,9 @@ app.post("/webhook", async (req, res) => {
 
     } catch (e) {
         console.error(e);
-        await envoyerWhatsApp(from, "🔴 Mon cher élève, j'ai eu une petite distraction technique. Reposons la question !");
+        await envoyerWhatsApp(from, "🔴 Désolé, j'ai eu une distraction technique. Reposons la question !");
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Mwalimu est opérationnel."));
+app.listen(PORT, () => console.log("Mwalimu EdTech est complet."));
