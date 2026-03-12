@@ -30,9 +30,7 @@ async function envoyerWhatsApp(to, texte) {
             messaging_product: "whatsapp",
             to,
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
-        }, {
-            headers: { Authorization: `Bearer ${process.env.TOKEN}` }
-        });
+        }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
     } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
@@ -42,23 +40,26 @@ cron.schedule("0 7 * * *", async () => {
         const res = await pool.query("SELECT phone, nom, sexe FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const salutation = user.sexe === 'F' ? "ma chère élève" : "mon cher élève";
-            await envoyerWhatsApp(user.phone, `🔵 Bonjour ${salutation} ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence ?`);
+            const salut = user.sexe === 'F' ? "ma chère élève" : "mon cher élève";
+            await envoyerWhatsApp(user.phone, `🔵 Bonjour ${salut} ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence ?`);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- BIBLIOTHÈQUE (RECHERCHE PLUS LARGE) ---
+// --- BIBLIOTHÈQUE ---
 async function consulterBibliotheque(phrase) {
     const mots = phrase.toLowerCase().replace(/[?.,!]/g, "").split(" ").filter(m => m.length > 2);
     for (let mot of mots) {
         try {
             const res = await pool.query(
-                `SELECT 'PROVINCE: '||province||' | CHEF-LIEU: '||chef_lieu||' | TERRITOIRES: '||territoires as info
-                 FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1 LIMIT 1`,
+                `SELECT province, chef_lieu, territoires FROM drc_population_villes
+                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1 LIMIT 1`,
                 [`%${mot}%`]
             );
-            if (res.rows.length > 0) return res.rows[0].info;
+            if (res.rows.length > 0) {
+                const r = res.rows[0];
+                return `PROVINCE: ${r.province} | CHEF-LIEU: ${r.chef_lieu} | TERRITOIRES: ${r.territoires}`;
+            }
         } catch (e) { continue; }
     }
     return null;
@@ -74,61 +75,62 @@ app.post("/webhook", async (req, res) => {
     const text = msg.text.body.trim();
 
     try {
-        let userRes = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
-        let user = userRes.rows[0];
+        let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
+        let user = rows[0];
 
-        // 1. Inscription
+        // 1. CRÉATION DU PROFIL
         if (!user) {
-            await pool.query("INSERT INTO conversations (phone, nom, historique, sexe, reve) VALUES ($1, '', '[]', '', '')", [from]);
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor.\n\n🟡 Quel est ton prénom ?");
+            await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique, sexe) VALUES ($1, '', '', '', '[]', '')", [from]);
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour commencer notre voyage, quel est ton prénom ?");
         }
 
-        // 2. Profilage (Nom, Sexe, Rêve)
-        if (!user.nom || user.sexe === "" || user.reve === "") {
-            const ai = await openai.chat.completions.create({
+        // 2. PROTOCOLE D'ACCUEIL (VIVANT & HUMAIN)
+        if (!user.nom) {
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Enchanté ${text} !\n\n🟡 En quelle classe es-tu ? (Ex: 6e primaire, 3e secondaire...)`);
+        }
+        if (!user.classe) {
+            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 C'est noté. Et quel est ton plus grand rêve pour plus tard ? 🌟`);
+        }
+        if (!user.reve) {
+            // Détection automatique du sexe pour l'adressage futur
+            const aiSexe = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
-                messages: [{ role: "system", content: "Extrais les infos suivantes du texte: prénom, sexe (M/F), rêve (métier). Réponds uniquement en JSON: {\"n\":\"\",\"s\":\"\",\"r\":\"\"}" }, { role: "user", content: text }]
+                messages: [{ role: "user", content: `L'élève s'appelle ${user.nom} et veut devenir ${text}. Déduis le sexe (M ou F). Réponds juste par la lettre.` }]
             });
-            const data = JSON.parse(ai.choices[0].message.content);
-           
-            const nouveauNom = data.n || user.nom;
-            const nouveauSexe = data.s || user.sexe;
-            const nouveauReve = data.r || user.reve;
-
-            await pool.query("UPDATE conversations SET nom=$1, sexe=$2, reve=$3 WHERE phone=$4", [nouveauNom, nouveauSexe, nouveauReve, from]);
-           
-            if (!nouveauNom) return await envoyerWhatsApp(from, "🟡 J'ai besoin de ton prénom pour commencer.");
-            if (!nouveauSexe) return await envoyerWhatsApp(from, `🔵 Enchanté ${nouveauNom} ! Es-tu un garçon ou une fille ?`);
-            if (!nouveauReve) return await envoyerWhatsApp(from, `🟡 Quel métier rêves-tu de faire plus tard ?`);
-           
-            return await envoyerWhatsApp(from, `🔵 C'est noté ! Je suis prêt à t'aider à devenir ${nouveauReve}. Pose-moi ta question !`);
+            const sexe = aiSexe.choices[0].message.content.trim().toUpperCase();
+            await pool.query("UPDATE conversations SET reve=$1, sexe=$2 WHERE phone=$3", [text, sexe, from]);
+            const salut = sexe === 'F' ? "ma chère élève" : "mon cher élève";
+            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir ${text}, ${salut}.\n\n🟡 Quelle est ta question pour aujourd'hui ?`);
         }
 
-        // 3. Traitement avec Bibliothèque
+        // 3. TUTORAT APPROFONDI
         const infoBase = await consulterBibliotheque(text);
-        let hist = [];
-        try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
+        let hist = JSON.parse(user.historique || "[]");
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: `Tu es Mwalimu, le précepteur humain de ${user.nom}.
+                    content: `Tu es Mwalimu, un précepteur humain d'une précision absolue.
+                    ÉLÈVE: ${user.nom}, Classe: ${user.classe}, Rêve: ${user.reve}.
                     ADRESSAGE: "${user.sexe === 'F' ? 'ma chère élève' : 'mon cher élève'}".
-                   
-                    RÈGLES :
-                    1. NE DIS JAMAIS "L'INFO_BASE ne fournit pas". Si tu n'as pas l'info, explique avec ton vécu de tuteur congolais.
-                    2. Si l'INFO_BASE contient une liste (PROVINCE/TERRITOIRES), cite-la intégralement et fidèlement.
-                    3. Encourage l'élève à devenir ${user.reve}.
-                    4. Matadi, Bandundu, Kindu sont des VILLES (Chef-lieu), pas des territoires. Sois précis !
-                   
-                    BIBLIOTHÈQUE : ${infoBase || "Aucune donnée trouvée. Utilise ta culture générale de mentor congolais."}`
+
+                    RÈGLES DE RÉPONSE :
+                    1. IDENTIFICATION : Présente toujours le Chef-lieu (Ville) séparément des territoires.
+                    2. INTÉGRITÉ : Liste TOUS les territoires fournis dans l'INFO_BASE. Ne résume jamais.
+                    3. VÉCU CONGOLAIS : Parle avec chaleur. Explique que le chef-lieu est le cœur administratif et les territoires sont nos racines.
+                    4. ASPIRATION : Rappelle que cette connaissance est vitale pour son avenir de ${user.reve}.
+                    5. ZÉRO EXCUSE : Ne dis jamais "l'info n'est pas dans la base". Si la base est vide, utilise ta sagesse de mentor.
+
+                    INFO_BASE : ${infoBase || "Utilise ton savoir de précepteur sur le Congo."}`
                 },
-                ...hist.slice(-6),
+                ...hist.slice(-4),
                 { role: "user", content: text }
             ],
-            temperature: 0.3
+            temperature: 0.2
         });
 
         const reponse = completion.choices[0].message.content;
@@ -139,10 +141,9 @@ app.post("/webhook", async (req, res) => {
 
     } catch (e) {
         console.error(e);
-        const salut = user?.sexe === 'F' ? "ma chère élève" : "mon cher élève";
-        await envoyerWhatsApp(from, `🔴 Désolé ${salut}, j'ai eu une petite distraction technique.`);
+        await envoyerWhatsApp(from, "🔴 Mon cher élève, j'ai eu une petite distraction technique. Reposons la question !");
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Mwalimu EdTech est prêt."));
+app.listen(PORT, () => console.log("Mwalimu est opérationnel."));
