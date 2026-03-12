@@ -36,7 +36,7 @@ async function envoyerWhatsApp(to, texte) {
             headers: { Authorization: `Bearer ${process.env.TOKEN}` }
         });
     } catch (e) {
-        console.error("Erreur WhatsApp :", e.response ? e.response.data : e.message);
+        console.error("Erreur WhatsApp");
     }
 }
 
@@ -46,7 +46,7 @@ cron.schedule("0 7 * * *", async () => {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const messageMatin = `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt pour une nouvelle journée d'excellence pour notre grand Congo ?`;
+            const messageMatin = `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt pour une nouvelle journée d'apprentissage ?`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) {
@@ -72,20 +72,36 @@ async function extraireInfo(type, texte) {
 
 // --- RECHERCHE BIBLIOTHÈQUE ---
 async function consulterBibliotheque(phrase) {
-    const mots = phrase.toLowerCase().split(" ").filter(m => m.length > 3);
+    const texte = phrase.toLowerCase();
+    const mots = texte.split(" ").filter(m => m.length > 3);
+   
     for (let motCle of mots) {
         try {
-            const query = `
-                SELECT 'Province: ' || province || ' | Chef-lieu: ' || chef_lieu || ' | LISTE COMPLÈTE: ' || territoires as res
-                FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
-                UNION ALL
-                SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques FROM drc_hydrographie WHERE LOWER(element) LIKE $1
+            // Requête ciblée pour extraire la structure géographique exacte
+            const queryGeo = `
+                SELECT province, chef_lieu, territoires
+                FROM drc_population_villes
+                WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
+                LIMIT 1
+            `;
+            const resGeo = await pool.query(queryGeo, [`%${motCle}%`]);
+           
+            if (resGeo.rows.length > 0) {
+                const r = resGeo.rows[0];
+                // On formate pour que l'IA distingue bien le Chef-lieu de la liste des territoires
+                return `INFO_GEO_OFFICIELLE : Province de ${r.province} | Chef-lieu (Ville) : ${r.chef_lieu} | Territoires : ${r.territoires}`;
+            }
+
+            // Recherche secondaire (Hydrographie et FAQ)
+            const queryDivers = `
+                SELECT 'Élément: ' || element || ' | Caractéristiques: ' || caracteristiques as res FROM drc_hydrographie WHERE LOWER(element) LIKE $1
                 UNION ALL
                 SELECT reponse FROM questions_reponses WHERE LOWER(question) LIKE $1
                 LIMIT 1
             `;
-            const res = await pool.query(query, [`%${motCle}%`]);
-            if (res.rows.length > 0) return res.rows[0].res;
+            const resDiv = await pool.query(queryDivers, [`%${motCle}%`]);
+            if (resDiv.rows.length > 0) return resDiv.rows[0].res;
+
         } catch (e) {
             continue;
         }
@@ -93,7 +109,7 @@ async function consulterBibliotheque(phrase) {
     return null;
 }
 
-// --- WEBHOOK PRINCIPAL ---
+// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -116,24 +132,20 @@ app.post("/webhook", async (req, res) => {
         if (!user.nom || user.nom.trim() === "") {
             const nomNet = await extraireInfo("nom", text);
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNet, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNet} !\n\n🟡 Quel est ton grand rêve pour le futur de notre nation ? 🌟`);
+            return await envoyerWhatsApp(from, `🔵 Enchanté ${nomNet} !\n\n🟡 Quel est ton grand rêve pour le futur de notre nation ?`);
         }
 
         // 3. Capture du Rêve
         if (!user.reve || user.reve.trim() === "") {
             const reveNet = await extraireInfo("reve", text);
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNet, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est un rêve magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet} d'exception. Quelle question as-tu pour ton tuteur aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `🔵 C'est un rêve magnifique, ${user.nom} !\n\n🟡 Je t'aiderai à devenir un(e) ${reveNet}. Comment puis-je t'aider aujourd'hui ?`);
         }
 
-        // 4. Tutorat Vivant
+        // 4. Tutorat Vivant (Le coeur du système)
         const infoBase = await consulterBibliotheque(text);
         let hist = [];
-        try {
-            hist = JSON.parse(user.historique || "[]");
-        } catch (e) {
-            hist = [];
-        }
+        try { hist = JSON.parse(user.historique || "[]"); } catch(e) { hist = []; }
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -143,7 +155,7 @@ app.post("/webhook", async (req, res) => {
                     content: `Tu es Mwalimu, un précepteur congolais vivant, patriote et pédagogue.
                     - ÉLÈVE : ${user.nom}, futur ${user.reve}.
                     - TON : Chaleureux, mentor, utilise "Mon cher élève", "Notre beau pays".
-                    - RIGUEUR : Ne résume JAMAIS les listes de l'INFO_BASE. Cite TOUS les éléments fournis sans exception.
+                    - RIGUEUR : Ne résume JAMAIS les listes de l'INFO_BASE. Cite TOUS les éléments fournis sans exception. Ne confonds pas le Chef-lieu avec les Territoires.
                     - SOURCE : ${infoBase ? infoBase : "Pas de données SQL. Réponds avec ta culture de tuteur."}
                     - STRUCTURE : 🔵 Accueil humain | 🟡 Leçon détaillée | 🔴 Encouragement vers son rêve.`
                 },
@@ -159,12 +171,10 @@ app.post("/webhook", async (req, res) => {
         await envoyerWhatsApp(from, reponse);
 
     } catch (error) {
-        console.error("ERREUR WHATSAPP:", error);
-        // Diagnostic envoyé directement à l'utilisateur (Cédric) pour debug
-        const messageErreur = `🔴 Mon cher élève, j'ai eu une distraction technique.\n\nDétails : ${error.message}`;
-        await envoyerWhatsApp(from, messageErreur);
+        console.error("ERREUR:", error);
+        await envoyerWhatsApp(from, `🔴 Mon cher élève, j'ai eu une distraction technique. Détails : ${error.message}`);
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu est en ligne sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Mwalimu opérationnel sur le port ${PORT}`));
