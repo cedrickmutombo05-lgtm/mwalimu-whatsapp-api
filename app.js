@@ -13,7 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- LA RÈGLE D'OR ---
+// --- RÈGLE D'OR : IDENTITÉ VISUELLE ---
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -30,7 +30,7 @@ async function envoyerWhatsApp(to, texte) {
             to,
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur API WhatsApp"); }
+    } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
 // --- RAPPEL 7H00 (LUBUMBASHI) ---
@@ -39,17 +39,19 @@ cron.schedule("0 7 * * *", async () => {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence pour notre DRC ?`);
+            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence ?`);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
+// --- RECHERCHE SQL STRICTE ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const mots = phrase.toLowerCase().replace(/[?.,!]/g, "").split(" ");
     for (let mot of mots) {
         if (mot.length < 4) continue;
         try {
+            // Recherche par province ou par territoire mentionné
             const res = await pool.query(
                 `SELECT province, chef_lieu, territoires FROM drc_population_villes
                  WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 LIMIT 1`,
@@ -95,29 +97,29 @@ app.post("/webhook", async (req, res) => {
             let hist = [];
             try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
+            // CONSTRUCTION DU MESSAGE SYSTÈME AVEC CONTRAINTES STRICTES
+            let systemContent = `Tu es Mwalimu, un précepteur humain et mentor congolais de Lubumbashi.
+            TON STYLE : Chaleureux, fier, utilisant le vécu de la RDC.
+            TON ÉLÈVE : ${user.nom}, Classe: ${user.classe}, Rêve: ${user.reve}.
+           
+            FORMATAGE OBLIGATOIRE :
+            - Paragraphe 1 : Commence par 🔵. (Accueil et lien avec le vécu)
+            - Paragraphe 2 : Commence par 🟡. (Explication technique/Géographie)
+            - Paragraphe 3 : Commence par 🔴. (Motivation liée au rêve de devenir ${user.reve})`;
+
+            if (info) {
+                systemContent += `\n\nALERTE RIGUEUR GÉOGRAPHIQUE :
+                L'élève pose une question sur la province du ${info.province}.
+                Tu DOIS copier-coller exactement cette liste sans en oublier un seul :
+                - Chef-lieu : ${info.chef_lieu}
+                - Liste exhaustive des territoires : ${info.territoires}
+                INTERDICTION : Ne résume pas cette liste. Cite-les TOUS.`;
+            }
+
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
                 messages: [
-                    {
-                        role: "system",
-                        content: `Tu es Mwalimu, un précepteur humain, grand frère et mentor congolais.
-                       
-                        TON CARACTÈRE :
-                        - Chaleureux, fier de la RDC, utilisant des exemples du vécu (climat, transport, histoire locale).
-                        - Tu n'es PAS une IA, tu es un guide.
-                       
-                        RÈGLES D'EXHAUSTIVITÉ (CRITIQUE) :
-                        - Si l'élève pose une question sur une province, tu DOIS citer TOUS les territoires de la base de données. Ne saute AUCUN nom.
-                        - Exemple Kongo-Central : Tu DOIS citer les 10 territoires (Kasangulu, Kimvula, Lukula, Luozi, Madimba, Mbanza-Ngungu, Moanda, Seke-Banza, Songololo, Tshela).
-                       
-                        FORMATAGE RÈGLE D'OR :
-                        - Paragraphe 1 (Introduction) : Commence par 🔵.
-                        - Paragraphe 2 (Explication technique/Géographie) : Commence par 🟡.
-                        - Paragraphe 3 (Conclusion et lien avec le rêve : ${user.reve}) : Commence par 🔴.
-                       
-                        DONNÉES SQL PRIORITAIRES :
-                        ${info ? `Province: ${info.province}, Chef-lieu: ${info.chef_lieu}, Territoires: ${info.territoires}` : "Utilise ton savoir encyclopédique congolais."}`
-                    },
+                    { role: "system", content: systemContent },
                     ...hist.slice(-4),
                     { role: "user", content: text }
                 ],
