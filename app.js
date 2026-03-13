@@ -18,68 +18,56 @@ const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant é
 const citations = [
     "« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »",
     "« Science sans conscience n'est que ruine de l'âme. »",
-    "« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »"
+    "« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »",
+    "« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba",
+    "« L'excellence n'est pas une action, c'est une habitude. »",
+    "« Un peuple qui ne connaît pas son histoire est un peuple sans avenir. »"
 ];
-
-// --- LOG DE CONNEXION DB ---
-pool.connect((err) => {
-    if (err) console.error("❌ ERREUR CONNEXION DB:", err.stack);
-    else console.log("✅ CONNECTÉ À LA BASE DE DONNÉES");
-});
 
 async function envoyerWhatsApp(to, texte) {
     try {
-        console.log(`--- Tentative d'envoi à ${to} ---`);
-        const response = await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
+        await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
             messaging_product: "whatsapp",
             to,
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-        console.log("✅ Message envoyé avec succès");
-    } catch (e) {
-        console.error("❌ ERREUR WHATSAPP:", e.response ? e.response.data : e.message);
-    }
+    } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
+// --- RAPPEL 7H00 (LUBUMBASHI) ---
+cron.schedule("0 7 * * *", async () => {
+    try {
+        const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
+        for (const user of res.rows) {
+            const cit = citations[Math.floor(Math.random() * citations.length)];
+            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence pour notre pays ?`);
+        }
+    } catch (e) { console.error("Erreur Cron Morning"); }
+}, { timezone: "Africa/Lubumbashi" });
+
 async function consulterBibliotheque(phrase) {
-    console.log(`🔎 Recherche SQL pour: "${phrase}"`);
+    if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(" ");
+    const texteNettoye = nettoyer(phrase);
+    const mots = texteNettoye.replace(/[?.,!]/g, "").split(" ");
 
     for (let mot of mots) {
         if (mot.length < 4) continue;
         try {
             const res = await pool.query(
                 `SELECT province, chef_lieu, territoires FROM drc_population_villes
-                 WHERE LOWER(province) ILIKE $1 OR LOWER(territoires) ILIKE $1 LIMIT 1`,
-                [`%${mot}%`]
+                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
+                 ORDER BY (LOWER(province) = $2) DESC LIMIT 1`,
+                [`%${mot}%`, mot]
             );
-            if (res.rows.length > 0) {
-                console.log("📍 Données trouvées dans le SQL");
-                return res.rows[0];
-            }
-        } catch (e) { console.error("❌ Erreur SQL:", e.message); }
+            if (res.rows.length > 0) return res.rows[0];
+        } catch (e) { continue; }
     }
-    console.log("⚠️ Aucune donnée SQL trouvée");
     return null;
 }
 
-// --- VERIFICATION DU WEBHOOK (Obligatoire pour Meta) ---
-app.get("/webhook", (req, res) => {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
-    if (mode && token === "MWALIMU_TOKEN") { // Remplace par ton verify_token si différent
-        res.status(200).send(challenge);
-    } else {
-        res.sendStatus(403);
-    }
-});
-
 app.post("/webhook", async (req, res) => {
-    console.log("📩 Nouveau message reçu sur le Webhook");
     res.sendStatus(200);
-
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg?.text?.body) return;
 
@@ -91,52 +79,55 @@ app.post("/webhook", async (req, res) => {
         let user = rows[0];
 
         if (!user) {
-            console.log("🆕 Nouvel utilisateur détecté");
-            await pool.query("INSERT INTO conversations (phone, historique) VALUES ($1, '[]')", [from]);
-            user = { phone: from, historique: '[]' };
+            await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
+        }
+        if (!user.nom) {
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Enchanté **${text}** ! En quelle **classe** es-tu ?`);
+        }
+        if (!user.classe) {
+            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
+        }
+        if (!user.reve) {
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${text}**.\n\n🟡 Pose-moi ta question.`);
         }
 
         const info = await consulterBibliotheque(text);
-        let hist = JSON.parse(user.historique || '[]');
+        const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
+        let hist = [];
+        try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
-        console.log("🤖 Appel à OpenAI...");
+        const systemPrompt = `
+Tu es Mwalimu, Mentor Congolais.
+ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
+
+<DATA_SQL>
+${info ? `PROVINCE: ${info.province} | CHEF-LIEU: ${info.chef_lieu} | TERRITOIRES: ${info.territoires}` : "VIDE"}
+</DATA_SQL>
+
+<FORMAT>
+🔵 Accueil chaleureux pour ${user.nom} avec une anecdote sur le vécu congolais.
+🟡 SAVOIR : Si <DATA_SQL> n'est pas VIDE, tu DOIS copier : "Chef-lieu : ${info?.chef_lieu}. Territoires : ${info?.territoires}." (Liste complète obligatoire).
+🔴 INSPIRATION : Relie cela au rêve de devenir ${user.reve}. Termine TOUJOURS par cette citation : "${citAleatoire}".
+</FORMAT>
+
+RÈGLE : Température 0. Pas d'improvisation.
+`;
+
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
-            messages: [
-                { role: "system", content: "Tu es Mwalimu, un mentor congolais expert. Réponds en 3 parties : 🔵 Anecdote, 🟡 Savoir (utilise le SQL fourni), 🔴 Conseil." },
-                { role: "system", content: info ? `DONNÉES SQL: ${JSON.stringify(info)}` : "Pas de données SQL." },
-                ...hist.slice(-4),
-                { role: "user", content: text }
-            ],
+            messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
             temperature: 0
         });
 
         const reponse = completion.choices[0].message.content;
-        console.log("✍️ Réponse générée par l'IA");
-
-        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [
-            JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10)),
-            from
-        ]);
-
+        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10)), from]);
         await envoyerWhatsApp(from, reponse);
 
-    } catch (e) {
-        console.error("❌ ERREUR GLOBALE WEBHOOK:", e);
-    }
+    } catch (e) { console.error(e); }
 });
 
-// --- CRON JOB ---
-cron.schedule("0 7 * * *", async () => {
-    console.log("⏰ Lancement du rappel matinal...");
-    try {
-        const res = await pool.query("SELECT phone FROM conversations");
-        for (const user of res.rows) {
-            const cit = citations[Math.floor(Math.random() * citations.length)];
-            await envoyerWhatsApp(user.phone, `🔵 Bonjour !\n\n🟡 ${cit}\n\n🔴 Prêt pour aujourd'hui ?`);
-        }
-    } catch (e) { console.error("❌ Erreur Cron:", e); }
-}, { timezone: "Africa/Lubumbashi" });
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 SERVEUR PRÊT SUR LE PORT ${PORT}`));
+app.listen(process.env.PORT || 10000);
