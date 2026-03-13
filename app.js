@@ -13,7 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- RÈGLE D'OR : IDENTITÉ VISUELLE ---
+// --- LA RÈGLE D'OR ---
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -30,7 +30,7 @@ async function envoyerWhatsApp(to, texte) {
             to,
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur WhatsApp"); }
+    } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
 // --- RAPPEL 7H00 (LUBUMBASHI) ---
@@ -44,13 +44,11 @@ cron.schedule("0 7 * * *", async () => {
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- BIBLIOTHÈQUE RENFORCÉE (SENS DE LA RIGUEUR) ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
-    // On nettoie la phrase pour ne garder que les mots clés (ex: Haut-Katanga, Territoires)
     const mots = phrase.toLowerCase().replace(/[?.,!]/g, "").split(" ");
     for (let mot of mots) {
-        if (mot.length < 3) continue;
+        if (mot.length < 4) continue;
         try {
             const res = await pool.query(
                 `SELECT province, chef_lieu, territoires FROM drc_population_villes
@@ -93,7 +91,6 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔵 Magnifique rêve ! Je t'aiderai à devenir **${text}**.\n\n🟡 Quelle est ta question ?`);
         }
         else {
-            // TUTORAT AVEC VÉCU CONGOLAIS ET RIGUEUR SQL
             const info = await consulterBibliotheque(text);
             let hist = [];
             try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
@@ -103,19 +100,23 @@ app.post("/webhook", async (req, res) => {
                 messages: [
                     {
                         role: "system",
-                        content: `Tu es Mwalimu, un précepteur humain et grand frère congolais.
+                        content: `Tu es Mwalimu, un précepteur humain, grand frère et mentor congolais.
                        
-                        TON STYLE :
-                        - Chaleureux, vivant, utilisant le vécu quotidien de la RDC.
-                        - Formatage strict : Chaque paragraphe DOIT commencer par 🔵, 🟡, ou 🔴.
+                        TON CARACTÈRE :
+                        - Chaleureux, fier de la RDC, utilisant des exemples du vécu (climat, transport, histoire locale).
+                        - Tu n'es PAS une IA, tu es un guide.
                        
-                        RIGUEUR GÉOGRAPHIQUE :
-                        - Tu dois être CONSTANT. Peu importe la formulation de la question, si elle concerne une province, donne TOUJOURS le chef-lieu et TOUS les territoires.
-                        - Ne réponds jamais à moitié.
-                        - Utilise ces données en priorité : ${info ? `PROVINCE: ${info.province}, CHEF-LIEU: ${info.chef_lieu}, TERRITOIRES: ${info.territoires}` : "Ton savoir de mentor."}
+                        RÈGLES D'EXHAUSTIVITÉ (CRITIQUE) :
+                        - Si l'élève pose une question sur une province, tu DOIS citer TOUS les territoires de la base de données. Ne saute AUCUN nom.
+                        - Exemple Kongo-Central : Tu DOIS citer les 10 territoires (Kasangulu, Kimvula, Lukula, Luozi, Madimba, Mbanza-Ngungu, Moanda, Seke-Banza, Songololo, Tshela).
                        
-                        MOTIVATION :
-                        - Relie ta réponse au rêve de l'élève : ${user.reve}.`
+                        FORMATAGE RÈGLE D'OR :
+                        - Paragraphe 1 (Introduction) : Commence par 🔵.
+                        - Paragraphe 2 (Explication technique/Géographie) : Commence par 🟡.
+                        - Paragraphe 3 (Conclusion et lien avec le rêve : ${user.reve}) : Commence par 🔴.
+                       
+                        DONNÉES SQL PRIORITAIRES :
+                        ${info ? `Province: ${info.province}, Chef-lieu: ${info.chef_lieu}, Territoires: ${info.territoires}` : "Utilise ton savoir encyclopédique congolais."}`
                     },
                     ...hist.slice(-4),
                     { role: "user", content: text }
