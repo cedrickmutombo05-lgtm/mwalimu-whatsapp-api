@@ -13,7 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- IDENTITÉ ET SAGESSE ---
+// --- IDENTITÉ VISUELLE ET SAGESSE ---
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -24,7 +24,7 @@ const citations = [
     "« L'excellence n'est pas une action, c'est une habitude. »"
 ];
 
-// --- FONCTION D'ENVOI ---
+// --- FONCTION D'ENVOI WHATSAPP ---
 async function envoyerWhatsApp(to, texte) {
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
@@ -47,26 +47,28 @@ cron.schedule("0 7 * * *", async () => {
     } catch (e) { console.error("Erreur Cron matinal"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE SQL SÉCURISÉE ---
+// --- RECHERCHE SQL INTELLIGENTE ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(" ");
+    const texteNettoye = nettoyer(phrase);
+    const mots = texteNettoye.replace(/[?.,!]/g, "").split(/\s+/);
 
     for (let mot of mots) {
         if (mot.length < 4) continue;
         try {
             const res = await pool.query(
-                `SELECT * FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 LIMIT 1`,
-                [`%${mot}%`]
+                `SELECT * FROM drc_population_villes
+                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
+                 LIMIT 1`, [`%${mot}%`]
             );
             if (res.rows.length > 0) return res.rows[0];
-        } catch (e) { console.error("Erreur SQL recherche"); }
+        } catch (e) { console.error("Erreur SQL"); }
     }
     return null;
 }
 
-// --- WEBHOOK ---
+// --- WEBHOOK PRINCIPAL ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -79,7 +81,7 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- ENRÔLEMENT ---
+        // 1. CYCLE D'ENRÔLEMENT
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
@@ -97,49 +99,48 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${text}**.\n\n🟡 Pose-moi ta question.`);
         }
 
-        // --- TRAITEMENT DE LA QUESTION ---
+        // 2. PRÉPARATION DU MENTORAT
         const info = await consulterBibliotheque(text);
         const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
        
-        // Sécurité SQL -> IA
-        let fluxDonnees = "AUCUNE DONNÉE";
+        // Sécurité anti-undefined
+        let fluxSQL = "VIDE";
         if (info) {
-            const v = Object.values(info); // Protection anti-undefined
-            fluxDonnees = `PROVINCE: ${info.province || v[1]} | CHEF-LIEU: ${info.chef_lieu || v[2]} | TERRITOIRES: ${info.territoires || v[3]}`;
+            const v = Object.values(info);
+            fluxSQL = `PROVINCE: ${info.province || v[1]} | CHEF-LIEU: ${info.chef_lieu || v[2]} | TERRITOIRES: ${info.territoires || v[3]}`;
         }
 
         let hist = [];
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu, Mentor Congolais.
+Tu es Mwalimu EdTech, un précepteur congolais vivant, chaleureux et cultivé. Tu n'es pas un robot, tu es un mentor.
 ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : ${user.reve}
 
-<SOURCE_VERIFIEE>
-${fluxDonnees}
-</SOURCE_VERIFIEE>
+<DIRECTIVES_DE_VIE>
+1. SALUTATION : Commence TOUJOURS par saluer ${user.nom} chaleureusement (ex: "Bonjour mon cher élève", "Mbote", "Bonsoir").
+2. IDENTITÉ : Si on te demande qui tu es, explique que tu es Mwalimu EdTech, l'assistant intelligent conçu pour accompagner l'excellence des élèves en RDC.
+3. SI PROVINCE TROUVÉE (<SOURCE_SQL> n'est pas VIDE) :
+   - Structure 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION] obligatoire.
+   - 🟡 [SAVOIR] : Copie avec une précision chirurgicale Chef-lieu et Territoires.
+   - 🔵 [VÉCU] : Raconte une anecdote humaine sur la province (ex: Port de Matadi, Rail du Katanga, Chutes Wagenia).
+   - 🔴 [INSPIRATION] : Relie au rêve (${user.reve}) et finis par la citation : "${citAleatoire}".
+4. SI QUESTION GÉNÉRALE (Paris, Fleuve Congo, Sciences) :
+   - Réponds avec pédagogie, clarté et chaleur humaine.
+   - Toujours terminer par un mot d'encouragement et la citation : "${citAleatoire}".
+</DIRECTIVES_DE_VIE>
 
-<INSTRUCTIONS_ANECDOTES>
-Utilise ces anecdotes pour le bloc 🔵 :
-- Matadi : Port vital de la RDC.
-- Kisangani : Chutes Wagenia et pêche courageuse.
-- Katanga : Richesse minière et résilience.
-- Maniema : Train Colombe et lien social.
-</INSTRUCTIONS_ANECDOTES>
+<SOURCE_SQL>
+${fluxSQL}
+</SOURCE_SQL>
 
-<STRUCTURE_OBLIGATOIRE>
-🔵 [VÉCU] : Anecdote sur la RDC pour ${user.nom}.
-🟡 [SAVOIR] : Si <SOURCE_VERIFIEE> n'est pas "AUCUNE DONNÉE", recopie exactement Chef-lieu et Territoires.
-🔴 [INSPIRATION] : Relie le savoir au rêve (${user.reve}). Termine par : "${citAleatoire}".
-</STRUCTURE_OBLIGATOIRE>
-
-RÈGLE : Température 0. Si VIDE, demande de nommer une province.
+RÈGLE D'OR : Sois humain, pédagogue et fier de la RDC. Ne réponds jamais de manière sèche.
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0
+            temperature: 0.6
         });
 
         const reponse = completion.choices[0].message.content;
@@ -147,7 +148,7 @@ RÈGLE : Température 0. Si VIDE, demande de nommer une province.
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
         await envoyerWhatsApp(from, reponse);
 
-    } catch (e) { console.error("Crash Webhook:", e.message); }
+    } catch (e) { console.error("Erreur Webhook:", e.message); }
 });
 
 app.listen(process.env.PORT || 10000);
