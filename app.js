@@ -13,6 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// --- IDENTITÉ VISUELLE ET SAGESSE ---
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -24,6 +25,7 @@ const citations = [
     "« Un peuple qui ne connaît pas son histoire est un peuple sans avenir. »"
 ];
 
+// --- ENVOI WHATSAPP ---
 async function envoyerWhatsApp(to, texte) {
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
@@ -31,21 +33,21 @@ async function envoyerWhatsApp(to, texte) {
             to,
             text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur API WhatsApp"); }
+    } catch (e) { console.error("Erreur WhatsApp API"); }
 }
 
-// --- RAPPEL 7H00 (LUBUMBASHI) ---
+// --- RAPPEL MATINAL (7H00) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence ?`);
+            await envoyerWhatsApp(user.phone, `🔵 Bonjour ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui est une nouvelle chance de bâtir ton avenir.`);
         }
-    } catch (e) { console.error("Erreur Cron Morning"); }
+    } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE SQL FLEXIBLE ---
+// --- RECHERCHE SQL PRÉCISE ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -66,6 +68,7 @@ async function consulterBibliotheque(phrase) {
     return null;
 }
 
+// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -78,7 +81,7 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- CYCLE D'ENRÔLEMENT AVEC SÉCURITÉ ---
+        // 1. GESTION DE L'ENRÔLEMENT
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
@@ -89,42 +92,37 @@ app.post("/webhook", async (req, res) => {
         }
         if (!user.classe) {
             await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ? 🌟`);
+            return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
         }
         if (!user.reve) {
-            // Empêche de capturer "Bonjour" comme un rêve
-            const saluts = ["bonjour", "mbote", "mwalimu", "hello", "hi"];
-            if (saluts.includes(text.toLowerCase()) && text.split(" ").length < 3) {
-                return await envoyerWhatsApp(from, "🔵 Bonjour ! Mais dis-moi d'abord, quel est ton plus grand **rêve** ?");
-            }
+            const saluts = ["bonjour", "mbote", "mwalimu", "hello"];
+            if (saluts.includes(text.toLowerCase())) return await envoyerWhatsApp(from, "🔵 Bonjour ! Quel est ton **rêve** ?");
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${text}**.\n\n🟡 Pose-moi ta question.`);
+            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${text}**.\n\n🟡 Quelle est ta question ?`);
         }
 
-        // --- PHASE DE TUTORAT ---
+        // 2. LOGIQUE DE RÉPONSE MENTOR
         const info = await consulterBibliotheque(text);
         const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
-       
         let hist = [];
-        try {
-            hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []);
-        } catch(e) { hist = []; }
+        try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
 Tu es Mwalimu, Mentor Congolais.
 ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
 
 <SOURCE_SQL>
-${info ? `PROVINCE: ${info.province || "Inconnue"} | CHEF_LIEU: ${info.chef_lieu || "Non répertorié"} | TERRITOIRES: ${info.territoires || "Non répertoriés"}` : "VIDE"}
+${info ? `PROVINCE: ${info.province} | CHEF_LIEU: ${info.chef_lieu} | TERRITOIRES: ${info.territoires}` : "VIDE"}
 </SOURCE_SQL>
 
-<FORMAT_REPONSE>
-🔵 [VÉCU] : Anecdote sur le vécu congolais pour ${user.nom}.
-🟡 [SAVOIR] : Si <SOURCE_SQL> n'est pas VIDE, recopie EXACTEMENT : "Voici les données officielles : Chef-lieu : ${info?.chef_lieu}. Territoires : ${info?.territoires}."
-🔴 [INSPIRATION] : Relie cela au rêve (${user.reve}). Termine par : "${citAleatoire}".
-</FORMAT_REPONSE>
+<OBLIGATION_STRUCTURE>
+Tu DOIS utiliser ce format précis à CHAQUE réponse :
+🔵 [VÉCU] : Anecdote sur la RDC liée à la demande.
+🟡 [SAVOIR] : Si <SOURCE_SQL> n'est pas VIDE, copie : "Voici les données officielles : Chef-lieu : ${info?.chef_lieu}. Territoires : ${info?.territoires}." (Ne résume JAMAIS).
+🔴 [INSPIRATION] : Relie le savoir au rêve (${user.reve}). Termine par : "${citAleatoire}".
+</OBLIGATION_STRUCTURE>
 
-RÈGLE : Température 0. Si la source est VIDE, demande poliment de nommer une province de la RDC.
+RÈGLE : Température 0. Si la source est VIDE, demande de préciser la province.
 `;
 
         const completion = await openai.chat.completions.create({
@@ -134,13 +132,12 @@ RÈGLE : Température 0. Si la source est VIDE, demande poliment de nommer une p
         });
 
         const reponse = completion.choices[0].message.content;
-       
         const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10));
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
        
         await envoyerWhatsApp(from, reponse);
 
-    } catch (e) { console.error("Webhook Error:", e); }
+    } catch (e) { console.error("Error:", e); }
 });
 
 app.listen(process.env.PORT || 10000);
