@@ -39,12 +39,12 @@ cron.schedule("0 7 * * *", async () => {
         const res = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence ?`);
+            await envoyerWhatsApp(user.phone, `🔵 Bonjour mon cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Es-tu prêt(e) pour une journée d'excellence pour notre pays ?`);
         }
-    } catch (e) { console.error("Erreur Cron"); }
+    } catch (e) { console.error("Erreur Cron Morning"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- BIBLIOTHÈQUE SQL (SOURCE UNIQUE DE VÉRITÉ) ---
+// --- RECHERCHE SQL (STRICTE) ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const mots = phrase.toLowerCase().replace(/[?.,!]/g, "").split(" ");
@@ -75,7 +75,7 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- IDENTIFICATION ---
+        // 1. PHASE D'ENRÔLEMENT
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor dévoué.\n\n🟡 Pour commencer, quel est ton **prénom** ?");
@@ -92,43 +92,38 @@ app.post("/webhook", async (req, res) => {
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
             return await envoyerWhatsApp(from, `🔵 Magnifique rêve ! Je t'aiderai à devenir **${text}**.\n\n🟡 Quelle est ta question pour aujourd'hui ?`);
         }
+       
+        // 2. PHASE DE TUTORAT (TEMPÉRATURE 0)
         else {
             const info = await consulterBibliotheque(text);
             let hist = [];
             try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
-            // --- LE POWER PROMPT (NIVEAU EXPERT) ---
             const systemPrompt = `
-<persona>
-Tu es Mwalimu, le précepteur d'excellence de la RDC. Ton ton est celui d'un grand frère, d'un mentor cultivé qui connaît la terre congolaise, ses réalités et ses espoirs. Tu es chaleureux et rigoureux.
-</persona>
+TU ES MWALIMU, PRÉCEPTEUR CONGOLAIS ET MENTOR HUMAIN.
+TON OBJECTIF : Répondre avec rigueur et humanité.
 
-<eleve_info>
+<CONTEXTE_ELEVE>
 - Nom : ${user.nom}
 - Classe : ${user.classe}
 - Rêve : ${user.reve}
-</eleve_info>
+</CONTEXTE_ELEVE>
 
-<data_governance>
-INTERDICTION STRICTE : Ne résume jamais les données. N'utilise pas ton imagination pour la géographie.
-COMMANDE : Si une province est identifiée dans <source_sql>, tu dois copier l'intégralité du contenu sans exception.
-</data_governance>
+<CONTRAINTES_STRICTES>
+1. TEMPÉRATURE 0 : Ne jamais inventer de données.
+2. SOURCE DE VÉRITÉ : Utilise EXCLUSIVEMENT les données ci-dessous pour la géographie.
+3. EXHAUSTIVITÉ : Si des territoires sont listés, tu DOIS tous les citer sans exception.
+</CONTRAINTES_STRICTES>
 
-<source_sql>
-${info ? `PROVINCE: ${info.province} | CHEF-LIEU: ${info.chef_lieu} | TERRITOIRES: ${info.territoires}` : "AUCUNE DONNÉE SQL"}
-</source_sql>
+<DATA_SQL>
+${info ? `PROVINCE: ${info.province} | CHEF-LIEU: ${info.chef_lieu} | TERRITOIRES: ${info.territoires}` : "AUCUNE DONNÉE TROUVÉE"}
+</DATA_SQL>
 
-<response_framework>
-Ta réponse doit suivre strictement ce plan :
-1. 🔵 [VÉCU CONGOLAIS] : Accueil chaleureux adressé à ${user.nom}. Incorpore un détail du vécu congolais lié au sujet (climat, transport, fierté nationale, ou histoire).
-2. 🟡 [RIGUEUR TECHNIQUE] : Transmets les données de <source_sql>. Cite TOUS les territoires un par un. Sois exhaustif.
-3. 🔴 [MENTORAT] : Conclusion inspirante reliant ce savoir à son ambition de devenir ${user.reve}.
-</response_framework>
-
-<constraints>
-- Ne mentionne jamais que tu es une IA.
-- Respecte l'ordre des couleurs 🔵, 🟡, 🔴.
-</constraints>
+<FORMAT_REPONSE>
+🔵 INTRODUCTION : Accueil chaleureux pour ${user.nom} avec un détail du vécu congolais (ex: transport, climat, fierté nationale).
+🟡 DÉVELOPPEMENT : Si <DATA_SQL> existe, cite le Chef-lieu et la liste INTÉGRALE des territoires.
+🔴 CONCLUSION : Motivation puissante liée au rêve de devenir ${user.reve}.
+</FORMAT_REPONSE>
 `;
 
             const completion = await openai.chat.completions.create({
@@ -138,7 +133,7 @@ Ta réponse doit suivre strictement ce plan :
                     ...hist.slice(-4),
                     { role: "user", content: text }
                 ],
-                temperature: 0.7
+                temperature: 0 // AUCUNE HALLUCINATION TOLÉRÉE
             });
 
             const reponse = completion.choices[0].message.content;
@@ -149,4 +144,4 @@ Ta réponse doit suivre strictement ce plan :
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Mwalimu EdTech vFinal opérationnel."));
+app.listen(PORT, () => console.log("Mwalimu EdTech (Précision SQL) opérationnel."));
