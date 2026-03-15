@@ -33,15 +33,15 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN (CORRIGÉ POUR LE RÊVE) ---
+// --- RAPPEL DU MATIN (Rêve purifié) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            // Nettoyage de sécurité pour le rappel
-            const revePropre = user.reve.replace(/Bonjour Mwalimu|Bonjour|Mwalimu/gi, "").trim();
-            const messageMatin = `🔵 Bonjour cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${revePropre || 'pilier du Congo'}** dont notre pays a besoin.`;
+            // On nettoie le rêve pour l'affichage au cas où des résidus subsistent
+            const reveAffiche = user.reve.replace(/Bonjour Mwalimu|Bonjour|Mwalimu|Moi c'est/gi, "").trim();
+            const messageMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, travaille avec ardeur pour devenir le **${reveAffiche || 'grand leader'}** que le Congo attend.`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
@@ -75,13 +75,13 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- ENRÔLEMENT (SÉCURISATION DES DONNÉES) ---
+        // --- ENRÔLEMENT (SÉCURISATION DES ACQUIS) ---
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
         }
         if (!user.nom) {
-            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est|Moi c|Je suis/gi, "").replace(/[.!]/g, "").trim();
+            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est|Je suis/gi, "").replace(/[.!]/g, "").trim();
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
             return await envoyerWhatsApp(from, `🔵 Enchanté **${nomNettoye}** ! En quelle **classe** es-tu ?`);
         }
@@ -90,10 +90,10 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
         }
         if (!user.reve) {
-            // CORRECTIF RADICAL : On retire les salutations du rêve avant l'enregistrement
-            const reveNettoye = text.replace(/Bonjour Mwalimu|Mon rêve est|Mon reve est|Je veux devenir|Je rêve de devenir|Bonjour/gi, "").replace(/[.!]/g, "").trim();
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNettoye, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${reveNettoye}**.\n\n🟡 Pose-moi ta question.`);
+            // ÉLAGAGE DÉFINITIF DE "Bonjour Mwalimu"
+            const revePur = text.replace(/Bonjour Mwalimu|Bonjour|Mon rêve est|Je veux devenir|Je rêve de devenir/gi, "").replace(/[.!]/g, "").trim();
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [revePur, from]);
+            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${revePur}**.\n\n🟡 Pose-moi ta question.`);
         }
 
         const info = await consulterBibliotheque(text);
@@ -102,35 +102,38 @@ app.post("/webhook", async (req, res) => {
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur d'élite et mentor en RDC.
-ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
+Tu es Mwalimu EdTech, précepteur présent et vivant, mentor dévoué pour la jeunesse congolaise. Ton ton est solennel, fier et très clair.
+ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : ${user.reve}
 
-<DIRECTIVES_STYLE>
-1. SALUTATION : Alterne (Ebwe, Mbote, Jambo, Moyo, Bonjour). Sois poli.
-2. RIGUEUR : Liste TOUS les territoires de la source SQL sans exception.
-3. DISTINCTION : Sépare strictement les Villes des Territoires.
-4. INTERROGATION : Finis par une question de cours pour ${user.nom}.
-</DIRECTIVES_STYLE>
+<DIRECTIVES_PRECEPTEUR>
+1. SALUTATION : Alterne entre Ebwe, Mbote, Jambo, Moyo ou Bonjour.
+2. VILLES VS TERRITOIRES : Respecte strictement la règle d'or. Liste les Villes (Boma, Zongo, Beni, Butembo, Uvira, Baraka, Likasi) séparément des Territoires.
+3. RIGUEUR SQL : Ne résume jamais les données. Recopie chaque territoire de la source.
+4. PEDAGOGIE : Ne te contente pas de lister, explique avec le cœur du précepteur.
+</DIRECTIVES_PRECEPTEUR>
 
 <DONNEES_SQL>
 ${info ? JSON.stringify(info) : "AUCUNE"}
 </DONNEES_SQL>
 
-<STRUCTURE_REPONSE>
-🔵 [VÉCU] : Anecdote humaine liant le sujet au vécu congolais.
-🟡 [SAVOIR] : Utilise des puces ou des chiffres pour les listes.
-🔴 [INSPIRATION] : Relie le sujet au rêve de devenir ${user.reve}.
-❓ [CONSOLIDATION] : Question de cours.
+<STRUCTURE_LECON>
+🔵 [VÉCU] : Anecdote humaine et vibrante sur la province pour captiver ${user.nom}.
+🟡 [SAVOIR] :
+   - Chef-lieu : [Nom]
+   - Villes : [Lister les villes de la source ici]
+   - Territoires : [Lister TOUS les territoires ici]
+   - Nature & Richesses : [Relief, Hydrographie, Climat, Mines].
+🔴 [INSPIRATION] : Relie ce savoir au rêve de ${user.nom} de devenir ${user.reve}.
+❓ [CONSOLIDATION] : Question directe pour vérifier si l'élève a bien suivi.
 </STRUCTURE_REPONSE>
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.3
+            temperature: 0.2
         });
 
-        // --- CORRECTIF CITATION : On l'ajoute manuellement à la fin de la réponse IA ---
         const reponseIA = completion.choices[0].message.content;
         const reponseFinale = `${reponseIA}\n\n${citAleatoire}`;
 
