@@ -16,11 +16,11 @@ const pool = new Pool({
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
-    "_« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »_",
-    "_« Science sans conscience n'est que ruine de l'âme. »_",
-    "_« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »_",
-    "_« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba_",
-    "_« L'excellence n'est pas une action, c'est une habitude. »_"
+    "***« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »***",
+    "***« Science sans conscience n'est que ruine de l'âme. »***",
+    "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
+    "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
+    "***« L'excellence n'est pas une action, c'est une habitude. »***"
 ];
 
 async function envoyerWhatsApp(to, texte) {
@@ -33,15 +33,15 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN (CORRIGÉ) ---
+// --- RAPPEL DU MATIN (CORRIGÉ POUR LE RÊVE) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            // On nettoie l'affichage au cas où une salutation resterait en base
+            // Nettoyage de sécurité pour le rappel
             const revePropre = user.reve.replace(/Bonjour Mwalimu|Bonjour|Mwalimu/gi, "").trim();
-            const messageMatin = `🔵 Bonjour cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${revePropre || 'pilier du pays'}** dont le Congo a besoin.`;
+            const messageMatin = `🔵 Bonjour cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${revePropre || 'pilier du Congo'}** dont notre pays a besoin.`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
@@ -50,17 +50,12 @@ cron.schedule("0 7 * * *", async () => {
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const texteNettoye = nettoyer(phrase);
-    const mots = texteNettoye.replace(/[?.,!]/g, "").split(/\s+/);
-
+    const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(/\s+/);
     for (let mot of mots) {
         if (mot.length < 3) continue;
         try {
             const res = await pool.query(
-                `SELECT * FROM drc_population_villes
-                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
-                 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1
-                 LIMIT 1`, [`%${mot}%`]
+                `SELECT * FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1 LIMIT 1`, [`%${mot}%`]
             );
             if (res.rows.length > 0) return res.rows[0];
         } catch (e) { console.error("Erreur SQL"); }
@@ -80,13 +75,13 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- ENRÔLEMENT (SÉCURISÉ) ---
+        // --- ENRÔLEMENT (SÉCURISATION DES DONNÉES) ---
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
         }
         if (!user.nom) {
-            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est/gi, "").trim();
+            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est|Moi c|Je suis/gi, "").replace(/[.!]/g, "").trim();
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
             return await envoyerWhatsApp(from, `🔵 Enchanté **${nomNettoye}** ! En quelle **classe** es-tu ?`);
         }
@@ -95,10 +90,10 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
         }
         if (!user.reve) {
-            // CORRECTIF : On filtre "Bonjour Mwalimu" pour ne garder que le métier
-            const revePropre = text.replace(/Bonjour Mwalimu|Mon rêve est|Je veux devenir/gi, "").replace(/[.!]/g, "").trim();
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [revePropre, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${revePropre}**.\n\n🟡 Pose-moi ta question.`);
+            // CORRECTIF RADICAL : On retire les salutations du rêve avant l'enregistrement
+            const reveNettoye = text.replace(/Bonjour Mwalimu|Mon rêve est|Mon reve est|Je veux devenir|Je rêve de devenir|Bonjour/gi, "").replace(/[.!]/g, "").trim();
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reveNettoye, from]);
+            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${reveNettoye}**.\n\n🟡 Pose-moi ta question.`);
         }
 
         const info = await consulterBibliotheque(text);
@@ -107,35 +102,26 @@ app.post("/webhook", async (req, res) => {
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur d'élite et mentor chaleureux en RDC.
+Tu es Mwalimu EdTech, précepteur d'élite et mentor en RDC.
 ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
 
 <DIRECTIVES_STYLE>
-1. SALUTATION : Alterne entre "Ebwe", "Mbote", "Jambo", "Moyo" ou "Bonjour". Sois poli.
-2. RIGUEUR : Liste TOUS les territoires de la source SQL. Ne résume JAMAIS.
-3. DISTINCTION : Sépare strictement les Villes (Zongo, Beni, Butembo, Uvira, Baraka, Likasi, Boma) des Territoires.
-4. CONSOLIDATION : Finis par une question de cours pour ${user.nom}.
+1. SALUTATION : Alterne (Ebwe, Mbote, Jambo, Moyo, Bonjour). Sois poli.
+2. RIGUEUR : Liste TOUS les territoires de la source SQL sans exception.
+3. DISTINCTION : Sépare strictement les Villes des Territoires.
+4. INTERROGATION : Finis par une question de cours pour ${user.nom}.
 </DIRECTIVES_STYLE>
 
 <DONNEES_SQL>
 ${info ? JSON.stringify(info) : "AUCUNE"}
 </DONNEES_SQL>
 
-<STRUCTURE_PEDAGOGIQUE>
-🔵 [VÉCU] : Anecdote humaine et patriotique.
-  
-🟡 [SAVOIR] :
-   - Chef-lieu : [Nom]
-   - Villes : [Uniquement les villes]
-   - Territoires : [Uniquement les territoires, sans en oublier un seul]
-   - Géographie & Nature : [Détails de la source].
-
-🔴 [INSPIRATION] : Pourquoi ce savoir aide à devenir ${user.reve}.
-
-❓ [CONSOLIDATION] : Question de cours pour ${user.nom}.
-
-${citAleatoire}
-</STRUCTURE_PEDAGOGIQUE>
+<STRUCTURE_REPONSE>
+🔵 [VÉCU] : Anecdote humaine liant le sujet au vécu congolais.
+🟡 [SAVOIR] : Utilise des puces ou des chiffres pour les listes.
+🔴 [INSPIRATION] : Relie le sujet au rêve de devenir ${user.reve}.
+❓ [CONSOLIDATION] : Question de cours.
+</STRUCTURE_REPONSE>
 `;
 
         const completion = await openai.chat.completions.create({
@@ -144,10 +130,14 @@ ${citAleatoire}
             temperature: 0.3
         });
 
-        const reponse = completion.choices[0].message.content;
-        const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10));
+        // --- CORRECTIF CITATION : On l'ajoute manuellement à la fin de la réponse IA ---
+        const reponseIA = completion.choices[0].message.content;
+        const reponseFinale = `${reponseIA}\n\n${citAleatoire}`;
+
+        const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponseIA }].slice(-10));
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
-        await envoyerWhatsApp(from, reponse);
+       
+        await envoyerWhatsApp(from, reponseFinale);
 
     } catch (e) { console.error(e.message); }
 });
