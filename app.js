@@ -33,22 +33,55 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RECHERCHE SQL ET PRÉ-FORMATAGE (LA CLÉ DE LA RIGUEUR) ---
+// --- RAPPEL DE 07H00 (RÈGLE D'OR : PRÉSENCE CONSTANTE) ---
+// Configuration explicite pour Africa/Lubumbashi (UTC+2)
+cron.schedule("0 7 * * *", async () => {
+    console.log("Déclenchement du rappel de 07:00...");
+    try {
+        const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
+        const salutations = ["Ebwe", "Mbote", "Jambo", "Moyo", "Bonjour"];
+       
+        for (const user of res.rows) {
+            const cit = citations[Math.floor(Math.random() * citations.length)];
+            const sal = salutations[Math.floor(Math.random() * salutations.length)];
+            // Nettoyage pour ne pas inclure "Bonjour Mwalimu" dans le message
+            const reveAffiche = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand bâtisseur";
+           
+            const messageMatin = `🔵 ${sal} cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${reveAffiche}** dont le Congo a besoin.`;
+            await envoyerWhatsApp(user.phone, messageMatin);
+        }
+    } catch (e) { console.error("Erreur lors du cron de 07h00:", e); }
+}, {
+    scheduled: true,
+    timezone: "Africa/Lubumbashi"
+});
+
+// --- RECHERCHE SQL AVEC ANTI-DOUBLON (VILLES VS TERRITOIRES) ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(/\s+/);
+   
     for (let mot of mots) {
         if (mot.length < 3) continue;
         try {
             const res = await pool.query(
                 `SELECT * FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1 LIMIT 1`, [`%${mot}%`]
             );
+           
             if (res.rows.length > 0) {
                 const row = res.rows[0];
-                // On transforme la chaîne "Fizi, Idjwi..." en liste numérotée ici, en JS, pas dans l'IA
-                const listeT = row.territoires ? row.territoires.split(',').map((t, i) => `${i + 1}. ${t.trim()}`).join('\n     ') : "Aucun";
-                return { ...row, listeTerritoiresFormatee: listeT };
+                let villesTab = row.villes ? row.villes.split(',').map(v => v.trim()) : [];
+                let territoiresTab = row.territoires ? row.territoires.split(',').map(t => t.trim()) : [];
+               
+                // Filtre : On enlève des territoires tout ce qui est déjà listé comme ville (ex: Uvira)
+                let tFiltres = territoiresTab.filter(t => !villesTab.some(v => v.toLowerCase() === t.toLowerCase()));
+               
+                return {
+                    ...row,
+                    vPropres: villesTab.join(', '),
+                    tNum: tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')
+                };
             }
         } catch (e) { console.error("Erreur SQL"); }
     }
@@ -73,20 +106,19 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
         }
         if (!user.nom || !user.classe || !user.reve) {
-            // (Logique d'enrôlement identique à la précédente pour rester stable)
             if (!user.nom) {
-                const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est/gi, "").trim();
-                await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
-                return await envoyerWhatsApp(from, `🔵 Enchanté **${nomNettoye}** ! En quelle **classe** es-tu ?`);
+                const n = text.replace(/Mon prénom est|Je m'appelle|Moi c'est/gi, "").trim();
+                await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [n, from]);
+                return await envoyerWhatsApp(from, `🔵 Enchanté **${n}** ! En quelle **classe** es-tu ?`);
             }
             if (!user.classe) {
                 await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
                 return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
             }
             if (!user.reve) {
-                const revePur = text.replace(/Bonjour Mwalimu|Bonjour|Mon rêve est/gi, "").trim();
-                await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [revePur, from]);
-                return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${revePur}**.\n\n🟡 Pose-moi ta question.`);
+                const r = text.replace(/Mon rêve est|Je veux devenir/gi, "").trim();
+                await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [r, from]);
+                return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${r}**.\n\n🟡 Pose-moi ta question.`);
             }
         }
 
@@ -99,48 +131,49 @@ app.post("/webhook", async (req, res) => {
 Tu es Mwalimu EdTech, précepteur d'élite congolais.
 ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
 
-<RÈGLE_D_OR_RADICALE>
-1. Tu ne modifies JAMAIS la liste des territoires fournie. Tu l'insères telle quelle.
-2. Tu respectes STRICTEMENT la distinction entre VILLES et TERRITOIRES.
-3. Si une ville est listée dans "VILLES", elle ne doit pas apparaître dans "TERRITOIRES".
-4. Tu restes pédagogue, vivant et tu parles du VÉCU congolais.
-</RÈGLE_D_OR_RADICALE>
+<RÈGLE_D_OR_MWALIMU>
+1. Tu ne mélanges jamais les VILLES et les TERRITOIRES.
+2. Tu recopies la liste numérotée exactement comme fournie par le système.
+3. Tu as une âme de mentor : ton ton est chaleureux, pédagogue et inspirant.
+</RÈGLE_D_OR_MWALIMU>
 
-<SOURCE_SQL_VERIFIEE>
-Province: ${info ? info.province : "Inconnue"}
-Chef-lieu: ${info ? info.chef_lieu : "Inconnu"}
-Villes: ${info ? info.villes : "Aucune"}
-Liste_Territoires:
-     ${info ? info.listeTerritoiresFormatee : "Aucun"}
-Richesses: ${info ? info.nature_richesses : "À déterminer"}
-</SOURCE_SQL_VERIFIEE>
+<SOURCE_SQL_NETTOYEE>
+Province: ${info ? info.province : "Non trouvée"}
+Chef-lieu: ${info ? info.chef_lieu : "Non trouvé"}
+Villes: ${info ? info.vPropres : "Aucune"}
+Territoires (Triés) :
+     ${info ? info.tNum : "Aucun"}
+</SOURCE_SQL_NETTOYEE>
 
-<STRUCTURE_IMPOSEE>
-🔵 [VÉCU] : [Anecdote vivante sur la région]
+<STRUCTURE_DE_REPONSE_STRICTE>
+🔵 [VÉCU] : [Anecdote chaleureuse sur la vie en RDC]
 
 🟡 [SAVOIR] :
    - Chef-lieu : ${info ? info.chef_lieu : "[Nom]"}
-   - Villes : ${info ? info.villes : "[Liste]"}
+   - Villes : ${info ? info.vPropres : "[Liste]"}
    - Territoires :
-     ${info ? info.listeTerritoiresFormatee : "[Liste]"}
+     ${info ? info.tNum : "[Liste]"}
    - Nature & Richesses : ${info ? info.nature_richesses : "[Détails]"}
 
-🔴 [INSPIRATION] : [Motivation liée au rêve de devenir ${user.reve}].
+🔴 [INSPIRATION] : [Lien avec le rêve de ${user.nom} de devenir ${user.reve}].
 
-❓ [CONSOLIDATION] : [Question de cours pour ${user.nom}].
-</STRUCTURE_IMPOSEE>
+❓ [CONSOLIDATION] : [Question de cours précise].
+</STRUCTURE_DE_REPONSE_STRICTE>
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.3
+            temperature: 0.5
         });
 
         const reponseIA = completion.choices[0].message.content;
         await envoyerWhatsApp(from, `${reponseIA}\n\n${citAleatoire}`);
 
-    } catch (e) { console.error(e); }
+        const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponseIA }].slice(-10));
+        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
+
+    } catch (e) { console.error("Erreur Webhook", e); }
 });
 
 app.listen(process.env.PORT || 10000);
