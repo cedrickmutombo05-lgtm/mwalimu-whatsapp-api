@@ -7,7 +7,11 @@ const { Pool } = require("pg");
 require("dotenv").config();
 
 const app = express().use(express.json());
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -30,7 +34,9 @@ async function envoyerWhatsApp(to, texte) {
             {
                 messaging_product: "whatsapp",
                 to,
-                text: { body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}` }
+                text: {
+                    body: `${HEADER_MWALIMU}\n\n________________________________\n\n${texte}`
+                }
             },
             {
                 headers: {
@@ -53,11 +59,13 @@ cron.schedule("0 7 * * *", async () => {
 
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const r = (user.reve || "")
-                .replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "")
-                .trim() || "citoyen modèle";
+            const reve = (user.reve || "").trim() || "citoyen modèle";
 
-            const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, travaille avec ardeur pour devenir le **${r}** que le Congo attend.`;
+            const msgMatin =
+                `🔵 Mbote cher élève ${user.nom} !\n\n` +
+                `🟡 ${cit}\n\n` +
+                `🔴 Aujourd'hui, travaille avec ardeur pour devenir le **${reve}** que le Congo attend.`;
+
             await envoyerWhatsApp(user.phone, msgMatin);
         }
     } catch (e) {
@@ -84,9 +92,9 @@ function decouperListe(valeur) {
     )];
 }
 
-function numeroterListe(liste) {
+function numeroterListeSimple(liste) {
     if (!liste || !liste.length) return "Aucun";
-    return liste.map((item, i) => `${i + 1}. ${item}`).join("\n     ");
+    return liste.map((item, i) => `${i + 1}. ${item}`).join("\n  ");
 }
 
 function separerVillesEtTerritoires(villes, territoires, chefLieu) {
@@ -104,20 +112,95 @@ function separerVillesEtTerritoires(villes, territoires, chefLieu) {
         return !territoiresSet.has(n);
     });
 
+    t = t.filter(item => !(chef && normaliser(item) === normaliser(chef)));
+
     if (chef && !v.some(x => normaliser(x) === normaliser(chef))) {
         v.unshift(chef);
     }
 
-    t = t.filter(item => !(chef && normaliser(item) === normaliser(chef)));
+    return {
+        villesPropres: v,
+        territoiresPropres: t
+    };
+}
+
+function extraireProvinceDemandee(phrase) {
+    const texte = nettoyerTexte(phrase);
+
+    const provinces = [
+        "bas-uele", "haut-uele", "ituri", "tshopo", "basoko", "haut-katanga",
+        "haut-lomami", "lualaba", "tanganyika", "maniema", "sud-kivu",
+        "nord-kivu", "ituri", "kinshasa", "kongo central", "kwango",
+        "kwilu", "maindombe", "kasaï", "kasai", "kasaï central",
+        "kasai central", "kasaï oriental", "kasai oriental", "lomami",
+        "sankuru", "tshuapa", "mongala", "nord-ubangi", "sud-ubangi",
+        "equateur"
+    ];
+
+    for (const p of provinces) {
+        if (texte.includes(p)) return p;
+    }
+
+    return null;
+}
+
+async function chercherProvinceParNom(provinceTexte) {
+    if (!provinceTexte) return null;
+
+    const terme = nettoyerTexte(provinceTexte);
+
+    const res = await pool.query(
+        `
+        SELECT *
+        FROM drc_population_villes
+        WHERE LOWER(COALESCE(province, '')) LIKE $1
+        ORDER BY
+            CASE
+                WHEN LOWER(COALESCE(province, '')) = $2 THEN 1
+                ELSE 2
+            END
+        LIMIT 1
+        `,
+        [`%${terme}%`, terme]
+    );
+
+    if (!res.rows.length) return null;
+    return normaliserResultatProvince(res.rows[0]);
+}
+
+function normaliserResultatProvince(row) {
+    const vArrBrut = decouperListe(row.villes);
+    const tArrBrut = decouperListe(row.territoires);
+
+    const separation = separerVillesEtTerritoires(
+        vArrBrut,
+        tArrBrut,
+        row.chef_lieu
+    );
 
     return {
-        villesPropres: [...new Set(v)],
-        territoiresPropres: [...new Set(t)]
+        ...row,
+        vListe: separation.villesPropres,
+        tListe: separation.territoiresPropres,
+        vPropres: separation.villesPropres.length
+            ? separation.villesPropres.join(", ")
+            : "Aucune",
+        tNumerotes: numeroterListeSimple(separation.territoiresPropres)
     };
 }
 
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
+
+    const provinceDemandee = extraireProvinceDemandee(phrase);
+    if (provinceDemandee) {
+        try {
+            const provinceTrouvee = await chercherProvinceParNom(provinceDemandee);
+            if (provinceTrouvee) return provinceTrouvee;
+        } catch (e) {
+            console.error("Erreur recherche province directe", e.message);
+        }
+    }
 
     const texte = nettoyerTexte(phrase);
 
@@ -127,7 +210,8 @@ async function consulterBibliotheque(phrase) {
         "les", "des", "du", "de", "la", "le", "l", "territoire",
         "territoires", "ville", "villes", "province", "chef", "lieu",
         "donne", "liste", "nom", "noms", "et", "dans", "sur", "pour",
-        "peux", "tu", "me", "dire", "citer", "tous", "toutes", "ses"
+        "peux", "tu", "me", "dire", "citer", "tous", "toutes", "ses",
+        "du", "sud", "nord", "haut", "bas"
     ]);
 
     const mots = texte
@@ -162,26 +246,7 @@ async function consulterBibliotheque(phrase) {
         );
 
         if (!res.rows.length) return null;
-
-        const row = res.rows[0];
-        const vArrBrut = decouperListe(row.villes);
-        const tArrBrut = decouperListe(row.territoires);
-
-        const separation = separerVillesEtTerritoires(
-            vArrBrut,
-            tArrBrut,
-            row.chef_lieu
-        );
-
-        return {
-            ...row,
-            vListe: separation.villesPropres,
-            tListe: separation.territoiresPropres,
-            vPropres: separation.villesPropres.length
-                ? separation.villesPropres.join(", ")
-                : "Aucune",
-            tNumerotes: numeroterListe(separation.territoiresPropres)
-        };
+        return normaliserResultatProvince(res.rows[0]);
     }
 
     try {
@@ -203,6 +268,54 @@ async function consulterBibliotheque(phrase) {
     return null;
 }
 
+function construireReponseProvince(info, user) {
+    const nom = user?.nom || "cher élève";
+    const reve = user?.reve || "grand professionnel";
+
+    return [
+        `🔵 Très bien ${nom}, voici la réponse correcte sur **${info.province}**.`,
+        ``,
+        `🟡 [SAVOIR] :`,
+        `- Chef-lieu : ${info.chef_lieu || "Non trouvé"}`,
+        `- Villes : ${info.vPropres || "Aucune"}`,
+        `- Territoires :`,
+        `  ${info.tListe && info.tListe.length ? info.tListe.map((t, i) => `${i + 1}. ${t}`).join("\n  ") : "Aucun"}`,
+        `- Nature et richesses : ${info.nature_richesses || "Non renseignées"}`,
+        ``,
+        `🔴 [INSPIRATION] : ${nom}, retiens d'abord les faits exacts. La précision est une qualité des grands ${reve}.`,
+        ``,
+        `❓ [CONSOLIDATION] : Peux-tu me redonner le chef-lieu de ${info.province} ?`
+    ].join("\n");
+}
+
+async function genererReponsePedagogiqueLibre(text, user, hist) {
+    const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+            {
+                role: "system",
+                content: `
+Tu es Mwalimu EdTech, un précepteur congolais chaleureux et pédagogue.
+Tu t'adresses à un élève nommé ${user.nom}, de la classe ${user.classe}, qui rêve de devenir ${user.reve}.
+
+Règles :
+- Réponse claire, courte et humaine.
+- Si l'information exacte n'est pas dans la base, dis-le honnêtement.
+- N'invente jamais de liste administrative.
+- Ne réponds jamais comme un moteur de recherche.
+- Termine par une petite question de consolidation.
+                `
+            },
+            ...hist.slice(-4),
+            { role: "user", content: text }
+        ],
+        temperature: 0.2
+    });
+
+    return completion.choices[0]?.message?.content ||
+        "Je n'ai pas trouvé cette information exacte dans ma base pour le moment.";
+}
+
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
 
@@ -213,7 +326,10 @@ app.post("/webhook", async (req, res) => {
     const text = msg.text.body.trim();
 
     try {
-        let { rows } = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
+        let { rows } = await pool.query(
+            "SELECT * FROM conversations WHERE phone = $1",
+            [from]
+        );
         let user = rows[0];
 
         if (!user) {
@@ -221,7 +337,10 @@ app.post("/webhook", async (req, res) => {
                 "INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')",
                 [from]
             );
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
+            return await envoyerWhatsApp(
+                from,
+                "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?"
+            );
         }
 
         if (!user.nom || !user.classe || !user.reve) {
@@ -243,9 +362,6 @@ app.post("/webhook", async (req, res) => {
             }
         }
 
-        const info = await consulterBibliotheque(text);
-        const cit = citations[Math.floor(Math.random() * citations.length)];
-
         let hist = [];
         try {
             hist = typeof user.historique === "string"
@@ -255,71 +371,31 @@ app.post("/webhook", async (req, res) => {
             hist = [];
         }
 
-        const systemPrompt = `
-Tu es Mwalimu EdTech, un précepteur congolais d'élite, chaleureux, humain, pédagogique et précis.
-Ton élève s'appelle ${user.nom}.
-Il est en classe de ${user.classe}.
-Son rêve est de devenir ${user.reve}.
+        const info = await consulterBibliotheque(text);
+        const cit = citations[Math.floor(Math.random() * citations.length)];
 
-<RÈGLES FONDAMENTALES>
-- Utilise uniquement les données fournies ci-dessous quand elles existent.
-- N'invente jamais une ville ou un territoire.
-- Ne mélange jamais les villes et les territoires.
-- Si un nom existe à la fois dans la liste des villes et dans la liste des territoires, considère que c'est un territoire, sauf si c'est le chef-lieu.
-- Affiche toujours la liste complète des villes trouvées.
-- Affiche toujours la liste complète des territoires trouvés.
-- Ne résume jamais la liste par "etc.".
-- Si aucune donnée n'est trouvée, dis-le honnêtement puis donne une réponse pédagogique générale.
-- Réponds comme un vrai précepteur bienveillant, pas comme un moteur de recherche.
-- Respecte strictement les données SQL ci-dessous.
-</RÈGLES FONDAMENTALES>
+        let reponseFinale = "";
 
-<DONNÉES_SQL>
-Province: ${info ? info.province || "Non trouvée" : "Non trouvée"}
-Chef-lieu: ${info ? info.chef_lieu || "Non trouvé" : "Non trouvé"}
-Villes: ${info ? info.vPropres : "Aucune"}
-Territoires:
-     ${info && info.tListe?.length ? info.tNumerotes : "Aucun"}
-Richesses: ${info ? info.nature_richesses || "Non renseignées" : "Non renseignées"}
-</DONNÉES_SQL>
+        if (info) {
+            reponseFinale = construireReponseProvince(info, user);
+        } else {
+            reponseFinale = await genererReponsePedagogiqueLibre(text, user, hist);
+        }
 
-<STYLE_DE_RÉPONSE>
-🔵 [VÉCU] : petite explication simple, concrète et chaleureuse.
-
-🟡 [SAVOIR] :
-- Chef-lieu : ...
-- Villes : ...
-- Territoires :
-  ...
-- Nature et richesses : ...
-
-🔴 [INSPIRATION] : encouragement lié au rêve de ${user.reve}.
-
-❓ [CONSOLIDATION] : petite question de révision adressée à ${user.nom}.
-</STYLE_DE_RÉPONSE>
-`;
-
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                { role: "system", content: systemPrompt },
-                ...hist.slice(-4),
-                { role: "user", content: text }
-            ],
-            temperature: 0.2
-        });
-
-        const reponseIA =
-            completion.choices[0]?.message?.content ||
-            "Je n'ai pas pu répondre correctement cette fois-ci.";
-
-        await envoyerWhatsApp(from, `${reponseIA}\n\n${cit}`);
+        await envoyerWhatsApp(from, `${reponseFinale}\n\n${cit}`);
 
         const nouvelHist = JSON.stringify(
-            [...hist, { role: "user", content: text }, { role: "assistant", content: reponseIA }].slice(-10)
+            [
+                ...hist,
+                { role: "user", content: text },
+                { role: "assistant", content: reponseFinale }
+            ].slice(-10)
         );
 
-        await pool.query("UPDATE conversations SET historique = $1 WHERE phone = $2", [nouvelHist, from]);
+        await pool.query(
+            "UPDATE conversations SET historique = $1 WHERE phone = $2",
+            [nouvelHist, from]
+        );
 
     } catch (e) {
         console.error("Erreur Webhook", e.response?.data || e.message || e);
