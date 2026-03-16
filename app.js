@@ -20,7 +20,7 @@ const citations = [
     "***« Science sans conscience n'est que ruine de l'âme. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habituelle. »***"
+    "***« L'excellence n'est pas une action, c'est une habitude. »***"
 ];
 
 async function envoyerWhatsApp(to, texte) {
@@ -33,20 +33,22 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN (RÈGLE D'OR : NETTOYAGE RÊVE) ---
+// --- RAPPEL DU MATIN ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const reveAffiche = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "citoyen modèle";
-            const messageMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, travaille avec ardeur pour devenir le **${reveAffiche}** que le Congo attend.`;
+            const salutations = ["Ebwe", "Mbote", "Jambo", "Moyo", "Bonjour"];
+            const sal = salutations[Math.floor(Math.random() * salutations.length)];
+            const reveAffiche = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand leader";
+            const messageMatin = `🔵 ${sal} cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${reveAffiche}** dont le Congo a besoin.`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE SQL (RETOUR À LA LOGIQUE STABLE) ---
+// --- RECHERCHE SQL ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -81,7 +83,7 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
         }
         if (!user.nom) {
-            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est|Je suis/gi, "").replace(/[.!]/g, "").trim();
+            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est/gi, "").replace(/[.!]/g, "").trim();
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
             return await envoyerWhatsApp(from, `🔵 Enchanté **${nomNettoye}** ! En quelle **classe** es-tu ?`);
         }
@@ -101,41 +103,41 @@ app.post("/webhook", async (req, res) => {
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur présent et vivant en RDC.
-IMPORTANT : ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
+Tu es Mwalimu EdTech, précepteur d'élite congolais, présent, vivant et profondément pédagogue.
+Ton rôle est de transmettre le savoir avec passion et d'inspirer ton élève : ${user.nom}.
 
-<RÈGLE_D_OR_MWALIMU>
-1. SALUTATION : Alterne entre Ebwe, Mbote, Jambo, Moyo ou Bonjour.
-2. VILLES VS TERRITOIRES : Sépare STRICTEMENT les Villes (Boma, Zongo, Beni, Butembo, Uvira, Baraka, Likasi) des Territoires.
-3. LISTE EXHAUSTIVE : Liste TOUS les territoires de la SOURCE_SQL un par un avec des numéros. Ne résume JAMAIS.
-4. SOURCE : Utilise UNIQUEMENT les données fournies.
-</RÈGLE_D_OR_MWALIMU>
+<RÈGLE_D_OR_INVIOLABLE>
+1. STRUCTURE : Tu dois utiliser UNIQUEMENT les blocs 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION] et ❓ [CONSOLIDATION].
+2. VILLES VS TERRITOIRES : Liste les Villes (Boma, Zongo, Beni, Butembo, Uvira, Baraka, Likasi) SÉPARÉMENT des Territoires.
+3. EXHAUSTIVITÉ : Liste TOUS les territoires de la SOURCE_SQL sans en oublier un seul, avec une numérotation (1, 2, 3...).
+4. PÉDAGOGIE : Ne sois pas un robot. Explique le vécu congolais (climat, mines, culture).
+</RÈGLE_D_OR_INVIOLABLE>
 
 <SOURCE_SQL>
 ${info ? JSON.stringify(info) : "AUCUNE"}
 </SOURCE_SQL>
 
-<STRUCTURE_STRICTE>
-🔵 [VÉCU] : Anecdote pédagogique liée à la région pour l'élève.
+<STRUCTURE_DE_REPONSE_STRICTE>
+🔵 [VÉCU] : [Anecdote humaine et vivante sur la région]
 
 🟡 [SAVOIR] :
    - Chef-lieu : [Nom]
-   - Villes : [Lister séparément]
+   - Villes : [Lister les villes séparément]
    - Territoires :
      1. [Territoire 1]
-     2. [Territoire 2]... (Lister TOUT sans exception)
+     2. [Territoire 2]... (Lister TOUT le contenu de la source)
    - Nature & Richesses : [Relief, Hydrographie, Mines].
 
-🔴 [INSPIRATION] : Motivation liée au rêve de devenir ${user.reve}.
+🔴 [INSPIRATION] : [Motivation profonde liée au rêve de devenir ${user.reve}].
 
-❓ [CONSOLIDATION] : Question de cours directe pour ${user.nom}.
-</STRUCTURE_STRICTE>
+❓ [CONSOLIDATION] : [Question de cours stimulante pour ${user.nom}].
+</STRUCTURE_DE_REPONSE_STRICTE>
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.4
+            temperature: 0.6 // On remonte pour retrouver l'âme humaine et la fluidité
         });
 
         const reponseIA = completion.choices[0].message.content;
