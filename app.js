@@ -33,20 +33,20 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DE 07:00 (FUSEAU L'SHI) ---
+// --- RAPPEL DE 07:00 (FUSEAU LUBUMBASHI) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const revePur = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand leader";
-            const messageMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${revePur}** dont le Congo a besoin.`;
-            await envoyerWhatsApp(user.phone, messageMatin);
+            const r = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand leader";
+            const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, travaille avec ardeur pour devenir le **${r}** que le Congo attend.`;
+            await envoyerWhatsApp(user.phone, msgMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE SQL ET FILTRE DE RIGUEUR ---
+// --- MOTEUR DE RIGUEUR : EXTRACTION ET FILTRAGE ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -64,15 +64,17 @@ async function consulterBibliotheque(phrase) {
                 let vArr = row.villes ? row.villes.split(',').map(v => v.trim()) : [];
                 let tArr = row.territoires ? row.territoires.split(',').map(t => t.trim()) : [];
                
-                // RÈGLE D'OR : On retire des territoires tout ce qui est déjà une ville
+                // RÈGLE D'OR : Exclusion mathématique des doublons villes/territoires
                 let tFiltres = tArr.filter(t => !vArr.some(v => v.toLowerCase() === t.toLowerCase()));
                
-                // On pré-formate ici pour que l'IA ne puisse pas se tromper
-                return {
-                    ...row,
-                    vPropres: vArr.length > 0 ? vArr.join(', ') : "Aucune ville répertoriée",
-                    tNumerotes: tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')
-                };
+                // PRÉ-RÉDACTION DU SAVOIR (L'IA NE TOUCHE PLUS À CECI)
+                const blocSavoirFixe = `   - Chef-lieu : ${row.chef_lieu || "Non précisé"}
+   - Villes : ${vArr.length > 0 ? vArr.join(', ') : "Aucune ville répertoriée"}
+   - Territoires :
+     ${tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')}
+   - Nature & Richesses : ${row.nature_richesses || "Données en cours d'actualisation"}`;
+
+                return { ...row, blocSavoirFixe };
             }
         } catch (e) { console.error("Erreur SQL"); }
     }
@@ -119,41 +121,42 @@ app.post("/webhook", async (req, res) => {
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur congolais d'élite.
-Ton élève est ${user.nom}, son rêve est d'être ${user.reve}.
+Tu es Mwalimu EdTech, mentor éducatif vivant et présent.
+ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
 
-<RÈGLE_D_OR_VERROUILLÉE>
-1. Utilise les données SQL fournies sans les modifier.
-2. Si une ville (ex: Baraka) est dans la source, elle doit figurer dans la section VILLES.
-3. Si un nom est une ville, il ne doit pas être un territoire.
-</RÈGLE_D_OR_VERROUILLÉE>
+<CONSIGNE_DE_FER>
+1. Pour le bloc 🟡 [SAVOIR], tu RECOPIES mot pour mot le texte fourni ci-dessous. Interdiction de modifier les listes.
+2. Pour 🔵 [VÉCU], raconte une anecdote vibrante sur la province.
+3. Pour 🔴 [INSPIRATION], lie le sujet au rêve de devenir ${user.reve}.
+4. Température de rigueur : 0.2.
+</CONSIGNE_DE_FER>
 
-<SOURCE_SQL_DU_JOUR>
-Province: ${info ? info.province : "Inconnue"}
-Chef-lieu: ${info ? info.chef_lieu : "Inconnu"}
-Villes: ${info ? info.vPropres : "Aucune"}
-Territoires (Triés) :
-     ${info ? info.tNumerotes : "Aucun"}
-Richesses: ${info ? info.nature_richesses : "Information à venir"}
-</SOURCE_SQL_DU_JOUR>
+<DONNEES_SQL_INVIOLABLES>
+${info ? info.blocSavoirFixe : "Données non trouvées dans la base."}
+</DONNEES_SQL_INVIOLABLES>
 
-<CONSIGNE_VISUELLE>
-Utilise les blocs 🔵, 🟡, 🔴 et ❓.
-Sois chaleureux, pédagogique et parle du vécu réel des Congolais dans cette province.
-</CONSIGNE_VISUELLE>
-`;
+<STRUCTURE_FINALE>
+🔵 [VÉCU] : [Anecdote humaine]
+
+🟡 [SAVOIR] :
+${info ? info.blocSavoirFixe : "   - Informations en cours de mise à jour."}
+
+🔴 [INSPIRATION] : [Motivation]
+
+❓ [CONSOLIDATION] : [Question précise sur les faits cités]
+</STRUCTURE_FINALE>`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.3
+            temperature: 0.2
         });
 
         const reponseIA = completion.choices[0].message.content;
         await envoyerWhatsApp(from, `${reponseIA}\n\n${cit}`);
 
-        const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponseIA }].slice(-10));
-        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
+        const nHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponseIA }].slice(-10));
+        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nHist, from]);
 
     } catch (e) { console.error("Erreur Webhook", e); }
 });
