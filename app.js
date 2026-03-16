@@ -20,7 +20,7 @@ const citations = [
     "***« Science sans conscience n'est que ruine de l'âme. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitude. »***"
+    "***« L'excellence n'est pas une action, c'est une habitue. »***"
 ];
 
 async function envoyerWhatsApp(to, texte) {
@@ -39,14 +39,14 @@ cron.schedule("0 7 * * *", async () => {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const r = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand bâtisseur";
-            const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${r}** dont le Congo a besoin.`;
+            const r = user.reve || "citoyen modèle";
+            const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, travaille avec force pour devenir le **${r}** que le Congo attend.`;
             await envoyerWhatsApp(user.phone, msgMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- MOTEUR DE RIGUEUR : LISTES NETTES SANS TABLEAUX ---
+// --- RECHERCHE SQL ET TRI SANS TABLEAUX ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -67,14 +67,14 @@ async function consulterBibliotheque(phrase) {
                 // RÈGLE D'OR : Exclusion mathématique des doublons
                 let tFiltres = tArr.filter(t => !vArr.some(v => v.toLowerCase() === t.toLowerCase()));
                
-                // CONSTRUCTION DU BLOC SAVOIR EN LISTES SIMPLES
-                const blocSavoirSimple = `   - **Chef-lieu** : ${row.chef_lieu}
+                // BLOC SAVOIR EN LISTES ÉLÉGANTES
+                const blocSavoirFinal = `   - **Chef-lieu** : ${row.chef_lieu}
    - **Villes** : ${vArr.length > 0 ? vArr.join(', ') : "Aucune ville répertoriée"}
    - **Territoires** :
      ${tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')}
-   - **Nature & Richesses** : ${row.nature_richesses || "En cours de documentation"}`;
+   - **Nature & Richesses** : ${row.nature_richesses || "Données en cours d'actualisation"}`;
 
-                return { ...row, blocSavoirSimple };
+                return { ...row, blocSavoirFinal };
             }
         } catch (e) { console.error("Erreur SQL"); }
     }
@@ -121,28 +121,30 @@ app.post("/webhook", async (req, res) => {
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur d'élite. Ton élève est ${user.nom}, futur ${user.reve}.
+Tu es Mwalimu EdTech, précepteur congolais présent et vivant.
+ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : ${user.reve}
 
-<CONSIGNE_STRICTE>
-1. Pour la section 🟡 [SAVOIR], RECOPIE intégralement le bloc fourni.
-2. Ne mélange jamais les villes et les territoires.
-3. Raconte un [VÉCU] humain et inspire ton élève sur son rêve.
-</CONSIGNE_STRICTE>
+<RÈGLE_D_OR_VERROUILLÉE>
+1. RECOPIE le bloc SAVOIR fourni ci-dessous sans rien inventer.
+2. Si des données sont fournies, ne dis JAMAIS "En cours d'actualisation".
+3. Le [VÉCU] doit être une anecdote humaine et chaleureuse.
+4. L'[INSPIRATION] doit motiver ${user.nom} pour son rêve de devenir ${user.reve}.
+</RÈGLE_D_OR_VERROUILLÉE>
 
-<SOURCE_SQL_FORMATTEE>
-${info ? info.blocSavoirSimple : "AUCUNE DONNÉE TROUVÉE"}
-</SOURCE_SQL_FORMATTEE>
+<BLOC_SAVOIR_SQL>
+${info ? info.blocSavoirFinal : "AUCUNE DONNÉE TROUVÉE"}
+</BLOC_SAVOIR_SQL>
 
-<STRUCTURE_MWALIMU>
-🔵 [VÉCU] : [Anecdote chaleureuse]
+<STRUCTURE_STRICTE>
+🔵 [VÉCU] : [Anecdote]
 
 🟡 [SAVOIR] :
-${info ? info.blocSavoirSimple : "   - En cours d'actualisation. Précise le nom d'une province."}
+${info ? info.blocSavoirFinal : "   - Je n'ai pas trouvé de données précises. Précise le nom de la province."}
 
-🔴 [INSPIRATION] : [Motivation pour devenir ${user.reve}]
+🔴 [INSPIRATION] : [Motivation]
 
-❓ [CONSOLIDATION] : [Question précise sur les faits cités]
-</STRUCTURE_MWALIMU>`;
+❓ [CONSOLIDATION] : [Question de cours basée sur le SAVOIR ci-dessus]
+</STRUCTURE_STRICTE>`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
