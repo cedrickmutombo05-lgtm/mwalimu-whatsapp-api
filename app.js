@@ -13,6 +13,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// --- IDENTITÉ VISUELLE ---
 const HEADER_MWALIMU = "_🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩_";
 
 const citations = [
@@ -23,6 +24,7 @@ const citations = [
     "_« L'excellence n'est pas une action, c'est une habitude. »_"
 ];
 
+// --- FONCTION D'ENVOI ---
 async function envoyerWhatsApp(to, texte) {
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
@@ -33,39 +35,41 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN (Restauration du style original) ---
+// --- RAPPEL DU MATIN (7H00 LUBUMBASHI) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const sal = ["Mbote", "Jambo", "Moyo", "Ebwe", "Betu"][Math.floor(Math.random() * 5)];
-            const msg = `🔵 ${sal} cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Le Congo compte sur toi pour devenir ${user.reve}. Es-tu prêt à apprendre ?`;
-            await envoyerWhatsApp(user.phone, msg);
+            const messageMatin = `🔵 Bonjour cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le ${user.reve || 'pilier'} dont le Congo a besoin.`;
+            await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE SQL (Version 80% stabilisée) ---
+// --- RECHERCHE SQL PRÉCISE ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(/\s+/);
+    const texteNettoye = nettoyer(phrase);
+    const mots = texteNettoye.replace(/[?.,!]/g, "").split(/\s+/);
+
     for (let mot of mots) {
         if (mot.length < 3) continue;
         try {
             const res = await pool.query(
                 `SELECT * FROM drc_population_villes
                  WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
-                 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1 LIMIT 1`, [`%${mot}%`]
+                 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1
+                 LIMIT 1`, [`%${mot}%`]
             );
             if (res.rows.length > 0) return res.rows[0];
-        } catch (e) { console.error("Erreur SQL"); }
+        } catch (e) { console.error("Erreur SQL de recherche"); }
     }
     return null;
 }
 
-// --- WEBHOOK (Ajustements point par point) ---
+// --- WEBHOOK PRINCIPAL ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -78,57 +82,65 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- ENRÔLEMENT (SÉCURISATION NOM) ---
+        // 1. CYCLE D'ENRÔLEMENT
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
-            return await envoyerWhatsApp(from, "🔵 Mbote ! Quel est ton **prénom** ?");
+            return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
         }
         if (!user.nom) {
-            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est/gi, "").trim();
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté **${nomNettoye}** ! En quelle **classe** es-tu ?`);
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Enchanté **${text}** ! En quelle **classe** es-tu ?`);
         }
-        // ... (Reste de l'enrôlement identique)
+        if (!user.classe) {
+            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
+        }
+        if (!user.reve) {
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${text}**.\n\n🟡 Pose-moi ta question.`);
+        }
 
+        // 2. PRÉPARATION DE LA LEÇON
         const info = await consulterBibliotheque(text);
-        const cit = citations[Math.floor(Math.random() * citations.length)];
+        const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
         let hist = [];
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur d'élite congolais. Ton style est Chaleureux, Pédagogique et Chirurgical.
-ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
+Tu es Mwalimu EdTech, un précepteur congolais d'exception. Tu enseignes avec clarté, étape par étape, avec l'autorité bienveillante d'un maître.
+ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : ${user.reve}
 
-<DIRECTIVES_PRÉCEPTEUR>
-1. SALUTATION : Alterne entre Ebwe, Mbote, Jambo, Moyo, Betu ou Bonjour.
-2. ÉTAPE PAR ÉTAPE : Explique les notions géographiques avec clarté (Situation, Relief, Hydrographie).
-3. RIGUEUR SQL : Liste TOUS les territoires de la source. Ne résume jamais.
-4. DISTINCTION : Sépare les Villes (Boma, Zongo, Beni, Butembo, Uvira, Baraka, Likasi) des Territoires.
-</DIRECTIVES_PRÉCEPTEUR>
+<DIRECTIVES_PEDAGOGIQUES>
+1. SALUTATION : Alterne entre "Ebwe" (Kikongo), "Mbote" (Lingala), "Jambo" (Swahili), "Moyo" (Tshiluba), "Betu" ou "Bonjour/Bonsoir".
+2. STYLE ENSEIGNANT : Utilise des expressions comme "Retiens bien ceci...", "Étape par étape...", "C'est un point capital...". Sois clair et structuré (1, 2, 3).
+3. INTERROGATION : Termine CHAQUE leçon par une question directe à ${user.nom} pour consolider les acquis.
+</DIRECTIVES_PEDAGOGIQUES>
 
-<DONNEES_SQL>
-${info ? JSON.stringify(info) : "AUCUNE"}
-</DONNEES_SQL>
+<RIGUEUR_DES_DONNEES>
+SOURCE_SQL : ${info ? JSON.stringify(info) : "VIDE"}
+- TERRITOIRES : Ne résume JAMAIS. Liste l'intégralité de la colonne 'territoires'. Vérifie deux fois pour ne rien oublier.
+- DISTINCTION VILLES : Rappelle que Zongo, Beni, Butembo, Uvira, Baraka, Likasi, et Boma sont des Villes et non des Territoires.
+- RICHESSE TOTALE : Exploite les données sur le Relief, l'Hydrographie (Fleuve, affluents, biefs), le Climat, la Biodiversité et les Parcs.
+</RIGUEUR_DES_DONNEES>
 
-<STRUCTURE_ACQUISE>
-🔵 [VÉCU] : Anecdote humaine liant la province au vécu congolais.
-🟡 [SAVOIR] :
-   - Chef-lieu : [Nom]
-   - Villes : [Liste des villes uniquement]
-   - Territoires : [Liste exhaustive des territoires]
-   - Géographie : Situation, Relief, Hydrographie, Climat, Parcs (Selon SQL).
-   - Richesses : Potentiel économique.
-🔴 [INSPIRATION] : Motivation pour ${user.nom} selon son rêve de devenir ${user.reve}.
-❓ [CONSOLIDATION] : Question pédagogique sur la leçon.
+<STRUCTURE_MESSAGE>
+🔵 [VÉCU] : Une anecdote humaine pour introduire le sujet.
+🟡 [SAVOIR] (La Leçon) :
+   1. Chef-lieu et Villes (Précision chirurgicale).
+   2. Liste complète des Territoires.
+   3. Nature et Géographie (Climat, Relief, Hydrographie, Parcs).
+   4. Richesses et potentialités économiques.
+🔴 [INSPIRATION] : Pourquoi ce savoir est précieux pour ton rêve de devenir ${user.reve}.
+❓ [CONSOLIDATION] : Pose une question à l'élève.
 
-Citation en italique : ${cit}
-</STRUCTURE_ACQUISE>
+Finis par la citation EN ITALIQUE : ${citAleatoire}.
+</STRUCTURE_MESSAGE>
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.3 // Précision sans perte d'humanité
+            temperature: 0.5 // Rigueur maximale
         });
 
         const reponse = completion.choices[0].message.content;
@@ -136,7 +148,7 @@ Citation en italique : ${cit}
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
         await envoyerWhatsApp(from, reponse);
 
-    } catch (e) { console.error(e.message); }
+    } catch (e) { console.error("Erreur Webhook:", e.message); }
 });
 
 app.listen(process.env.PORT || 10000);
