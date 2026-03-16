@@ -20,7 +20,7 @@ const citations = [
     "***« Science sans conscience n'est que ruine de l'âme. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitude. »***"
+    "***« L'excellence n'est pas une action, c'est une habitue. »***"
 ];
 
 async function envoyerWhatsApp(to, texte) {
@@ -40,13 +40,13 @@ cron.schedule("0 7 * * *", async () => {
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
             const r = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand leader";
-            const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, travaille avec ardeur pour devenir le **${r}** que le Congo attend.`;
+            const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${r}** dont le Congo a besoin.`;
             await envoyerWhatsApp(user.phone, msgMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- MOTEUR DE RIGUEUR : EXTRACTION ET FILTRAGE ---
+// --- MOTEUR DE RIGUEUR : TABLEAUX SÉPARÉS ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -64,17 +64,19 @@ async function consulterBibliotheque(phrase) {
                 let vArr = row.villes ? row.villes.split(',').map(v => v.trim()) : [];
                 let tArr = row.territoires ? row.territoires.split(',').map(t => t.trim()) : [];
                
-                // RÈGLE D'OR : Exclusion mathématique des doublons villes/territoires
+                // RÈGLE D'OR : Exclusion mathématique des doublons
                 let tFiltres = tArr.filter(t => !vArr.some(v => v.toLowerCase() === t.toLowerCase()));
                
-                // PRÉ-RÉDACTION DU SAVOIR (L'IA NE TOUCHE PLUS À CECI)
-                const blocSavoirFixe = `   - Chef-lieu : ${row.chef_lieu || "Non précisé"}
-   - Villes : ${vArr.length > 0 ? vArr.join(', ') : "Aucune ville répertoriée"}
-   - Territoires :
-     ${tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')}
-   - Nature & Richesses : ${row.nature_richesses || "Données en cours d'actualisation"}`;
+                // ÉRECTION DES TABLEAUX
+                let tabVilles = "*Villes de la Province :*\n| Nom de la Ville | Statut |\n| :--- | :--- |\n";
+                vArr.forEach(v => { tabVilles += `| ${v} | Ville |\n`; });
 
-                return { ...row, blocSavoirFixe };
+                let tabTerritoires = "*Territoires de la Province :*\n| N° | Nom du Territoire | Statut |\n| :--- | :--- | :--- |\n";
+                tFiltres.forEach((t, i) => { tabTerritoires += `| ${i + 1} | ${t} | Territoire |\n`; });
+
+                const blocSavoirTableaux = `   - **Chef-lieu** : ${row.chef_lieu}\n\n${tabVilles}\n${tabTerritoires}\n   - **Nature & Richesses** : ${row.nature_richesses || "En cours de documentation"}`;
+
+                return { ...row, blocSavoirTableaux };
             }
         } catch (e) { console.error("Erreur SQL"); }
     }
@@ -121,35 +123,34 @@ app.post("/webhook", async (req, res) => {
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, mentor éducatif vivant et présent.
+Tu es Mwalimu EdTech, précepteur d'élite congolais.
 ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
 
-<CONSIGNE_DE_FER>
-1. Pour le bloc 🟡 [SAVOIR], tu RECOPIES mot pour mot le texte fourni ci-dessous. Interdiction de modifier les listes.
-2. Pour 🔵 [VÉCU], raconte une anecdote vibrante sur la province.
-3. Pour 🔴 [INSPIRATION], lie le sujet au rêve de devenir ${user.reve}.
-4. Température de rigueur : 0.2.
-</CONSIGNE_DE_FER>
+<CONSIGNE_DE_RIGUEUR>
+1. Tu ne modifies JAMAIS les tableaux fournis dans la section SAVOIR.
+2. Tu dois impérativement respecter la séparation entre le tableau des Villes et celui des Territoires.
+3. Raconte un [VÉCU] qui sent bon le terroir congolais et inspire ${user.nom} pour son rêve.
+</CONSIGNE_DE_RIGUEUR>
 
-<DONNEES_SQL_INVIOLABLES>
-${info ? info.blocSavoirFixe : "Données non trouvées dans la base."}
-</DONNEES_SQL_INVIOLABLES>
+<SOURCE_SQL_FORMATTEE>
+${info ? info.blocSavoirTableaux : "Données non trouvées."}
+</SOURCE_SQL_FORMATTEE>
 
 <STRUCTURE_FINALE>
-🔵 [VÉCU] : [Anecdote humaine]
+🔵 [VÉCU] : [Anecdote vivante]
 
 🟡 [SAVOIR] :
-${info ? info.blocSavoirFixe : "   - Informations en cours de mise à jour."}
+${info ? info.blocSavoirTableaux : "   - En cours d'actualisation."}
 
 🔴 [INSPIRATION] : [Motivation]
 
-❓ [CONSOLIDATION] : [Question précise sur les faits cités]
+❓ [CONSOLIDATION] : [Question précise sur les tableaux]
 </STRUCTURE_FINALE>`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.2
+            temperature: 0.2 // Rigueur maximale
         });
 
         const reponseIA = completion.choices[0].message.content;
