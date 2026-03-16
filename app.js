@@ -33,31 +33,31 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN ---
+// --- RAPPEL DU MATIN (RÈGLE D'OR : RÉALITÉ DU RÊVE) ---
 cron.schedule("0 7 * * *", async () => {
     try {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const salutations = ["Ebwe", "Mbote", "Jambo", "Moyo", "Bonjour"];
-            const sal = salutations[Math.floor(Math.random() * salutations.length)];
             const reveAffiche = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand leader";
-            const messageMatin = `🔵 ${sal} cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${reveAffiche}** dont le Congo a besoin.`;
+            const messageMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${reveAffiche}** dont le Congo a besoin.`;
             await envoyerWhatsApp(user.phone, messageMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE SQL ---
+// --- RECHERCHE SQL STRICTE ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(/\s+/);
     for (let mot of mots) {
-        if (mot.length < 3) continue;
+        if (mot.length < 3 || ["quels", "sont"].includes(mot)) continue;
         try {
             const res = await pool.query(
-                `SELECT * FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1 LIMIT 1`, [`%${mot}%`]
+                `SELECT * FROM drc_population_villes
+                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
+                 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1 LIMIT 1`, [`%${mot}%`]
             );
             if (res.rows.length > 0) return res.rows[0];
         } catch (e) { console.error("Erreur SQL"); }
@@ -65,6 +65,7 @@ async function consulterBibliotheque(phrase) {
     return null;
 }
 
+// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -77,7 +78,7 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- ENRÔLEMENT ---
+        // --- CYCLE D'ENRÔLEMENT ---
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
@@ -97,47 +98,60 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${revePur}**.\n\n🟡 Pose-moi ta question.`);
         }
 
+        // --- TRAITEMENT DE LA QUESTION AVEC RÈGLE D'OR ---
         const info = await consulterBibliotheque(text);
+       
+        // Extraction forcée pour éviter les hallucinations de l'IA
+        const d = info ? {
+            p: info.province,
+            c: info.chef_lieu,
+            v: info.villes || "Aucune ville spécifique",
+            t: info.territoires,
+            r: info.nature_richesses || "Information en cours d'actualisation"
+        } : null;
+
         const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
         let hist = [];
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur d'élite congolais, présent, vivant et profondément pédagogue.
-Ton rôle est de transmettre le savoir avec passion et d'inspirer ton élève : ${user.nom}.
+Tu es Mwalimu EdTech, précepteur présent, vivant et pédagogue.
+Ton élève : ${user.nom} | Son rêve : ${user.reve}
 
 <RÈGLE_D_OR_INVIOLABLE>
-1. STRUCTURE : Tu dois utiliser UNIQUEMENT les blocs 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION] et ❓ [CONSOLIDATION].
-2. VILLES VS TERRITOIRES : Liste les Villes (Boma, Zongo, Beni, Butembo, Uvira, Baraka, Likasi) SÉPARÉMENT des Territoires.
-3. EXHAUSTIVITÉ : Liste TOUS les territoires de la SOURCE_SQL sans en oublier un seul, avec une numérotation (1, 2, 3...).
-4. PÉDAGOGIE : Ne sois pas un robot. Explique le vécu congolais (climat, mines, culture).
+1. Tu ne résumes JAMAIS les territoires. Tu les listes tous.
+2. Tu ne mélanges jamais les villes et les territoires.
+3. Si les données sont présentes ci-dessous, tu les utilises. Si elles manquent, tu dis poliment que tu mets à jour tes archives pour cette zone précise.
 </RÈGLE_D_OR_INVIOLABLE>
 
-<SOURCE_SQL>
-${info ? JSON.stringify(info) : "AUCUNE"}
-</SOURCE_SQL>
+<SOURCE_SQL_DU_JOUR>
+Province: ${d ? d.p : "Inconnue"}
+Chef-lieu: ${d ? d.c : "Inconnu"}
+Villes: ${d ? d.v : "Aucune"}
+Territoires: ${d ? d.t : "Aucun"}
+Richesses: ${d ? d.r : "À découvrir"}
+</SOURCE_SQL_DU_JOUR>
 
 <STRUCTURE_DE_REPONSE_STRICTE>
-🔵 [VÉCU] : [Anecdote humaine et vivante sur la région]
+🔵 [VÉCU] : [Anecdote humaine liant la région au quotidien des Congolais]
 
 🟡 [SAVOIR] :
-   - Chef-lieu : [Nom]
-   - Villes : [Lister les villes séparément]
+   - Chef-lieu : ${d ? d.c : "[Nom]"}
+   - Villes : ${d ? d.v : "[Liste]"}
    - Territoires :
-     1. [Territoire 1]
-     2. [Territoire 2]... (Lister TOUT le contenu de la source)
-   - Nature & Richesses : [Relief, Hydrographie, Mines].
+     [Ici, transforme la liste "${d ? d.t : ""}" en une liste numérotée 1, 2, 3...]
+   - Nature & Richesses : ${d ? d.r : "[Détails]"}
 
-🔴 [INSPIRATION] : [Motivation profonde liée au rêve de devenir ${user.reve}].
+🔴 [INSPIRATION] : [Lien entre ce savoir et le rêve de ${user.nom} de devenir ${user.reve}].
 
-❓ [CONSOLIDATION] : [Question de cours stimulante pour ${user.nom}].
+❓ [CONSOLIDATION] : [Question de cours précise pour ${user.nom}].
 </STRUCTURE_DE_REPONSE_STRICTE>
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.6 // On remonte pour retrouver l'âme humaine et la fluidité
+            temperature: 0.5
         });
 
         const reponseIA = completion.choices[0].message.content;
