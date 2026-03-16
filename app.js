@@ -33,30 +33,21 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DE 07H00 (RÈGLE D'OR : PRÉSENCE CONSTANTE) ---
-// Configuration explicite pour Africa/Lubumbashi (UTC+2)
+// --- RAPPEL DE 07:00 (RÈGLE D'OR : PRÉSENCE) ---
 cron.schedule("0 7 * * *", async () => {
-    console.log("Déclenchement du rappel de 07:00...");
+    console.log("Exécution du rappel matinal...");
     try {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
-        const salutations = ["Ebwe", "Mbote", "Jambo", "Moyo", "Bonjour"];
-       
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const sal = salutations[Math.floor(Math.random() * salutations.length)];
-            // Nettoyage pour ne pas inclure "Bonjour Mwalimu" dans le message
-            const reveAffiche = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand bâtisseur";
-           
-            const messageMatin = `🔵 ${sal} cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${reveAffiche}** dont le Congo a besoin.`;
-            await envoyerWhatsApp(user.phone, messageMatin);
+            const r = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "citoyen modèle";
+            const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, travaille avec ardeur pour devenir le **${r}** que le Congo attend.`;
+            await envoyerWhatsApp(user.phone, msgMatin);
         }
-    } catch (e) { console.error("Erreur lors du cron de 07h00:", e); }
-}, {
-    scheduled: true,
-    timezone: "Africa/Lubumbashi"
-});
+    } catch (e) { console.error("Erreur Cron"); }
+}, { timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE SQL AVEC ANTI-DOUBLON (VILLES VS TERRITOIRES) ---
+// --- RECHERCHE SQL ET FILTRE DE RIGUEUR ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -71,16 +62,16 @@ async function consulterBibliotheque(phrase) {
            
             if (res.rows.length > 0) {
                 const row = res.rows[0];
-                let villesTab = row.villes ? row.villes.split(',').map(v => v.trim()) : [];
-                let territoiresTab = row.territoires ? row.territoires.split(',').map(t => t.trim()) : [];
+                let vArr = row.villes ? row.villes.split(',').map(v => v.trim()) : [];
+                let tArr = row.territoires ? row.territoires.split(',').map(t => t.trim()) : [];
                
-                // Filtre : On enlève des territoires tout ce qui est déjà listé comme ville (ex: Uvira)
-                let tFiltres = territoiresTab.filter(t => !villesTab.some(v => v.toLowerCase() === t.toLowerCase()));
+                // RÈGLE D'OR : On retire des territoires tout ce qui est déjà une ville
+                let tFiltres = tArr.filter(t => !vArr.some(v => v.toLowerCase() === t.toLowerCase()));
                
                 return {
                     ...row,
-                    vPropres: villesTab.join(', '),
-                    tNum: tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')
+                    vPropres: vArr.join(', '),
+                    tNumerotes: tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')
                 };
             }
         } catch (e) { console.error("Erreur SQL"); }
@@ -123,52 +114,53 @@ app.post("/webhook", async (req, res) => {
         }
 
         const info = await consulterBibliotheque(text);
-        const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
+        const cit = citations[Math.floor(Math.random() * citations.length)];
         let hist = [];
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur d'élite congolais.
-ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
+Tu es Mwalimu EdTech, précepteur congolais d'élite. Ton élève est ${user.nom}, il rêve d'être ${user.reve}.
 
-<RÈGLE_D_OR_MWALIMU>
-1. Tu ne mélanges jamais les VILLES et les TERRITOIRES.
-2. Tu recopies la liste numérotée exactement comme fournie par le système.
-3. Tu as une âme de mentor : ton ton est chaleureux, pédagogue et inspirant.
-</RÈGLE_D_OR_MWALIMU>
+<RÈGLE_D_OR_ABSORBÉE>
+- Utilise UNIQUEMENT les données SQL ci-dessous.
+- Ne rajoute aucune ville (ex: Kolwezi) si elle n'est pas dans la liste fournie.
+- Recopie la liste des territoires telle qu'elle est numérotée ci-dessous.
+- Ton ton doit être VIVANT, PRÉSENT et PÉDAGOGUE.
+</RÈGLE_D_OR_ABSORBÉE>
 
-<SOURCE_SQL_NETTOYEE>
+<SOURCE_SQL_NETTOYÉE>
 Province: ${info ? info.province : "Non trouvée"}
 Chef-lieu: ${info ? info.chef_lieu : "Non trouvé"}
 Villes: ${info ? info.vPropres : "Aucune"}
-Territoires (Triés) :
-     ${info ? info.tNum : "Aucun"}
+Territoires (Triés par le code) :
+     ${info ? info.tNumerotes : "Aucun"}
+Richesses: ${info ? info.nature_richesses : "À venir"}
 </SOURCE_SQL_NETTOYEE>
 
-<STRUCTURE_DE_REPONSE_STRICTE>
-🔵 [VÉCU] : [Anecdote chaleureuse sur la vie en RDC]
+<STRUCTURE_MWALIMU_STRICTE>
+🔵 [VÉCU] : [Anecdote chaleureuse et pédagogique sur le quotidien dans cette province]
 
 🟡 [SAVOIR] :
    - Chef-lieu : ${info ? info.chef_lieu : "[Nom]"}
    - Villes : ${info ? info.vPropres : "[Liste]"}
    - Territoires :
-     ${info ? info.tNum : "[Liste]"}
+     ${info ? info.tNumerotes : "[Liste]"}
    - Nature & Richesses : ${info ? info.nature_richesses : "[Détails]"}
 
-🔴 [INSPIRATION] : [Lien avec le rêve de ${user.nom} de devenir ${user.reve}].
+🔴 [INSPIRATION] : [Motivation profonde pour ${user.nom} liée à son rêve de devenir ${user.reve}].
 
-❓ [CONSOLIDATION] : [Question de cours précise].
-</STRUCTURE_DE_REPONSE_STRICTE>
+❓ [CONSOLIDATION] : [Question de cours précise pour ${user.nom}].
+</STRUCTURE_STRICTE>
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.5
+            temperature: 0.4
         });
 
         const reponseIA = completion.choices[0].message.content;
-        await envoyerWhatsApp(from, `${reponseIA}\n\n${citAleatoire}`);
+        await envoyerWhatsApp(from, `${reponseIA}\n\n${cit}`);
 
         const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponseIA }].slice(-10));
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
