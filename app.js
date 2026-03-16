@@ -33,39 +33,28 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN (RÈGLE D'OR : RÉALITÉ DU RÊVE) ---
-cron.schedule("0 7 * * *", async () => {
-    try {
-        const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
-        for (const user of res.rows) {
-            const cit = citations[Math.floor(Math.random() * citations.length)];
-            const reveAffiche = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand leader";
-            const messageMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${reveAffiche}** dont le Congo a besoin.`;
-            await envoyerWhatsApp(user.phone, messageMatin);
-        }
-    } catch (e) { console.error("Erreur Cron"); }
-}, { timezone: "Africa/Lubumbashi" });
-
-// --- RECHERCHE SQL STRICTE ---
+// --- RECHERCHE SQL ET PRÉ-FORMATAGE (LA CLÉ DE LA RIGUEUR) ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(/\s+/);
     for (let mot of mots) {
-        if (mot.length < 3 || ["quels", "sont"].includes(mot)) continue;
+        if (mot.length < 3) continue;
         try {
             const res = await pool.query(
-                `SELECT * FROM drc_population_villes
-                 WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1
-                 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1 LIMIT 1`, [`%${mot}%`]
+                `SELECT * FROM drc_population_villes WHERE LOWER(province) LIKE $1 OR LOWER(territoires) LIKE $1 OR LOWER(chef_lieu) LIKE $1 OR LOWER(villes) LIKE $1 LIMIT 1`, [`%${mot}%`]
             );
-            if (res.rows.length > 0) return res.rows[0];
+            if (res.rows.length > 0) {
+                const row = res.rows[0];
+                // On transforme la chaîne "Fizi, Idjwi..." en liste numérotée ici, en JS, pas dans l'IA
+                const listeT = row.territoires ? row.territoires.split(',').map((t, i) => `${i + 1}. ${t.trim()}`).join('\n     ') : "Aucun";
+                return { ...row, listeTerritoiresFormatee: listeT };
+            }
         } catch (e) { console.error("Erreur SQL"); }
     }
     return null;
 }
 
-// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -78,90 +67,80 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- CYCLE D'ENRÔLEMENT ---
+        // --- ENRÔLEMENT ---
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, "🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?");
         }
-        if (!user.nom) {
-            const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est/gi, "").replace(/[.!]/g, "").trim();
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
-            return await envoyerWhatsApp(from, `🔵 Enchanté **${nomNettoye}** ! En quelle **classe** es-tu ?`);
-        }
-        if (!user.classe) {
-            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
-        }
-        if (!user.reve) {
-            const revePur = text.replace(/Bonjour Mwalimu|Bonjour|Mon rêve est|Je veux devenir/gi, "").replace(/[.!]/g, "").trim();
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [revePur, from]);
-            return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${revePur}**.\n\n🟡 Pose-moi ta question.`);
+        if (!user.nom || !user.classe || !user.reve) {
+            // (Logique d'enrôlement identique à la précédente pour rester stable)
+            if (!user.nom) {
+                const nomNettoye = text.replace(/Mon prénom est|Je m'appelle|Moi c'est/gi, "").trim();
+                await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nomNettoye, from]);
+                return await envoyerWhatsApp(from, `🔵 Enchanté **${nomNettoye}** ! En quelle **classe** es-tu ?`);
+            }
+            if (!user.classe) {
+                await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [text, from]);
+                return await envoyerWhatsApp(from, `🔵 C'est noté. Quel est ton plus grand **rêve** professionnel ?`);
+            }
+            if (!user.reve) {
+                const revePur = text.replace(/Bonjour Mwalimu|Bonjour|Mon rêve est/gi, "").trim();
+                await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [revePur, from]);
+                return await envoyerWhatsApp(from, `🔵 Magnifique ! Je t'aiderai à devenir **${revePur}**.\n\n🟡 Pose-moi ta question.`);
+            }
         }
 
-        // --- TRAITEMENT DE LA QUESTION AVEC RÈGLE D'OR ---
         const info = await consulterBibliotheque(text);
-       
-        // Extraction forcée pour éviter les hallucinations de l'IA
-        const d = info ? {
-            p: info.province,
-            c: info.chef_lieu,
-            v: info.villes || "Aucune ville spécifique",
-            t: info.territoires,
-            r: info.nature_richesses || "Information en cours d'actualisation"
-        } : null;
-
         const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
         let hist = [];
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur présent, vivant et pédagogue.
-Ton élève : ${user.nom} | Son rêve : ${user.reve}
+Tu es Mwalimu EdTech, précepteur d'élite congolais.
+ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
 
-<RÈGLE_D_OR_INVIOLABLE>
-1. Tu ne résumes JAMAIS les territoires. Tu les listes tous.
-2. Tu ne mélanges jamais les villes et les territoires.
-3. Si les données sont présentes ci-dessous, tu les utilises. Si elles manquent, tu dis poliment que tu mets à jour tes archives pour cette zone précise.
-</RÈGLE_D_OR_INVIOLABLE>
+<RÈGLE_D_OR_RADICALE>
+1. Tu ne modifies JAMAIS la liste des territoires fournie. Tu l'insères telle quelle.
+2. Tu respectes STRICTEMENT la distinction entre VILLES et TERRITOIRES.
+3. Si une ville est listée dans "VILLES", elle ne doit pas apparaître dans "TERRITOIRES".
+4. Tu restes pédagogue, vivant et tu parles du VÉCU congolais.
+</RÈGLE_D_OR_RADICALE>
 
-<SOURCE_SQL_DU_JOUR>
-Province: ${d ? d.p : "Inconnue"}
-Chef-lieu: ${d ? d.c : "Inconnu"}
-Villes: ${d ? d.v : "Aucune"}
-Territoires: ${d ? d.t : "Aucun"}
-Richesses: ${d ? d.r : "À découvrir"}
-</SOURCE_SQL_DU_JOUR>
+<SOURCE_SQL_VERIFIEE>
+Province: ${info ? info.province : "Inconnue"}
+Chef-lieu: ${info ? info.chef_lieu : "Inconnu"}
+Villes: ${info ? info.villes : "Aucune"}
+Liste_Territoires:
+     ${info ? info.listeTerritoiresFormatee : "Aucun"}
+Richesses: ${info ? info.nature_richesses : "À déterminer"}
+</SOURCE_SQL_VERIFIEE>
 
-<STRUCTURE_DE_REPONSE_STRICTE>
-🔵 [VÉCU] : [Anecdote humaine liant la région au quotidien des Congolais]
+<STRUCTURE_IMPOSEE>
+🔵 [VÉCU] : [Anecdote vivante sur la région]
 
 🟡 [SAVOIR] :
-   - Chef-lieu : ${d ? d.c : "[Nom]"}
-   - Villes : ${d ? d.v : "[Liste]"}
+   - Chef-lieu : ${info ? info.chef_lieu : "[Nom]"}
+   - Villes : ${info ? info.villes : "[Liste]"}
    - Territoires :
-     [Ici, transforme la liste "${d ? d.t : ""}" en une liste numérotée 1, 2, 3...]
-   - Nature & Richesses : ${d ? d.r : "[Détails]"}
+     ${info ? info.listeTerritoiresFormatee : "[Liste]"}
+   - Nature & Richesses : ${info ? info.nature_richesses : "[Détails]"}
 
-🔴 [INSPIRATION] : [Lien entre ce savoir et le rêve de ${user.nom} de devenir ${user.reve}].
+🔴 [INSPIRATION] : [Motivation liée au rêve de devenir ${user.reve}].
 
-❓ [CONSOLIDATION] : [Question de cours précise pour ${user.nom}].
-</STRUCTURE_DE_REPONSE_STRICTE>
+❓ [CONSOLIDATION] : [Question de cours pour ${user.nom}].
+</STRUCTURE_IMPOSEE>
 `;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.5
+            temperature: 0.3
         });
 
         const reponseIA = completion.choices[0].message.content;
-        const reponseFinale = `${reponseIA}\n\n${citAleatoire}`;
+        await envoyerWhatsApp(from, `${reponseIA}\n\n${citAleatoire}`);
 
-        const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponseIA }].slice(-10));
-        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
-        await envoyerWhatsApp(from, reponseFinale);
-
-    } catch (e) { console.error("Erreur Webhook"); }
+    } catch (e) { console.error(e); }
 });
 
 app.listen(process.env.PORT || 10000);
