@@ -20,7 +20,7 @@ const citations = [
     "***« Science sans conscience n'est que ruine de l'âme. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitue. »***"
+    "***« L'excellence n'est pas une action, c'est une habitude. »***"
 ];
 
 async function envoyerWhatsApp(to, texte) {
@@ -39,14 +39,14 @@ cron.schedule("0 7 * * *", async () => {
         const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (const user of res.rows) {
             const cit = citations[Math.floor(Math.random() * citations.length)];
-            const r = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand leader";
+            const r = user.reve.replace(/Quels sont|territoires|Bonjour|Mwalimu|\?|!/gi, "").trim() || "grand bâtisseur";
             const msgMatin = `🔵 Mbote cher élève ${user.nom} !\n\n🟡 ${cit}\n\n🔴 Aujourd'hui, prépare-toi à devenir le **${r}** dont le Congo a besoin.`;
             await envoyerWhatsApp(user.phone, msgMatin);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- MOTEUR DE RIGUEUR : TABLEAUX SÉPARÉS ---
+// --- MOTEUR DE RIGUEUR : GÉNÉRATION DE TABLEAUX ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -67,11 +67,11 @@ async function consulterBibliotheque(phrase) {
                 // RÈGLE D'OR : Exclusion mathématique des doublons
                 let tFiltres = tArr.filter(t => !vArr.some(v => v.toLowerCase() === t.toLowerCase()));
                
-                // ÉRECTION DES TABLEAUX
-                let tabVilles = "*Villes de la Province :*\n| Nom de la Ville | Statut |\n| :--- | :--- |\n";
+                // CONSTRUCTION DES TABLEAUX POUR LA CLARTÉ
+                let tabVilles = "*Villes de la Province :*\n| Nom de la Ville | Entité |\n| :--- | :--- |\n";
                 vArr.forEach(v => { tabVilles += `| ${v} | Ville |\n`; });
 
-                let tabTerritoires = "*Territoires de la Province :*\n| N° | Nom du Territoire | Statut |\n| :--- | :--- | :--- |\n";
+                let tabTerritoires = "*Territoires de la Province :*\n| N° | Nom du Territoire | Entité |\n| :--- | :--- | :--- |\n";
                 tFiltres.forEach((t, i) => { tabTerritoires += `| ${i + 1} | ${t} | Territoire |\n`; });
 
                 const blocSavoirTableaux = `   - **Chef-lieu** : ${row.chef_lieu}\n\n${tabVilles}\n${tabTerritoires}\n   - **Nature & Richesses** : ${row.nature_richesses || "En cours de documentation"}`;
@@ -123,34 +123,33 @@ app.post("/webhook", async (req, res) => {
         try { hist = typeof user.historique === 'string' ? JSON.parse(user.historique) : (user.historique || []); } catch(e) { hist = []; }
 
         const systemPrompt = `
-Tu es Mwalimu EdTech, précepteur d'élite congolais.
-ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
+Tu es Mwalimu EdTech, précepteur d'élite. Ton élève est ${user.nom}, futur ${user.reve}.
 
-<CONSIGNE_DE_RIGUEUR>
-1. Tu ne modifies JAMAIS les tableaux fournis dans la section SAVOIR.
-2. Tu dois impérativement respecter la séparation entre le tableau des Villes et celui des Territoires.
-3. Raconte un [VÉCU] qui sent bon le terroir congolais et inspire ${user.nom} pour son rêve.
-</CONSIGNE_DE_RIGUEUR>
+<CONSIGNE_TABLEAUX_STRICTE>
+1. Pour la section 🟡 [SAVOIR], RECOPIE les tableaux tels quels. Ne change pas une virgule.
+2. Si le bloc SAVOIR contient des données, tu ne dois JAMAIS dire "En cours d'actualisation".
+3. Raconte un [VÉCU] humain et inspire ton élève sur son rêve.
+</CONSIGNE_TABLEAUX_STRICTE>
 
 <SOURCE_SQL_FORMATTEE>
-${info ? info.blocSavoirTableaux : "Données non trouvées."}
+${info ? info.blocSavoirTableaux : "AUCUNE DONNÉE TROUVÉE"}
 </SOURCE_SQL_FORMATTEE>
 
-<STRUCTURE_FINALE>
-🔵 [VÉCU] : [Anecdote vivante]
+<STRUCTURE_MWALIMU>
+🔵 [VÉCU] : [Anecdote chaleureuse sur la province]
 
 🟡 [SAVOIR] :
-${info ? info.blocSavoirTableaux : "   - En cours d'actualisation."}
+${info ? info.blocSavoirTableaux : "   - En cours d'actualisation. Pose une question sur une province précise."}
 
-🔴 [INSPIRATION] : [Motivation]
+🔴 [INSPIRATION] : [Motivation pour devenir ${user.reve}]
 
-❓ [CONSOLIDATION] : [Question précise sur les tableaux]
-</STRUCTURE_FINALE>`;
+❓ [CONSOLIDATION] : [Question précise basée uniquement sur les tableaux ci-dessus]
+</STRUCTURE_MWALIMU>`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.2 // Rigueur maximale
+            temperature: 0.2
         });
 
         const reponseIA = completion.choices[0].message.content;
