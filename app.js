@@ -44,7 +44,6 @@ async function envoyerWhatsApp(to, texte) {
     }
 }
 
-// --- RAPPEL DE 07:00 ---
 cron.schedule("0 7 * * *", async () => {
     console.log("Exécution du rappel matinal...");
     try {
@@ -66,7 +65,6 @@ cron.schedule("0 7 * * *", async () => {
     }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- OUTILS TEXTE ---
 function nettoyerTexte(str) {
     return (str || "")
         .normalize("NFD")
@@ -86,17 +84,38 @@ function decouperListe(valeur) {
     )];
 }
 
-function filtrerTerritoires(villes, territoires) {
-    const villesSet = new Set(villes.map(v => nettoyerTexte(v)));
-    return territoires.filter(t => !villesSet.has(nettoyerTexte(t)));
-}
-
 function numeroterListe(liste) {
     if (!liste || !liste.length) return "Aucun";
     return liste.map((item, i) => `${i + 1}. ${item}`).join("\n     ");
 }
 
-// --- RECHERCHE BIBLIOTHÈQUE CORRIGÉE ---
+function separerVillesEtTerritoires(villes, territoires, chefLieu) {
+    const normaliser = (x) => nettoyerTexte(x);
+
+    let v = [...new Set((villes || []).map(x => String(x).trim()).filter(Boolean))];
+    let t = [...new Set((territoires || []).map(x => String(x).trim()).filter(Boolean))];
+    const chef = chefLieu ? String(chefLieu).trim() : "";
+
+    const territoiresSet = new Set(t.map(normaliser));
+
+    v = v.filter(item => {
+        const n = normaliser(item);
+        if (chef && n === normaliser(chef)) return true;
+        return !territoiresSet.has(n);
+    });
+
+    if (chef && !v.some(x => normaliser(x) === normaliser(chef))) {
+        v.unshift(chef);
+    }
+
+    t = t.filter(item => !(chef && normaliser(item) === normaliser(chef)));
+
+    return {
+        villesPropres: [...new Set(v)],
+        territoiresPropres: [...new Set(t)]
+    };
+}
+
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
 
@@ -107,7 +126,8 @@ async function consulterBibliotheque(phrase) {
         "quels", "quelles", "quel", "quelle", "sont", "est",
         "les", "des", "du", "de", "la", "le", "l", "territoire",
         "territoires", "ville", "villes", "province", "chef", "lieu",
-        "donne", "liste", "nom", "noms", "et", "dans", "sur", "pour"
+        "donne", "liste", "nom", "noms", "et", "dans", "sur", "pour",
+        "peux", "tu", "me", "dire", "citer", "tous", "toutes", "ses"
     ]);
 
     const mots = texte
@@ -130,9 +150,11 @@ async function consulterBibliotheque(phrase) {
                 CASE
                     WHEN LOWER(COALESCE(province, '')) = $2 THEN 1
                     WHEN LOWER(COALESCE(chef_lieu, '')) = $2 THEN 2
-                    WHEN LOWER(COALESCE(villes, '')) LIKE $1 THEN 3
-                    WHEN LOWER(COALESCE(territoires, '')) LIKE $1 THEN 4
-                    ELSE 5
+                    WHEN LOWER(COALESCE(province, '')) LIKE $1 THEN 3
+                    WHEN LOWER(COALESCE(chef_lieu, '')) LIKE $1 THEN 4
+                    WHEN LOWER(COALESCE(villes, '')) LIKE $1 THEN 5
+                    WHEN LOWER(COALESCE(territoires, '')) LIKE $1 THEN 6
+                    ELSE 7
                 END
             LIMIT 1
             `,
@@ -142,16 +164,23 @@ async function consulterBibliotheque(phrase) {
         if (!res.rows.length) return null;
 
         const row = res.rows[0];
-        const vArr = decouperListe(row.villes);
+        const vArrBrut = decouperListe(row.villes);
         const tArrBrut = decouperListe(row.territoires);
-        const tArr = filtrerTerritoires(vArr, tArrBrut);
+
+        const separation = separerVillesEtTerritoires(
+            vArrBrut,
+            tArrBrut,
+            row.chef_lieu
+        );
 
         return {
             ...row,
-            vListe: vArr,
-            tListe: tArr,
-            vPropres: vArr.length ? vArr.join(", ") : "Aucune",
-            tNumerotes: numeroterListe(tArr)
+            vListe: separation.villesPropres,
+            tListe: separation.territoiresPropres,
+            vPropres: separation.villesPropres.length
+                ? separation.villesPropres.join(", ")
+                : "Aucune",
+            tNumerotes: numeroterListe(separation.territoiresPropres)
         };
     }
 
@@ -187,7 +216,6 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone = $1", [from]);
         let user = rows[0];
 
-        // --- ENRÔLEMENT ---
         if (!user) {
             await pool.query(
                 "INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')",
@@ -237,11 +265,13 @@ Son rêve est de devenir ${user.reve}.
 - Utilise uniquement les données fournies ci-dessous quand elles existent.
 - N'invente jamais une ville ou un territoire.
 - Ne mélange jamais les villes et les territoires.
+- Si un nom existe à la fois dans la liste des villes et dans la liste des territoires, considère que c'est un territoire, sauf si c'est le chef-lieu.
 - Affiche toujours la liste complète des villes trouvées.
 - Affiche toujours la liste complète des territoires trouvés.
 - Ne résume jamais la liste par "etc.".
 - Si aucune donnée n'est trouvée, dis-le honnêtement puis donne une réponse pédagogique générale.
 - Réponds comme un vrai précepteur bienveillant, pas comme un moteur de recherche.
+- Respecte strictement les données SQL ci-dessous.
 </RÈGLES FONDAMENTALES>
 
 <DONNÉES_SQL>
@@ -276,10 +306,13 @@ Richesses: ${info ? info.nature_richesses || "Non renseignées" : "Non renseign�
                 ...hist.slice(-4),
                 { role: "user", content: text }
             ],
-            temperature: 0.3
+            temperature: 0.2
         });
 
-        const reponseIA = completion.choices[0]?.message?.content || "Je n'ai pas pu répondre correctement cette fois-ci.";
+        const reponseIA =
+            completion.choices[0]?.message?.content ||
+            "Je n'ai pas pu répondre correctement cette fois-ci.";
+
         await envoyerWhatsApp(from, `${reponseIA}\n\n${cit}`);
 
         const nouvelHist = JSON.stringify(
