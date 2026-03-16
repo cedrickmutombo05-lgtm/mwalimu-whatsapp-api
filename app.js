@@ -46,7 +46,7 @@ cron.schedule("0 7 * * *", async () => {
     } catch (e) { console.error("Erreur Cron"); }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- MOTEUR DE RIGUEUR : GÉNÉRATION DE TABLEAUX ---
+// --- MOTEUR DE RIGUEUR : LISTES NETTES SANS TABLEAUX ---
 async function consulterBibliotheque(phrase) {
     if (!phrase) return null;
     const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -67,16 +67,14 @@ async function consulterBibliotheque(phrase) {
                 // RÈGLE D'OR : Exclusion mathématique des doublons
                 let tFiltres = tArr.filter(t => !vArr.some(v => v.toLowerCase() === t.toLowerCase()));
                
-                // CONSTRUCTION DES TABLEAUX POUR LA CLARTÉ
-                let tabVilles = "*Villes de la Province :*\n| Nom de la Ville | Entité |\n| :--- | :--- |\n";
-                vArr.forEach(v => { tabVilles += `| ${v} | Ville |\n`; });
+                // CONSTRUCTION DU BLOC SAVOIR EN LISTES SIMPLES
+                const blocSavoirSimple = `   - **Chef-lieu** : ${row.chef_lieu}
+   - **Villes** : ${vArr.length > 0 ? vArr.join(', ') : "Aucune ville répertoriée"}
+   - **Territoires** :
+     ${tFiltres.map((t, i) => `${i + 1}. ${t}`).join('\n     ')}
+   - **Nature & Richesses** : ${row.nature_richesses || "En cours de documentation"}`;
 
-                let tabTerritoires = "*Territoires de la Province :*\n| N° | Nom du Territoire | Entité |\n| :--- | :--- | :--- |\n";
-                tFiltres.forEach((t, i) => { tabTerritoires += `| ${i + 1} | ${t} | Territoire |\n`; });
-
-                const blocSavoirTableaux = `   - **Chef-lieu** : ${row.chef_lieu}\n\n${tabVilles}\n${tabTerritoires}\n   - **Nature & Richesses** : ${row.nature_richesses || "En cours de documentation"}`;
-
-                return { ...row, blocSavoirTableaux };
+                return { ...row, blocSavoirSimple };
             }
         } catch (e) { console.error("Erreur SQL"); }
     }
@@ -125,25 +123,25 @@ app.post("/webhook", async (req, res) => {
         const systemPrompt = `
 Tu es Mwalimu EdTech, précepteur d'élite. Ton élève est ${user.nom}, futur ${user.reve}.
 
-<CONSIGNE_TABLEAUX_STRICTE>
-1. Pour la section 🟡 [SAVOIR], RECOPIE les tableaux tels quels. Ne change pas une virgule.
-2. Si le bloc SAVOIR contient des données, tu ne dois JAMAIS dire "En cours d'actualisation".
+<CONSIGNE_STRICTE>
+1. Pour la section 🟡 [SAVOIR], RECOPIE intégralement le bloc fourni.
+2. Ne mélange jamais les villes et les territoires.
 3. Raconte un [VÉCU] humain et inspire ton élève sur son rêve.
-</CONSIGNE_TABLEAUX_STRICTE>
+</CONSIGNE_STRICTE>
 
 <SOURCE_SQL_FORMATTEE>
-${info ? info.blocSavoirTableaux : "AUCUNE DONNÉE TROUVÉE"}
+${info ? info.blocSavoirSimple : "AUCUNE DONNÉE TROUVÉE"}
 </SOURCE_SQL_FORMATTEE>
 
 <STRUCTURE_MWALIMU>
-🔵 [VÉCU] : [Anecdote chaleureuse sur la province]
+🔵 [VÉCU] : [Anecdote chaleureuse]
 
 🟡 [SAVOIR] :
-${info ? info.blocSavoirTableaux : "   - En cours d'actualisation. Pose une question sur une province précise."}
+${info ? info.blocSavoirSimple : "   - En cours d'actualisation. Précise le nom d'une province."}
 
 🔴 [INSPIRATION] : [Motivation pour devenir ${user.reve}]
 
-❓ [CONSOLIDATION] : [Question précise basée uniquement sur les tableaux ci-dessus]
+❓ [CONSOLIDATION] : [Question précise sur les faits cités]
 </STRUCTURE_MWALIMU>`;
 
         const completion = await openai.chat.completions.create({
