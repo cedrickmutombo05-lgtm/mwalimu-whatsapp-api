@@ -32,36 +32,45 @@ const citations = [
 
 // --- RAPPEL AUTOMATIQUE DU MATIN (07:00) ---
 cron.schedule('0 7 * * *', async () => {
-    console.log("🚀 Envoi du rappel matinal aux élèves...");
     try {
         const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (let eleve of eleves) {
             const citation = citations[Math.floor(Math.random() * citations.length)];
-            const messageMatinal = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir et celui du Grand Congo.\n\n${citation}\n\nExcellente journée d'études !`;
-            await envoyerWhatsApp(eleve.phone, messageMatinal);
+            const message = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir et celui du Grand Congo.\n\n${citation}\n\nExcellente journée d'études !`;
+            await envoyerWhatsApp(eleve.phone, message);
         }
     } catch (e) { console.error("Erreur Cron :", e.message); }
 }, { scheduled: true, timezone: "Africa/Lubumbashi" });
 
-// --- MOTEUR DE RECHERCHE SQL ---
-async function consulterBibliotheque(phrase) {
-    if (!phrase) return null;
-    const nettoyage = phrase.toLowerCase().replace(/[?.,!]/g, "").trim();
-    const mots = nettoyage.split(/\s+/);
-    for (let mot of mots) {
-        if (mot.length < 4) continue;
-        try {
-            const res = await pool.query(
-                `SELECT * FROM entites_administratives
-                 WHERE nom_entite ILIKE $1
-                 OR description_tuteur ILIKE $1
-                 ORDER BY (nom_entite ILIKE $2) DESC LIMIT 1`,
-                [`%${mot}%`, mot]
+// --- TON NOUVEAU SCHÉMA DE RECHERCHE OPTIMISÉ ---
+async function consulterBibliotheque(question) {
+    if (!question) return null;
+    const texte = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[?.,!;:()"]/g, " ").replace(/\s+/g, " ").trim();
+    const motsVides = new Set(["quels", "quelles", "quel", "quelle", "sont", "est", "les", "des", "du", "de", "la", "le", "l", "en", "dans", "sur", "pour", "avec", "et", "ou", "donne", "moi", "territoires", "province", "provinces", "ville", "villes", "chef", "lieu"]);
+    const motsUtiles = texte.split(" ").filter(m => m.length >= 3 && !motsVides.has(m));
+
+    try {
+        // Recherche large
+        let res = await pool.query(
+            `SELECT * FROM entites_administratives WHERE
+             unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) OR
+             unaccent(lower(description_tuteur)) LIKE unaccent(lower($1))
+             LIMIT 10`, [`%${texte}%`]
+        );
+        if (res.rows.length > 0) return res.rows;
+
+        // Recherche par mots-clés
+        for (const mot of motsUtiles) {
+            res = await pool.query(
+                `SELECT * FROM entites_administratives WHERE
+                 unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) OR
+                 unaccent(lower(description_tuteur)) LIKE unaccent(lower($1))
+                 LIMIT 10`, [`%${mot}%`]
             );
-            if (res.rows.length > 0) return res.rows[0];
-        } catch (e) { console.error("Erreur SQL :", e.message); }
-    }
-    return null;
+            if (res.rows.length > 0) return res.rows;
+        }
+        return null;
+    } catch (e) { return null; }
 }
 
 // --- ENVOI WHATSAPP ---
@@ -73,12 +82,11 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// --- WEBHOOK PRINCIPAL ---
+// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg?.text?.body) return;
-
     const from = msg.from;
     const text = msg.text.body.trim();
 
@@ -109,29 +117,25 @@ app.post("/webhook", async (req, res) => {
 
         const systemPrompt = `Tu es Mwalimu EdTech, mentor d'élite en RDC.
         ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
-       
-        RÈGLES STRICTES :
+        RÈGLES :
         1. HEADER : ${HEADER_MWALIMU}
-        2. SÉPARATION : "________________________________"
-        3. SOURCE DE VÉRITÉ : Voici les données SQL : ${JSON.stringify(info)}.
-           - INTERDICTION d'inventer. Si 6 territoires sont listés, cite les 6.
-        4. STRUCTURE : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION].
-        5. CITATION : Termine TOUJOURS par : \n\n\n ${citAleatoire}`;
+        2. SOURCE : ${JSON.stringify(info)}. Utilise EXCLUSIVEMENT ces données. Si 6 territoires sont listés, cite les 6.
+        3. SECTIONS : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION].
+        4. TEMPÉRATURE : 0.2 (Précision maximale).
+        5. CITATION : \n\n\n ${citAleatoire}`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...hist.slice(-4), { role: "user", content: text }],
-            temperature: 0.2, // Température verrouillée pour une précision maximale
+            temperature: 0.2,
         });
 
         const reponse = completion.choices[0].message.content;
         const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10));
-       
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
         await envoyerWhatsApp(from, reponse);
-
-    } catch (e) { console.error("Erreur :", e.message); }
+    } catch (e) { console.error("Erreur Application :", e.message); }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu EdTech en ligne (Port ${PORT})`));
+app.listen(PORT, () => console.log(`Mwalimu EdTech opérationnel.`));
