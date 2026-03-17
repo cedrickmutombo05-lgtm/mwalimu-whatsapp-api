@@ -16,13 +16,23 @@ const pool = new Pool({
 
 const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩";
 
-// Recherche robuste pour capturer la province dans une phrase
+// Ta bibliothèque de citations complète
+const CITATIONS = [
+    "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
+    "***« L'excellence n'est pas une action, c'est une habitude. » - Aristote***",
+    "***« L'éducation est l'arme la plus puissante pour changer le monde. » - Nelson Mandela***",
+    "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***",
+    "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***"
+];
+
+const obtenirCitation = () => CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
+
+// Recherche SQL insensible aux accents et à la casse
 async function consulterBibliotheque(question) {
     if (!question) return null;
     const mots = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/);
-    const motsCles = mots.filter(m => m.length > 3 && !["quels", "sont", "donne", "province", "parle"].includes(m));
+    const motsCles = mots.filter(m => m.length > 3 && !["province", "quels", "donne"].includes(m));
     if (motsCles.length === 0) return null;
-
     try {
         const res = await pool.query(
             "SELECT description_tuteur FROM entites_administratives WHERE unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) LIMIT 1",
@@ -53,45 +63,56 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // Gestion du prénom si utilisateur inconnu
+        // 1. Inscription du nouvel utilisateur
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, historique) VALUES ($1, '', '[]')", [from]);
             return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
         }
 
-        // Récupération du SAVOIR via SQL
+        // 2. Capture du prénom
+        if (!user.nom || user.nom === '') {
+            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province souhaites-tu étudier la géographie aujourd'hui ?`);
+        }
+
+        // 3. Traitement pédagogique
         const savoirSQL = await consulterBibliotheque(text);
-       
-        const systemPrompt = `Tu es Mwalimu EdTech. Ton élève est ${user.nom || "Dora"}.
-        DONNÉES SQL : ${savoirSQL || "Information non disponible dans la base"}.
+        let historique = JSON.parse(user.historique || "[]");
+        historique.push({ role: "user", content: text });
+        if (historique.length > 10) historique.shift(); // Garde les 10 derniers messages
 
-        CONSIGNES DE RÉPONSE (STRICTES) :
-        1. Salutation personnalisée : "Mbote ${user.nom || "Dora"} ! 😊"
-        2. 🔵 [VÉCU] : Anecdote sur la province ou le métier d'avocat.
-        3. 🟡 [SAVOIR] : Si DONNÉES SQL est disponible, RECOPIE-LES intégralement. Sinon, demande poliment de préciser la province.
-        4. 🔴 [INSPIRATION] : Encourage l'élève dans son futur métier d'avocate.
-        5. ❓ [CONSOLIDATION] : Question de réflexion sur le sujet.
-        6. Disponibilité : "Je reste disponible pour toute question éventuelle !"
+        try {
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                    { role: "system", content: `Tu es Mwalimu EdTech. Élève : ${user.nom}.
+                    DONNÉES SQL (VÉRITÉ) : ${savoirSQL || "Indisponible"}.
+                    STRUCTURE : 1. Salue "Mbote ${user.nom} ! 😊". 2. 🔵 [VÉCU]. 3. 🟡 [SAVOIR] (Recopie SQL). 4. 🔴 [INSPIRATION]. 5. ❓ [CONSOLIDATION]. 6. "Je reste disponible pour toute question éventuelle !".
+                    Sépare par deux sauts de ligne.` },
+                    ...historique
+                ],
+                temperature: 0.1,
+            });
 
-        FORMATAGE : Sépare chaque section par DEUX sauts de ligne. INTERDICTION de mentionner "SQL" ou "Base de données".`;
+            const reponseAI = completion.choices[0].message.content;
+            historique.push({ role: "assistant", content: reponseAI });
+           
+            // Mise à jour de l'historique en base de données
+            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique), from]);
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
-            temperature: 0.1,
-        });
+            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n${reponseAI}\n\n${obtenirCitation()}`);
 
-        const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${completion.choices[0].message.content}\n\n***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***`;
+        } catch (error) {
+            // Gestion de l'épuisement des tokens
+            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Cher(e) élève,\n\n🟡 Je rencontre une indisponibilité temporaire.\n\n🔴 Je recharge mes énergies.\n\n❓ Réessaye dans un instant.\n\nJe reste disponible !\n\n${obtenirCitation()}`);
+        }
 
-        await envoyerWhatsApp(from, messageFinal);
-
-    } catch (e) { console.error("Erreur Critique:", e.message); }
+    } catch (e) { console.error("Erreur Serveur"); }
 });
 
-// Validation Meta obligatoire
 app.get("/webhook", (req, res) => {
     if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
     else res.sendStatus(403);
 });
 
-app.listen(process.env.PORT || 10000, () => console.log("Mwalimu Live"));
+app.listen(process.env.PORT || 10000);
