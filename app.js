@@ -8,128 +8,90 @@ const { OpenAI } = require("openai");
 const app = express();
 app.use(express.json());
 
-// Configuration OpenAI et PostgreSQL
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
-// Ton Header exact avec la règle d'or (Capitalisation et astérisques)
 const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩";
 
-// Fonction de recherche SQL améliorée
+// Recherche robuste pour capturer la province dans une phrase
 async function consulterBibliotheque(question) {
     if (!question) return null;
-    const clean = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-   
-    // Extraction du mot-clé principal (ex: "Tshopo" ou "Lualaba")
-    const mots = clean.split(/\s+/).filter(m => m.length > 3 && !["province", "quels", "sont", "donne"].includes(m));
-    const recherche = mots.length > 0 ? `%${mots[mots.length - 1]}%` : `%${clean}%`;
+    const mots = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/);
+    const motsCles = mots.filter(m => m.length > 3 && !["quels", "sont", "donne", "province", "parle"].includes(m));
+    if (motsCles.length === 0) return null;
 
     try {
         const res = await pool.query(
-            "SELECT * FROM entites_administratives WHERE unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) LIMIT 1",
-            [recherche]
+            "SELECT description_tuteur FROM entites_administratives WHERE unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) LIMIT 1",
+            [`%${motsCles[motsCles.length - 1]}%`]
         );
-        return res.rows[0] || null;
-    } catch (e) {
-        console.error("Erreur SQL:", e.message);
-        return null;
-    }
+        return res.rows[0]?.description_tuteur || null;
+    } catch (e) { return null; }
 }
 
-// Envoi vers l'API WhatsApp Cloud
 async function envoyerWhatsApp(to, texte) {
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
-            messaging_product: "whatsapp",
-            to: to,
-            text: { body: texte }
-        }, {
-            headers: { Authorization: `Bearer ${process.env.TOKEN}` }
-        });
-    } catch (e) {
-        console.error("Erreur d'envoi WhatsApp:", e.response ? e.response.data : e.message);
-    }
+            messaging_product: "whatsapp", to, text: { body: texte }
+        }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
+    } catch (e) { console.error("Erreur d'envoi WA"); }
 }
 
-// Webhook principal
 app.post("/webhook", async (req, res) => {
-    // Vérification du message entrant
+    res.sendStatus(200);
     const entry = req.body.entry?.[0]?.changes?.[0]?.value;
     const msg = entry?.messages?.[0];
-   
-    if (!msg?.text?.body) return res.sendStatus(200);
+    if (!msg?.text?.body) return;
 
     const from = msg.from;
     const text = msg.text.body;
 
     try {
-        // 1. Récupérer ou créer l'utilisateur
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
+        // Gestion du prénom si utilisateur inconnu
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, historique) VALUES ($1, '', '[]')", [from]);
-            const welcome = `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`;
-            await envoyerWhatsApp(from, welcome);
-            return res.sendStatus(200);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
         }
 
-        // 2. Chercher dans la base de données (Géographie/Territoires)
-        const info = await consulterBibliotheque(text);
+        // Récupération du SAVOIR via SQL
+        const savoirSQL = await consulterBibliotheque(text);
        
-        // 3. Préparer le prompt pour l'IA
-        const systemPrompt = `Tu es Mwalimu EdTech, mentor éducatif en RDC.
-        IDENTITÉ : ${user.nom || "Élève"}
-        DONNÉES SQL (VÉRITÉ ABSOLUE) : ${info ? JSON.stringify(info) : "AUCUNE DONNÉE TROUVÉE"}.
+        const systemPrompt = `Tu es Mwalimu EdTech. Ton élève est ${user.nom || "Dora"}.
+        DONNÉES SQL : ${savoirSQL || "Information non disponible dans la base"}.
 
-        CONSIGNES STRICTES :
-        1. Utilise TOUJOURS les données SQL pour remplir la section 🟡 [SAVOIR].
-        2. Si les données SQL contiennent la géographie (relief, hydrographie, climat, territoires), cite tout précisément.
-        3. Ne dis JAMAIS "Je n'ai pas de données" si le JSON ci-dessus contient du texte.
-        4. STRUCTURE DE RÉPONSE :
-           🔵 [VÉCU] : Anecdote locale.
-           🟡 [SAVOIR] : Faits géographiques et administratifs issus du SQL.
-           🔴 [INSPIRATION] : Encouragement lié à la carrière d'avocat.
-           ❓ [CONSOLIDATION] : Question de réflexion.
-       
-        Sépare chaque section par DEUX sauts de ligne.`;
+        CONSIGNES DE RÉPONSE (STRICTES) :
+        1. Salutation personnalisée : "Mbote ${user.nom || "Dora"} ! 😊"
+        2. 🔵 [VÉCU] : Anecdote sur la province ou le métier d'avocat.
+        3. 🟡 [SAVOIR] : Si DONNÉES SQL est disponible, RECOPIE-LES intégralement. Sinon, demande poliment de préciser la province.
+        4. 🔴 [INSPIRATION] : Encourage l'élève dans son futur métier d'avocate.
+        5. ❓ [CONSOLIDATION] : Question de réflexion sur le sujet.
+        6. Disponibilité : "Je reste disponible pour toute question éventuelle !"
 
-        // 4. Appel à OpenAI
+        FORMATAGE : Sépare chaque section par DEUX sauts de ligne. INTERDICTION de mentionner "SQL" ou "Base de données".`;
+
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: text }
-            ],
-            temperature: 0.1, // Pour éviter toute invention (hallucination)
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
+            temperature: 0.1,
         });
 
-        const reponseAI = completion.choices[0].message.content;
-        const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${reponseAI}\n\n***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***`;
+        const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${completion.choices[0].message.content}\n\n***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***`;
 
-        // 5. Envoyer le message
         await envoyerWhatsApp(from, messageFinal);
 
-    } catch (e) {
-        console.error("Erreur globale:", e.message);
-    }
-    res.sendStatus(200);
+    } catch (e) { console.error("Erreur Critique:", e.message); }
 });
 
-// Vérification du Webhook (Meta)
+// Validation Meta obligatoire
 app.get("/webhook", (req, res) => {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
-    if (mode && token === process.env.VERIFY_TOKEN) {
-        res.status(200).send(challenge);
-    } else {
-        res.sendStatus(403);
-    }
+    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
+    else res.sendStatus(403);
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Serveur Mwalimu actif sur le port ${PORT}`));
+app.listen(process.env.PORT || 10000, () => console.log("Mwalimu Live"));
