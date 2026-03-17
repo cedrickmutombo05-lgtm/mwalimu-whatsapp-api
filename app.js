@@ -16,7 +16,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- RÈGLE D'OR : IDENTITÉ VISUELLE & CITATIONS ---
+// --- RÈGLE D'OR : IDENTITÉ VISUELLE ---
 const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩";
 
 const citations = [
@@ -30,42 +30,54 @@ const citations = [
     "***« Ne demande pas ce que ton pays peut faire pour toi, mais ce que tu peux faire pour le Congo. »***"
 ];
 
-// --- RAPPEL AUTOMATIQUE DU MATIN (07:00) ---
+// --- RAPPEL DU MATIN (07:00) ---
 cron.schedule('0 7 * * *', async () => {
     try {
         const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (let eleve of eleves) {
             const citation = citations[Math.floor(Math.random() * citations.length)];
-            const message = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir et celui du Grand Congo.\n\n${citation}\n\nExcellente journée d'études !`;
+            const message = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir et celui du Grand Congo.\n\n\n${citation}`;
             await envoyerWhatsApp(eleve.phone, message);
         }
     } catch (e) { console.error("Erreur Cron :", e.message); }
 }, { scheduled: true, timezone: "Africa/Lubumbashi" });
 
-// --- TON NOUVEAU SCHÉMA DE RECHERCHE OPTIMISÉ ---
+// --- TON SCHÉMA DE RECHERCHE OPTIMISÉ ---
 async function consulterBibliotheque(question) {
     if (!question) return null;
-    const texte = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[?.,!;:()"]/g, " ").replace(/\s+/g, " ").trim();
-    const motsVides = new Set(["quels", "quelles", "quel", "quelle", "sont", "est", "les", "des", "du", "de", "la", "le", "l", "en", "dans", "sur", "pour", "avec", "et", "ou", "donne", "moi", "territoires", "province", "provinces", "ville", "villes", "chef", "lieu"]);
+
+    const texte = question
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[?.,!;:()"]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const motsVides = new Set([
+        "quels", "quelles", "quel", "quelle", "sont", "est", "les", "des", "du", "de",
+        "la", "le", "l", "en", "dans", "sur", "pour", "avec", "et", "ou", "donne",
+        "moi", "territoires", "province", "provinces", "ville", "villes", "chef", "lieu"
+    ]);
+
     const motsUtiles = texte.split(" ").filter(m => m.length >= 3 && !motsVides.has(m));
 
     try {
-        // Recherche large
+        // 1. Recherche large sur la phrase
         let res = await pool.query(
             `SELECT * FROM entites_administratives WHERE
              unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) OR
              unaccent(lower(description_tuteur)) LIKE unaccent(lower($1))
-             LIMIT 10`, [`%${texte}%`]
+             LIMIT 5`, [`%${texte}%`]
         );
         if (res.rows.length > 0) return res.rows;
 
-        // Recherche par mots-clés
+        // 2. Recherche par mots-clés utiles
         for (const mot of motsUtiles) {
             res = await pool.query(
                 `SELECT * FROM entites_administratives WHERE
                  unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) OR
                  unaccent(lower(description_tuteur)) LIKE unaccent(lower($1))
-                 LIMIT 10`, [`%${mot}%`]
+                 LIMIT 5`, [`%${mot}%`]
             );
             if (res.rows.length > 0) return res.rows;
         }
@@ -87,6 +99,7 @@ app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg?.text?.body) return;
+
     const from = msg.from;
     const text = msg.text.body.trim();
 
@@ -117,12 +130,17 @@ app.post("/webhook", async (req, res) => {
 
         const systemPrompt = `Tu es Mwalimu EdTech, mentor d'élite en RDC.
         ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
-        RÈGLES :
+       
+        MODÈLE DE RÉPONSE STRICT :
         1. HEADER : ${HEADER_MWALIMU}
-        2. SOURCE : ${JSON.stringify(info)}. Utilise EXCLUSIVEMENT ces données. Si 6 territoires sont listés, cite les 6.
-        3. SECTIONS : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION].
-        4. TEMPÉRATURE : 0.2 (Précision maximale).
-        5. CITATION : \n\n\n ${citAleatoire}`;
+        2. SÉPARATION : "________________________________"
+        3. CONTENU : Réponds en utilisant 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION].
+        4. SOURCE : Utilise EXCLUSIVEMENT ces données : ${JSON.stringify(info)}. Si 6 territoires sont listés, cite-les TOUS.
+        5. QUESTION : Termine par une question de consolidation ❓ [CONSOLIDATION].
+        6. DISPONIBILITÉ : Ajoute "Je reste disponible pour toute question éventuelle !"
+        7. CITATION : La citation DOIT être à la fin, décalée par 3 sauts de ligne, en italique et gras.
+
+        Citation à utiliser : ${citAleatoire}`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -132,10 +150,12 @@ app.post("/webhook", async (req, res) => {
 
         const reponse = completion.choices[0].message.content;
         const nouvelHist = JSON.stringify([...hist, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10));
+       
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nouvelHist, from]);
         await envoyerWhatsApp(from, reponse);
-    } catch (e) { console.error("Erreur Application :", e.message); }
+
+    } catch (e) { console.error("Erreur :", e.message); }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu EdTech opérationnel.`));
+app.listen(PORT, () => console.log(`Mwalimu EdTech en ligne.`));
