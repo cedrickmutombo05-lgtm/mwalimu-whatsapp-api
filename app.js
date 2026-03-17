@@ -15,7 +15,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- RÈGLE D'OR : HEADER & NOUVELLES CITATIONS PATRIOTIQUES ---
+// --- RÈGLE D'OR : HEADER & CITATIONS PATRIOTIQUES ---
 const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩";
 
 const citations = [
@@ -46,6 +46,27 @@ async function initialiserBase() {
 }
 initialiserBase();
 
+// --- FONCTION DE RECHERCHE CORRIGÉE (ADAPTÉE À TES PHOTOS) ---
+async function consulterBibliotheque(phrase) {
+    if (!phrase) return null;
+    // Nettoyage simple
+    const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(/\s+/);
+
+    for (let mot of mots) {
+        if (mot.length < 4) continue; // On évite les mots trop courts comme "le", "la"
+        try {
+            // Recherche par correspondance partielle (ILIKE) sur le nom ou la description
+            const res = await pool.query(
+                "SELECT * FROM entites_administratives WHERE nom_entite ILIKE $1 OR description_tuteur ILIKE $1 LIMIT 1",
+                [`%${mot}%`]
+            );
+            if (res.rows.length > 0) return res.rows[0];
+        } catch (e) { console.error("Erreur SQL recherche :", e.message); }
+    }
+    return null;
+}
+
 // --- ENVOI WHATSAPP ---
 async function envoyerWhatsApp(to, texte) {
     try {
@@ -57,38 +78,7 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur API WhatsApp"); }
 }
 
-// --- RAPPEL DU MATIN (07H00 LUBUMBASHI) ---
-cron.schedule("0 7 * * *", async () => {
-    try {
-        const res = await pool.query("SELECT phone, nom, reve FROM conversations WHERE nom != ''");
-        for (const user of res.rows) {
-            const cit = citations[Math.floor(Math.random() * citations.length)];
-            const msgMatin = `${HEADER_MWALIMU}\n________________________________\n\n🔵 Bonjour cher élève **${user.nom}** !\n\n🟡 ${cit}\n\n🔴 Prépare-toi à devenir le meilleur **${user.reve}** pour le Grand Congo !\n\n${cit}`;
-            await envoyerWhatsApp(user.phone, msgMatin);
-        }
-    } catch (e) { console.error("Erreur Cron"); }
-}, { scheduled: true, timezone: "Africa/Lubumbashi" });
-
-// --- RECHERCHE SQL ---
-async function consulterBibliotheque(phrase) {
-    if (!phrase) return null;
-    const nettoyer = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const mots = nettoyer(phrase).replace(/[?.,!]/g, "").split(/\s+/);
-
-    for (let mot of mots) {
-        if (mot.length < 3) continue;
-        try {
-            const res = await pool.query(
-                "SELECT * FROM entites_administratives WHERE LOWER(nom_entite) LIKE $1 OR LOWER(description_tuteur) LIKE $1 LIMIT 1",
-                [`%${mot}%`]
-            );
-            if (res.rows.length > 0) return res.rows[0];
-        } catch (e) { console.error("Erreur SQL recherche"); }
-    }
-    return null;
-}
-
-// --- WEBHOOK ---
+// --- WEBHOOK PRINCIPAL ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -101,6 +91,7 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
+        // LOGIQUE D'ENRÔLEMENT
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
@@ -118,6 +109,7 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔴 Magnifique ! Je t'aiderai à devenir **${text}**.\n\nPose-moi ta question sur la RDC.`);
         }
 
+        // APPEL À LA BIBLIOTHÈQUE ET GÉNÉRATION IA
         const info = await consulterBibliotheque(text);
         const citAleatoire = citations[Math.floor(Math.random() * citations.length)];
         let hist = JSON.parse(user.historique || "[]");
@@ -125,13 +117,14 @@ app.post("/webhook", async (req, res) => {
         const systemPrompt = `Tu es Mwalimu EdTech, précepteur d'élite congolais. Ton ton est chaleureux, inspirant et civique.
         ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}
 
-        STRUCTURE STRICTE :
+        STRUCTURE STRICTE À RESPECTER :
         1. DEBUT : ${HEADER_MWALIMU}
         2. SEPARATION : "________________________________"
-        3. CONTENU : [VÉCU], [SAVOIR] (Source : ${JSON.stringify(info)}), [INSPIRATION].
-        4. INTERACTION : Pose TOUJOURS une question de consolidation à ${user.nom}.
-        5. DISPONIBILITÉ : "Je reste disponible pour toute question éventuelle !"
-        6. CITATION FINALE : Laisse deux lignes vides, puis insère la citation en gras italique : \n\n\n ${citAleatoire}`;
+        3. CONTENU : Utilise impérativement les données suivantes pour répondre au savoir : ${JSON.stringify(info)}. Si ces données sont null, réponds avec tes connaissances mais reste très précis sur la RDC.
+        4. SECTIONS : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION].
+        5. INTERACTION : Pose TOUJOURS une question de consolidation à ${user.nom} pour l'inciter à interagir.
+        6. DISPONIBILITÉ : "Je reste disponible pour toute question éventuelle !"
+        7. CITATION FINALE : Laisse deux lignes vides, puis insère la citation en gras italique : \n\n\n ${citAleatoire}`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
