@@ -18,13 +18,12 @@ const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éd
 
 const CITATIONS = [
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitude. » - Aristote***",
+    "***« L'excellence n'est pas une action, c'est une habitidue. » - Aristote***",
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***"
 ];
 
-// Salutations alternées en langues nationales
-const SALUTATIONS = ["Mbote", "Jambo", "Moyo", "Kiau"];
+const SALUTATIONS = ["Mbote", "Jambo", "Moyo", "Ebwe"];
 const obtenirSalutation = () => SALUTATIONS[Math.floor(Math.random() * SALUTATIONS.length)];
 const obtenirCitation = () => CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
 
@@ -69,21 +68,23 @@ app.post("/webhook", async (req, res) => {
 
         if (!user.nom) {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province souhaites-tu étudier la géographie ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province souhaites-tu étudier la géographie aujourd'hui ?`);
         }
 
         const savoirSQL = await consulterBibliotheque(text);
-        const salutationAleatoire = `${obtenirSalutation()} ${user.nom} ! 😊`;
        
-        const systemPrompt = `Tu es Mwalimu EdTech. Élève : ${user.nom}.
-        DONNÉES SQL (VÉRITÉ) : ${savoirSQL || "NON_TROUVE"}.
+        // CORRECTION : L'IA ne doit JAMAIS dire "Mon prénom est..."
+        const systemPrompt = `Tu es Mwalimu EdTech, l'enseignant. Ton élève s'appelle ${user.nom}.
+        NE CONFONDS PAS : Toi tu es Mwalimu, elle c'est ${user.nom}.
+       
+        SOURCE GÉOGRAPHIQUE : ${savoirSQL || "NON_TROUVE"}.
 
         CONSIGNES :
-        1. DEBUT : Commence DIRECTEMENT par 🔵 [VÉCU]. Ne salue pas, le code s'en charge.
+        1. NE SALUE PAS (le code le fait).
         2. STRUCTURE : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION], ❓ [CONSOLIDATION].
-        3. RÈGLE D'OR : Dans 🟡 [SAVOIR], RECOPIE TOUT le SQL (ex: Kambove doit apparaître pour le Haut-Katanga).
-        4. FIN : Ajoute "Je reste disponible pour toute question éventuelle !"
-        5. INTERDICTION : Ne génère JAMAIS de header, de salutation, ni de citation.`;
+        3. 🟡 [SAVOIR] : Recopie la SOURCE GÉOGRAPHIQUE. Interdiction de parler de SQL ou d'informatique.
+        4. SI "NON_TROUVE" : Demande la province de RDC.
+        5. FIN : "Je reste disponible pour toute question éventuelle !"`;
 
         try {
             const completion = await openai.chat.completions.create({
@@ -93,15 +94,13 @@ app.post("/webhook", async (req, res) => {
             });
 
             let content = completion.choices[0].message.content;
+            const salutation = `${obtenirSalutation()} ${user.nom} ! 😊`;
            
-            // Assemblage final : Salutation + Réponse IA + Citation
-            const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${salutationAleatoire}\n\n${content}\n\n${obtenirCitation()}`;
+            const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${salutation}\n\n${content}\n\n${obtenirCitation()}`;
             await envoyerWhatsApp(from, messageFinal);
 
         } catch (err) {
-            // Message d'indisponibilité en cas d'erreur token
-            const msgUrgence = `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 ${salutationAleatoire}\n\n🟡 Je rencontre une petite fatigue technique.\n\n🔴 Je recharge mes batteries pour toi.\n\n❓ Peux-tu réessayer dans un instant ?\n\nJe reste disponible !\n\n${obtenirCitation()}`;
-            await envoyerWhatsApp(from, msgUrgence);
+            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, je recharge mes batteries.\n\n${obtenirCitation()}`);
         }
     } catch (e) { console.error("Erreur"); }
 });
