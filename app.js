@@ -23,14 +23,16 @@ const CITATIONS = [
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***"
 ];
 
+// Salutations alternées en langues nationales
+const SALUTATIONS = ["Mbote", "Jambo", "Moyo", "Kiau"];
+const obtenirSalutation = () => SALUTATIONS[Math.floor(Math.random() * SALUTATIONS.length)];
 const obtenirCitation = () => CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
 
 async function consulterBibliotheque(question) {
     if (!question) return null;
     const clean = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const mots = clean.split(/\s+/).filter(m => m.length > 3 && !["province", "parle", "quels", "donne"].includes(m));
+    const mots = clean.split(/\s+/).filter(m => m.length > 3 && !["province", "quels", "donne"].includes(m));
     const recherche = mots.length > 0 ? `%${mots[mots.length - 1]}%` : `%${clean}%`;
-
     try {
         const res = await pool.query(
             "SELECT description_tuteur FROM entites_administratives WHERE unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) LIMIT 1",
@@ -67,49 +69,41 @@ app.post("/webhook", async (req, res) => {
 
         if (!user.nom) {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province ou relief de la RDC souhaites-tu étudier la géographie aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province souhaites-tu étudier la géographie ?`);
         }
 
         const savoirSQL = await consulterBibliotheque(text);
-        let historique = JSON.parse(user.historique || "[]");
-        historique.push({ role: "user", content: text });
-        if (historique.length > 10) historique.shift();
-
-        const systemPrompt = `Tu es Mwalimu EdTech, mentor en RDC pour l'élève ${user.nom}.
-        INTERDICTION : Ne parle jamais de "SQL", "Base de données", "Code" ou "Indisponible".
+        const salutationAleatoire = `${obtenirSalutation()} ${user.nom} ! 😊`;
        
-        SAVOIR REEL : ${savoirSQL || "NON_TROUVE"}.
+        const systemPrompt = `Tu es Mwalimu EdTech. Élève : ${user.nom}.
+        DONNÉES SQL (VÉRITÉ) : ${savoirSQL || "NON_TROUVE"}.
 
-        CONSIGNES STRICTES :
-        1. DEBUT : Salue par "Mbote ${user.nom} ! 😊"
-        2. 🔵 [VÉCU] : Une phrase d'ancrage sur la géographie de la RDC ou la rigueur du métier d'avocat.
-        3. 🟡 [SAVOIR] : Si SAVOIR REEL n'est pas "NON_TROUVE", RECOPIE-LE MOT POUR MOT. Sinon, demande poliment de préciser la province ou le relief de la RDC.
-        4. 🔴 [INSPIRATION] : Explique pourquoi cette connaissance aide une future AVOCATE (litiges fonciers, parcs, frontières).
-        5. ❓ [CONSOLIDATION] : Une question de réflexion.
-        6. FIN : "Je reste disponible pour toute question éventuelle !"
-       
-        NE GENERES NI HEADER NI CITATION. Double saut de ligne entre sections.`;
+        CONSIGNES :
+        1. DEBUT : Commence DIRECTEMENT par 🔵 [VÉCU]. Ne salue pas, le code s'en charge.
+        2. STRUCTURE : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION], ❓ [CONSOLIDATION].
+        3. RÈGLE D'OR : Dans 🟡 [SAVOIR], RECOPIE TOUT le SQL (ex: Kambove doit apparaître pour le Haut-Katanga).
+        4. FIN : Ajoute "Je reste disponible pour toute question éventuelle !"
+        5. INTERDICTION : Ne génère JAMAIS de header, de salutation, ni de citation.`;
 
         try {
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
-                messages: [{ role: "system", content: systemPrompt }, ...historique],
-                temperature: 0.1,
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
+                temperature: 0,
             });
 
-            const content = completion.choices[0].message.content;
-            historique.push({ role: "assistant", content: content });
-            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique), from]);
-
-            const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${content}\n\n${obtenirCitation()}`;
+            let content = completion.choices[0].message.content;
+           
+            // Assemblage final : Salutation + Réponse IA + Citation
+            const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${salutationAleatoire}\n\n${content}\n\n${obtenirCitation()}`;
             await envoyerWhatsApp(from, messageFinal);
 
         } catch (err) {
-            const msgUrgence = `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, je recharge mes batteries. Réessaye dans un instant.\n\nJe reste disponible !\n\n${obtenirCitation()}`;
+            // Message d'indisponibilité en cas d'erreur token
+            const msgUrgence = `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 ${salutationAleatoire}\n\n🟡 Je rencontre une petite fatigue technique.\n\n🔴 Je recharge mes batteries pour toi.\n\n❓ Peux-tu réessayer dans un instant ?\n\nJe reste disponible !\n\n${obtenirCitation()}`;
             await envoyerWhatsApp(from, msgUrgence);
         }
-
-    } catch (e) { console.error("Erreur critique"); }
+    } catch (e) { console.error("Erreur"); }
 });
 
 app.get("/webhook", (req, res) => {
