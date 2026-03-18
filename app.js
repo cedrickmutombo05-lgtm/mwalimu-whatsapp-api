@@ -16,27 +16,25 @@ const pool = new Pool({
 
 const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩";
 
-// Ta bibliothèque de citations complète
 const CITATIONS = [
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
     "***« L'excellence n'est pas une action, c'est une habitude. » - Aristote***",
-    "***« L'éducation est l'arme la plus puissante pour changer le monde. » - Nelson Mandela***",
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***"
 ];
 
 const obtenirCitation = () => CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
 
-// Recherche SQL insensible aux accents et à la casse
 async function consulterBibliotheque(question) {
     if (!question) return null;
-    const mots = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/);
-    const motsCles = mots.filter(m => m.length > 3 && !["province", "quels", "donne"].includes(m));
-    if (motsCles.length === 0) return null;
+    const clean = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const mots = clean.split(/\s+/).filter(m => m.length > 3 && !["province", "parle", "donne"].includes(m));
+    const recherche = mots.length > 0 ? `%${mots[mots.length - 1]}%` : `%${clean}%`;
+
     try {
         const res = await pool.query(
             "SELECT description_tuteur FROM entites_administratives WHERE unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) LIMIT 1",
-            [`%${motsCles[motsCles.length - 1]}%`]
+            [recherche]
         );
         return res.rows[0]?.description_tuteur || null;
     } catch (e) { return null; }
@@ -47,13 +45,12 @@ async function envoyerWhatsApp(to, texte) {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
             messaging_product: "whatsapp", to, text: { body: texte }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur d'envoi WA"); }
+    } catch (e) { console.error("Erreur WA"); }
 }
 
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
-    const entry = req.body.entry?.[0]?.changes?.[0]?.value;
-    const msg = entry?.messages?.[0];
+    const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg?.text?.body) return;
 
     const from = msg.from;
@@ -63,51 +60,45 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // 1. Inscription du nouvel utilisateur
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, historique) VALUES ($1, '', '[]')", [from]);
             return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
         }
 
-        // 2. Capture du prénom
-        if (!user.nom || user.nom === '') {
+        if (!user.nom) {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province souhaites-tu étudier la géographie aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province de la RDC souhaites-tu étudier la géographie ?`);
         }
 
-        // 3. Traitement pédagogique
         const savoirSQL = await consulterBibliotheque(text);
-        let historique = JSON.parse(user.historique || "[]");
-        historique.push({ role: "user", content: text });
-        if (historique.length > 10) historique.shift(); // Garde les 10 derniers messages
+       
+        const systemPrompt = `Tu es Mwalimu EdTech. Élève : ${user.nom}.
+        DONNÉES SQL (VÉRITÉ À RECOPIER) : ${savoirSQL || "Indisponible"}.
+
+        CONSIGNES STRICTES :
+        1. DEBUT : Salue uniquement par "Mbote ${user.nom} ! 😊".
+        2. STRUCTURE : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION], ❓ [CONSOLIDATION].
+        3. RÈGLE D'OR : Dans 🟡 [SAVOIR], recopie MOT POUR MOT le contenu SQL. Si SQL est "Indisponible", demande la province.
+        4. FIN : Ajoute "Je reste disponible pour toute question éventuelle !"
+        5. INTERDICTION : Ne répète jamais le header ou les citations, le code s'en charge.
+        6. FORMAT : Double saut de ligne entre les sections.`;
 
         try {
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
-                messages: [
-                    { role: "system", content: `Tu es Mwalimu EdTech. Élève : ${user.nom}.
-                    DONNÉES SQL (VÉRITÉ) : ${savoirSQL || "Indisponible"}.
-                    STRUCTURE : 1. Salue "Mbote ${user.nom} ! 😊". 2. 🔵 [VÉCU]. 3. 🟡 [SAVOIR] (Recopie SQL). 4. 🔴 [INSPIRATION]. 5. ❓ [CONSOLIDATION]. 6. "Je reste disponible pour toute question éventuelle !".
-                    Sépare par deux sauts de ligne.` },
-                    ...historique
-                ],
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
                 temperature: 0.1,
             });
 
-            const reponseAI = completion.choices[0].message.content;
-            historique.push({ role: "assistant", content: reponseAI });
+            const content = completion.choices[0].message.content;
+            const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${content}\n\n${obtenirCitation()}`;
            
-            // Mise à jour de l'historique en base de données
-            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique), from]);
-
-            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n${reponseAI}\n\n${obtenirCitation()}`);
-
-        } catch (error) {
-            // Gestion de l'épuisement des tokens
-            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Cher(e) élève,\n\n🟡 Je rencontre une indisponibilité temporaire.\n\n🔴 Je recharge mes énergies.\n\n❓ Réessaye dans un instant.\n\nJe reste disponible !\n\n${obtenirCitation()}`);
+            await envoyerWhatsApp(from, messageFinal);
+        } catch (err) {
+            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, je recharge mes batteries. Réessaye dans un instant.\n\n${obtenirCitation()}`);
         }
 
-    } catch (e) { console.error("Erreur Serveur"); }
+    } catch (e) { console.error("Erreur"); }
 });
 
 app.get("/webhook", (req, res) => {
