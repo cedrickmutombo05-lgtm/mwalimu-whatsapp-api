@@ -21,7 +21,7 @@ const CITATIONS = [
     "***« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitute. »***",
+    "***« L'excellence n'est pas une action, c'est une habitude. »***",
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***"
 ];
 
@@ -34,7 +34,7 @@ cron.schedule('0 7 * * *', async () => {
             const message = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir.\n\n${cit}\n\nExcellente journée d'études !`;
             await envoyerWhatsApp(eleve.phone, message);
         }
-    } catch (e) { console.error("Cron Error"); }
+    } catch (e) { console.error("Erreur Cron"); }
 }, { scheduled: true, timezone: "Africa/Lubumbashi" });
 
 function nettoyerEntree(texte) {
@@ -47,7 +47,7 @@ async function envoyerWhatsApp(to, texte) {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
             messaging_product: "whatsapp", to, text: { body: texte }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("WA Error"); }
+    } catch (e) { console.error("Erreur WA"); }
 }
 
 async function consulterBibliotheque(question) {
@@ -97,38 +97,42 @@ app.post("/webhook", async (req, res) => {
         const savoirSQL = await consulterBibliotheque(text);
         let historique = JSON.parse(user.historique || "[]");
 
-        const systemPrompt = `Tu es Mwalimu EdTech, Mentor d'Élite.
-        ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}.
+        const systemPrompt = `Tu es Mwalimu EdTech, MENTOR NATIONAL de la RDC.
+        L'ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}.
 
-        CONSIGNE DE SOURCE (CRITIQUE) :
-        - SOURCE : ${savoirSQL || "VIDE"}.
-        - Tu DOIS inclure tous les faits techniques de la SOURCE : "100 km/h", "Mazuku", "OVG", "347m", "384m", etc.
-        - NE RÉSUME PAS. Si tu vois un chiffre ou un terme scientifique, recopie-le.
-       
-        FORMAT DE RÉPONSE OBLIGATOIRE :
+        CONSIGNE DE DONNÉES (STRICTE) :
+        - SOURCE SQL : ${savoirSQL || "VIDE"}.
+        - Si la SOURCE contient des termes comme "100 km/h", "Mazuku", "OVG", "347m", "384m", ou les territoires "Nyiragongo, Rutshuru, Masisi", tu as l'OBLIGATION ABSOLUE de les écrire tels quels dans la section 🟡 [SAVOIR].
+        - NE RÉSUME PAS les données techniques. Transpose-les avec précision.
+
+        STRUCTURE DE RÉPONSE OBLIGATOIRE :
         🔵 [VÉCU] : ...
-        🟡 [SAVOIR] : (Ici, tu recopies les données de la SOURCE sans les diluer)
-        🔴 [INSPIRATION] : (Lien avec le futur métier de ${user.reve})
-        ❓ [CONSOLIDATION] : (Question de test)
-        👉 [OUVERTURE] : (Ta parole charnière pour inviter à une autre question)
+        🟡 [SAVOIR] : ...
+        🔴 [INSPIRATION] : ...
+        ❓ [CONSOLIDATION] : ...
+        👉 [OUVERTURE] : ...
 
-        RÈGLE : Pas de "Bonjour Dora", pas d'émojis IA. Finir par la section 👉 [OUVERTURE].`;
+        INSTRUCTION FINALE : Pas de bavardage d'introduction. Ne dis pas "Bonjour". Finis obligatoirement par le label 👉 [OUVERTURE].`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...historique.slice(-4), { role: "user", content: text }],
-            temperature: 0.1 // Précision maximale
+            temperature: 0, // Zéro créativité
         });
 
         const reponseIA = completion.choices[0].message.content;
         historique.push({ role: "user", content: text }, { role: "assistant", content: reponseIA });
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique.slice(-10)), from]);
 
-        const messageFinal = `${HEADER_MWALIMU}\n________________________________\n\n${reponseIA}\n\n\n${CITATIONS[Math.floor(Math.random() * CITATIONS.length)]}`;
-        await envoyerWhatsApp(from, messageFinal);
+        const finalMsg = `${HEADER_MWALIMU}\n________________________________\n\n${reponseIA}\n\n\n${CITATIONS[Math.floor(Math.random() * CITATIONS.length)]}`;
+        await envoyerWhatsApp(from, finalMsg);
 
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Erreur Webhook"); }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu EdTech opérationnel.`));
+app.get("/webhook", (req, res) => {
+    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
+    else res.sendStatus(403);
+});
+
+app.listen(process.env.PORT || 10000);
