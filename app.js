@@ -19,26 +19,32 @@ const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éd
 const CITATIONS = [
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
     "***« L'excellence n'est pas une action, c'est une habitude. » - Aristote***",
-    "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***",
-    "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***"
+    "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
+    "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***"
 ];
 
 const SALUTATIONS = ["Mbote", "Jambo", "Moyo", "Ebwe"];
 const obtenirSalutation = () => SALUTATIONS[Math.floor(Math.random() * SALUTATIONS.length)];
 const obtenirCitation = () => CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
 
+// --- RECHERCHE SQL AMÉLIORÉE ---
 async function consulterBibliotheque(question) {
     if (!question) return null;
-    const clean = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const mots = clean.split(/\s+/).filter(m => m.length > 3 && !["province", "quels", "donne"].includes(m));
-    const recherche = mots.length > 0 ? `%${mots[mots.length - 1]}%` : `%${clean}%`;
     try {
+        const clean = question.toLowerCase().trim();
+        const mots = clean.split(/\s+/).filter(m => m.length > 4);
+        const motCle = mots.length > 0 ? `%${mots[mots.length - 1]}%` : `%${clean}%`;
+
+        // Note: Si unaccent pose problème, utilise ILIKE seul
         const res = await pool.query(
-            "SELECT description_tuteur FROM entites_administratives WHERE unaccent(lower(nom_entite)) LIKE unaccent(lower($1)) LIMIT 1",
-            [recherche]
+            "SELECT description_tuteur FROM entites_administratives WHERE nom_entite ILIKE $1 OR description_tuteur ILIKE $1 LIMIT 1",
+            [motCle]
         );
         return res.rows[0]?.description_tuteur || null;
-    } catch (e) { return null; }
+    } catch (e) {
+        console.error("Erreur SQL:", e.message);
+        return null;
+    }
 }
 
 async function envoyerWhatsApp(to, texte) {
@@ -46,7 +52,7 @@ async function envoyerWhatsApp(to, texte) {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
             messaging_product: "whatsapp", to, text: { body: texte }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur WA"); }
+    } catch (e) { console.error("Erreur d'envoi WhatsApp"); }
 }
 
 app.post("/webhook", async (req, res) => {
@@ -61,57 +67,68 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
+        // 1. GESTION DE L'INSCRIPTION
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, historique) VALUES ($1, '', '[]')", [from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
         }
-
         if (!user.nom) {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! Je suis ton mentor personnel.`);
+            return await envoyerWhatsApp(from, `Merci **${text}** ! C'est enregistré. Pose-moi ta première question sur tes cours ou sur la RDC.`);
         }
+
+        // 2. PRÉPARATION DE L'HISTORIQUE (MEMOIRE)
+        let historique = [];
+        try {
+            historique = JSON.parse(user.historique || "[]");
+        } catch (e) { historique = []; }
 
         const savoirSQL = await consulterBibliotheque(text);
-        let historique = JSON.parse(user.historique || "[]");
+       
+        // 3. SYSTEM PROMPT STRICT (Correction Identité)
+        const systemPrompt = `Tu es Mwalimu EdTech, le Mentor National de la RDC.
+        TON IDENTITÉ : Tu es l'enseignant. Ne te fais jamais passer pour l'élève.
+        L'ÉLÈVE : Il s'appelle ${user.nom}. Adresse-toi à lui en tant que son mentor.
+       
+        CONTEXTE GÉOGRAPHIQUE (Utilise ceci si pertinent) : ${savoirSQL || "Utilise tes propres connaissances précises sur la RDC"}.
+
+        STRUCTURE DE RÉPONSE :
+        🔵 [VÉCU] : Une courte mise en contexte ou anecdote.
+        🟡 [SAVOIR] : L'explication claire et pédagogique.
+        🔴 [INSPIRATION] : Un encouragement lié au futur de la RDC.
+        ❓ [CONSOLIDATION] : Une question pour faire réfléchir l'élève.`;
+
+        // 4. APPEL IA AVEC HISTORIQUE
+        const messagesIA = [
+            { role: "system", content: systemPrompt },
+            ...historique.slice(-6), // On prend les 6 derniers messages pour la continuité
+            { role: "user", content: text }
+        ];
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: messagesIA,
+            temperature: 0.3,
+        });
+
+        const reponseIA = completion.choices[0].message.content;
+
+        // 5. SAUVEGARDE DE LA CONVERSATION
         historique.push({ role: "user", content: text });
-        if (historique.length > 10) historique.shift();
+        historique.push({ role: "assistant", content: reponseIA });
+        const historiqueMaj = JSON.stringify(historique.slice(-10)); // Garde les 10 derniers messages
+        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [historiqueMaj, from]);
 
-        const systemPrompt = `Tu es Mwalimu EdTech, précepteur en RDC. Ton élève s'appelle ${user.nom}.
+        // 6. ENVOI DU MESSAGE FINAL
+        const salutation = `${obtenirSalutation()} **${user.nom}** !`;
+        const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${salutation}\n\n${reponseIA}\n\n${obtenirCitation()}`;
        
-        IDENTITÉ : Tu es le mentor. ${user.nom} est l'élève. Ne dis JAMAIS "Mon prénom est".
-        INTERACTION : Réponds toujours en tenant compte de ce qui a été dit précédemment dans l'historique. Ne change pas de sujet sans transition.
-        MÉTHODE : Pédagogie active, résolution d'exercices similaires.
-       
-        SOURCE GÉOGRAPHIQUE : ${savoirSQL || "NON_TROUVE"}.
+        await envoyerWhatsApp(from, messageFinal);
 
-        STRUCTURE :
-        1. NE SALUE PAS.
-        2. 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION], ❓ [CONSOLIDATION].
-        3. FIN : "Je reste disponible pour toute question éventuelle !"`;
-
-        try {
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: [{ role: "system", content: systemPrompt }, ...historique],
-                temperature: 0.1,
-            });
-
-            let content = completion.choices[0].message.content;
-           
-            // Nettoyage de sécurité pour l'identité
-            content = content.replace(/Mon prénom est|je suis dora|moyo|mbote|jambo|ebwe/gi, "").trim();
-           
-            historique.push({ role: "assistant", content: content });
-            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique), from]);
-
-            const salutation = `${obtenirSalutation()} **${user.nom}** ! 😊`;
-            const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${salutation}\n\n${content}\n\n${obtenirCitation()}`;
-            await envoyerWhatsApp(from, messageFinal);
-
-        } catch (err) {
-            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, petite panne technique.\n\n${obtenirCitation()}`);
-        }
-    } catch (e) { console.error("Erreur critique"); }
+    } catch (e) {
+        console.error("Erreur générale:", e);
+        await envoyerWhatsApp(from, "Désolé, j'ai une petite fatigue technique. Repose ta question dans un instant !");
+    }
 });
 
 app.get("/webhook", (req, res) => {
@@ -119,4 +136,4 @@ app.get("/webhook", (req, res) => {
     else res.sendStatus(403);
 });
 
-app.listen(process.env.PORT || 10000);
+app.listen(process.env.PORT || 10000, () => console.log("Mwalimu est en ligne !"));
