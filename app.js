@@ -21,7 +21,7 @@ const CITATIONS = [
     "***« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitude. »***",
+    "***« L'excellence n'est pas une action, c'est une habitute. »***",
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***"
 ];
 
@@ -50,30 +50,15 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("WA Error"); }
 }
 
-// --- RECHERCHE SQL "FLOUE" (Gère les fautes d'orthographe) ---
 async function consulterBibliotheque(question) {
     if (!question) return null;
     try {
-        // On nettoie la question et on prend des morceaux de mots (ex: "nyragongo" -> "nyrag")
         const mots = question.toLowerCase().replace(/[?.,!]/g, "").split(/\s+/).filter(m => m.length > 3);
         if (mots.length === 0) return null;
-
-        // On cherche si les 4 premières lettres d'un mot correspondent (très efficace contre les fautes)
         const patterns = mots.map(m => `%${m.substring(0, 5)}%`);
-
-        const query = `
-            SELECT contenu, sujet FROM bibliotheque_mwalimu
-            WHERE unaccent(sujet) ILIKE ANY($1)
-            OR unaccent(contenu) ILIKE ANY($1)
-            LIMIT 1`;
-
+        const query = `SELECT contenu FROM bibliotheque_mwalimu WHERE unaccent(sujet) ILIKE ANY($1) OR unaccent(contenu) ILIKE ANY($1) LIMIT 1`;
         const res = await pool.query(query, [patterns]);
-       
-        if (res.rows.length > 0) {
-            console.log("✅ SOURCE SQL TROUVÉE :", res.rows[0].sujet);
-            return res.rows[0].contenu;
-        }
-        return null;
+        return res.rows.length > 0 ? res.rows[0].contenu : null;
     } catch (e) { return null; }
 }
 
@@ -112,22 +97,22 @@ app.post("/webhook", async (req, res) => {
         const savoirSQL = await consulterBibliotheque(text);
         let historique = JSON.parse(user.historique || "[]");
 
-        const systemPrompt = `Tu es Mwalimu EdTech, Mentor d'Élite en RDC.
+        const systemPrompt = `Tu es Mwalimu EdTech, Mentor d'Élite.
         ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}.
 
-        CONSIGNE CRITIQUE :
-        1. SOURCE : ${savoirSQL || "VIDE"}.
-        2. Si la SOURCE contient des faits techniques (100 km/h, Mazuku, OVG, Nyiragongo, Rutshuru, Masisi), tu as l'OBLIGATION de les citer. Ne les résume pas.
-        3. Si la SOURCE est "VIDE", dis : "Je n'ai pas la fiche officielle dans ma bibliothèque, mais voici ce que je sais..."
+        CONSIGNE DE SOURCE (CRITIQUE) :
+        - SOURCE : ${savoirSQL || "VIDE"}.
+        - Tu DOIS inclure tous les faits techniques de la SOURCE : "100 km/h", "Mazuku", "OVG", "347m", "384m", etc.
+        - NE RÉSUME PAS. Si tu vois un chiffre ou un terme scientifique, recopie-le.
        
-        FORMAT DE RÉPONSE :
+        FORMAT DE RÉPONSE OBLIGATOIRE :
         🔵 [VÉCU] : ...
-        🟡 [SAVOIR] : ...
-        🔴 [INSPIRATION] : ...
-        ❓ [CONSOLIDATION] : ...
-        👉 [PAROLE CHARNIÈRE] : (Une phrase chaleureuse pour inviter à une autre question)
+        🟡 [SAVOIR] : (Ici, tu recopies les données de la SOURCE sans les diluer)
+        🔴 [INSPIRATION] : (Lien avec le futur métier de ${user.reve})
+        ❓ [CONSOLIDATION] : (Question de test)
+        👉 [OUVERTURE] : (Ta parole charnière pour inviter à une autre question)
 
-        RÈGLES : Pas de "Dora", pas de "Mbote" au début. Finir par la Parole Charnière.`;
+        RÈGLE : Pas de "Bonjour Dora", pas d'émojis IA. Finir par la section 👉 [OUVERTURE].`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -146,4 +131,4 @@ app.post("/webhook", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu opérationnel.`));
+app.listen(PORT, () => console.log(`Mwalimu EdTech opérationnel.`));
