@@ -28,7 +28,7 @@ const obtenirCitation = () => CITATIONS[Math.floor(Math.random() * CITATIONS.len
 async function consulterBibliotheque(question) {
     if (!question) return null;
     const clean = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const mots = clean.split(/\s+/).filter(m => m.length > 3 && !["province", "parle", "donne"].includes(m));
+    const mots = clean.split(/\s+/).filter(m => m.length > 3 && !["province", "parle", "quels", "donne"].includes(m));
     const recherche = mots.length > 0 ? `%${mots[mots.length - 1]}%` : `%${clean}%`;
 
     try {
@@ -67,38 +67,49 @@ app.post("/webhook", async (req, res) => {
 
         if (!user.nom) {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province de la RDC souhaites-tu étudier la géographie ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province ou relief de la RDC souhaites-tu étudier la géographie aujourd'hui ?`);
         }
 
         const savoirSQL = await consulterBibliotheque(text);
+        let historique = JSON.parse(user.historique || "[]");
+        historique.push({ role: "user", content: text });
+        if (historique.length > 10) historique.shift();
+
+        const systemPrompt = `Tu es Mwalimu EdTech, mentor en RDC pour l'élève ${user.nom}.
+        INTERDICTION : Ne parle jamais de "SQL", "Base de données", "Code" ou "Indisponible".
        
-        const systemPrompt = `Tu es Mwalimu EdTech. Élève : ${user.nom}.
-        DONNÉES SQL (VÉRITÉ À RECOPIER) : ${savoirSQL || "Indisponible"}.
+        SAVOIR REEL : ${savoirSQL || "NON_TROUVE"}.
 
         CONSIGNES STRICTES :
-        1. DEBUT : Salue uniquement par "Mbote ${user.nom} ! 😊".
-        2. STRUCTURE : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION], ❓ [CONSOLIDATION].
-        3. RÈGLE D'OR : Dans 🟡 [SAVOIR], recopie MOT POUR MOT le contenu SQL. Si SQL est "Indisponible", demande la province.
-        4. FIN : Ajoute "Je reste disponible pour toute question éventuelle !"
-        5. INTERDICTION : Ne répète jamais le header ou les citations, le code s'en charge.
-        6. FORMAT : Double saut de ligne entre les sections.`;
+        1. DEBUT : Salue par "Mbote ${user.nom} ! 😊"
+        2. 🔵 [VÉCU] : Une phrase d'ancrage sur la géographie de la RDC ou la rigueur du métier d'avocat.
+        3. 🟡 [SAVOIR] : Si SAVOIR REEL n'est pas "NON_TROUVE", RECOPIE-LE MOT POUR MOT. Sinon, demande poliment de préciser la province ou le relief de la RDC.
+        4. 🔴 [INSPIRATION] : Explique pourquoi cette connaissance aide une future AVOCATE (litiges fonciers, parcs, frontières).
+        5. ❓ [CONSOLIDATION] : Une question de réflexion.
+        6. FIN : "Je reste disponible pour toute question éventuelle !"
+       
+        NE GENERES NI HEADER NI CITATION. Double saut de ligne entre sections.`;
 
         try {
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
-                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
+                messages: [{ role: "system", content: systemPrompt }, ...historique],
                 temperature: 0.1,
             });
 
             const content = completion.choices[0].message.content;
+            historique.push({ role: "assistant", content: content });
+            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique), from]);
+
             const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${content}\n\n${obtenirCitation()}`;
-           
             await envoyerWhatsApp(from, messageFinal);
+
         } catch (err) {
-            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, je recharge mes batteries. Réessaye dans un instant.\n\n${obtenirCitation()}`);
+            const msgUrgence = `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, je recharge mes batteries. Réessaye dans un instant.\n\nJe reste disponible !\n\n${obtenirCitation()}`;
+            await envoyerWhatsApp(from, msgUrgence);
         }
 
-    } catch (e) { console.error("Erreur"); }
+    } catch (e) { console.error("Erreur critique"); }
 });
 
 app.get("/webhook", (req, res) => {
