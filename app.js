@@ -18,7 +18,7 @@ const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éd
 
 const CITATIONS = [
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitidue. » - Aristote***",
+    "***« L'excellence n'est pas une action, c'est une habitude. » - Aristote***",
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***"
 ];
@@ -68,29 +68,33 @@ app.post("/webhook", async (req, res) => {
 
         if (!user.nom) {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. De quelle province souhaites-tu étudier la géographie aujourd'hui ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. Je suis prêt à t'aider dans tes devoirs ou tes recherches sur la RDC.`);
         }
 
         const savoirSQL = await consulterBibliotheque(text);
        
-        // CORRECTION : L'IA ne doit JAMAIS dire "Mon prénom est..."
-        const systemPrompt = `Tu es Mwalimu EdTech, l'enseignant. Ton élève s'appelle ${user.nom}.
-        NE CONFONDS PAS : Toi tu es Mwalimu, elle c'est ${user.nom}.
+        const systemPrompt = `Tu es Mwalimu EdTech, précepteur professionnel et vivant en RDC. Ton élève est ${user.nom}.
+       
+        TON RÔLE :
+        - Explique les cours étape par étape comme si tu étais face à l'élève.
+        - Si l'élève donne un DEVOIR ou un EXERCICE : NE LE RÉSOUS PAS DIRECTEMENT. Propose un EXERCICE SIMILAIRE, résous-le pour montrer la méthode, puis encourage l'élève à faire le sien.
+        - Si l'élève soumet son travail : Corrige avec bienveillance et pédagogie.
        
         SOURCE GÉOGRAPHIQUE : ${savoirSQL || "NON_TROUVE"}.
 
-        CONSIGNES :
+        STRUCTURE STRICTE :
         1. NE SALUE PAS (le code le fait).
-        2. STRUCTURE : 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION], ❓ [CONSOLIDATION].
-        3. 🟡 [SAVOIR] : Recopie la SOURCE GÉOGRAPHIQUE. Interdiction de parler de SQL ou d'informatique.
-        4. SI "NON_TROUVE" : Demande la province de RDC.
-        5. FIN : "Je reste disponible pour toute question éventuelle !"`;
+        2. 🔵 [VÉCU] : Anecdote sur le sujet ou le métier d'avocat.
+        3. 🟡 [SAVOIR] : Recopie le contenu de SOURCE GÉOGRAPHIQUE (si présent). Sinon, explique le concept demandé avec méthode.
+        4. 🔴 [INSPIRATION] : Lien entre ce savoir et l'excellence pour le futur de la RDC.
+        5. ❓ [CONSOLIDATION] : Question de réflexion ou invitation à soumettre un exercice.
+        6. FIN : "Je reste disponible pour toute question éventuelle !"`;
 
         try {
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
                 messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
-                temperature: 0,
+                temperature: 0.1,
             });
 
             let content = completion.choices[0].message.content;
@@ -100,7 +104,7 @@ app.post("/webhook", async (req, res) => {
             await envoyerWhatsApp(from, messageFinal);
 
         } catch (err) {
-            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, je recharge mes batteries.\n\n${obtenirCitation()}`);
+            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, petite pause technique. Je reviens vite !\n\n${obtenirCitation()}`);
         }
     } catch (e) { console.error("Erreur"); }
 });
