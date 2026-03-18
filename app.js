@@ -68,45 +68,50 @@ app.post("/webhook", async (req, res) => {
 
         if (!user.nom) {
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [text, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! C'est enregistré. Je suis prêt à t'aider dans tes devoirs ou tes recherches sur la RDC.`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\nMerci **${text}** ! Je suis ton mentor personnel.`);
         }
 
         const savoirSQL = await consulterBibliotheque(text);
+        let historique = JSON.parse(user.historique || "[]");
+        historique.push({ role: "user", content: text });
+        if (historique.length > 10) historique.shift();
+
+        const systemPrompt = `Tu es Mwalimu EdTech, précepteur en RDC. Ton élève s'appelle ${user.nom}.
        
-        const systemPrompt = `Tu es Mwalimu EdTech, précepteur professionnel et vivant en RDC. Ton élève est ${user.nom}.
-       
-        TON RÔLE :
-        - Explique les cours étape par étape comme si tu étais face à l'élève.
-        - Si l'élève donne un DEVOIR ou un EXERCICE : NE LE RÉSOUS PAS DIRECTEMENT. Propose un EXERCICE SIMILAIRE, résous-le pour montrer la méthode, puis encourage l'élève à faire le sien.
-        - Si l'élève soumet son travail : Corrige avec bienveillance et pédagogie.
+        IDENTITÉ : Tu es le mentor. ${user.nom} est l'élève. Ne dis JAMAIS "Mon prénom est".
+        INTERACTION : Réponds toujours en tenant compte de ce qui a été dit précédemment dans l'historique. Ne change pas de sujet sans transition.
+        MÉTHODE : Pédagogie active, résolution d'exercices similaires.
        
         SOURCE GÉOGRAPHIQUE : ${savoirSQL || "NON_TROUVE"}.
 
-        STRUCTURE STRICTE :
-        1. NE SALUE PAS (le code le fait).
-        2. 🔵 [VÉCU] : Anecdote sur le sujet ou le métier d'avocat.
-        3. 🟡 [SAVOIR] : Recopie le contenu de SOURCE GÉOGRAPHIQUE (si présent). Sinon, explique le concept demandé avec méthode.
-        4. 🔴 [INSPIRATION] : Lien entre ce savoir et l'excellence pour le futur de la RDC.
-        5. ❓ [CONSOLIDATION] : Question de réflexion ou invitation à soumettre un exercice.
-        6. FIN : "Je reste disponible pour toute question éventuelle !"`;
+        STRUCTURE :
+        1. NE SALUE PAS.
+        2. 🔵 [VÉCU], 🟡 [SAVOIR], 🔴 [INSPIRATION], ❓ [CONSOLIDATION].
+        3. FIN : "Je reste disponible pour toute question éventuelle !"`;
 
         try {
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o",
-                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
+                messages: [{ role: "system", content: systemPrompt }, ...historique],
                 temperature: 0.1,
             });
 
             let content = completion.choices[0].message.content;
-            const salutation = `${obtenirSalutation()} ${user.nom} ! 😊`;
            
+            // Nettoyage de sécurité pour l'identité
+            content = content.replace(/Mon prénom est|je suis dora|moyo|mbote|jambo|ebwe/gi, "").trim();
+           
+            historique.push({ role: "assistant", content: content });
+            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique), from]);
+
+            const salutation = `${obtenirSalutation()} **${user.nom}** ! 😊`;
             const messageFinal = `${HEADER_MWALIMU}\n\n________________________________\n\n${salutation}\n\n${content}\n\n${obtenirCitation()}`;
             await envoyerWhatsApp(from, messageFinal);
 
         } catch (err) {
-            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, petite pause technique. Je reviens vite !\n\n${obtenirCitation()}`);
+            await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n________________________________\n\n🔵 Désolé ${user.nom}, petite panne technique.\n\n${obtenirCitation()}`);
         }
-    } catch (e) { console.error("Erreur"); }
+    } catch (e) { console.error("Erreur critique"); }
 });
 
 app.get("/webhook", (req, res) => {
