@@ -30,8 +30,9 @@ const CITATIONS = [
     "***« Ne demande pas ce que ton pays peut faire pour toi, mais ce que tu peux faire pour le Congo. »***"
 ];
 
-// --- OUTILS DE NETTOYAGE ---
+// --- OUTILS ---
 function nettoyerEntree(texte) {
+    if (!texte) return "";
     return texte.replace(/mon prénom est|je m'appelle|mon nom est|je suis|en classe de|mon rêve est de devenir|je veux être/gi, "").replace(/[.!]*/g, "").trim();
 }
 
@@ -55,18 +56,23 @@ cron.schedule('0 7 * * *', async () => {
     } catch (e) { console.error("Erreur Cron"); }
 }, { scheduled: true, timezone: "Africa/Lubumbashi" });
 
-// --- RECHERCHE BIBLIOTHÈQUE ---
+// --- RECHERCHE BIBLIOTHÈQUE OPTIMISÉE ---
 async function consulterBibliotheque(question) {
-    if (!question) return null;
+    if (!question || question.length < 3) return null;
     try {
         const clean = question.toLowerCase().trim();
         const mots = clean.split(/\s+/).filter(m => m.length > 4);
         const motCle = mots.length > 0 ? `%${mots[mots.length - 1]}%` : `%${clean}%`;
+
+        // Recherche dans le SUJET ou le CONTENU de la nouvelle table
         const res = await pool.query(
-            "SELECT description_tuteur FROM entites_administratives WHERE nom_entite ILIKE $1 OR description_tuteur ILIKE $1 LIMIT 1",
+            `SELECT contenu FROM bibliotheque_mwalimu
+             WHERE unaccent(sujet) ILIKE unaccent($1)
+             OR unaccent(contenu) ILIKE unaccent($1)
+             LIMIT 1`,
             [motCle]
         );
-        return res.rows[0]?.description_tuteur || null;
+        return res.rows[0]?.contenu || null;
     } catch (e) { return null; }
 }
 
@@ -83,7 +89,7 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // 1. INSCRIPTION (Onboarding)
+        // 1. SEQUENCE D'INSCRIPTION (Onboarding complet)
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
@@ -104,25 +110,25 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔴 Magnifique ! Je t'aiderai à devenir **${reve}**.\n\nPose-moi ta question sur tes cours ou sur la RDC.`);
         }
 
-        // 2. PRÉPARATION DES DONNÉES
+        // 2. PRÉPARATION DES DONNÉES ET MÉMOIRE
         const savoirSQL = await consulterBibliotheque(text);
         const citAleatoire = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
         let historique = JSON.parse(user.historique || "[]");
 
-        // 3. SYSTEM PROMPT (Mentor DRC)
+        // 3. SYSTEM PROMPT (Mentor DRC avec Charnière d'Ouverture)
         const systemPrompt = `Tu es Mwalimu EdTech, mentor d'élite en RDC.
         L'ÉLÈVE : Prénom: ${user.nom} | Classe: ${user.classe} | Rêve: ${user.reve}.
        
         TON RÔLE : Enseignant bienveillant, fier de sa nation. Utilise le "tu".
-        SOURCE SQL : ${savoirSQL || "Données non trouvées. Utilise tes connaissances générales sur la RDC."}.
+        SOURCE OFFICIELLE : ${savoirSQL || "Information non répertoriée dans la bibliothèque. Utilise tes connaissances générales sur la RDC."}.
 
-        STRUCTURE DE RÉPONSE :
-        🔵 [VÉCU] : Contexte réel ou anecdote.
-        🟡 [SAVOIR] : Explication pédagogique (utilise les données SQL si présentes).
+        STRUCTURE DE RÉPONSE OBLIGATOIRE :
+        🔵 [VÉCU] : Anecdote courte ou lien avec la vie réelle en RDC.
+        🟡 [SAVOIR] : Enseignement pédagogique précis (utilise les données SOURCE si présentes).
         🔴 [INSPIRATION] : Motivation pour son rêve de devenir ${user.reve}.
-        ❓ [CONSOLIDATION] : Une question de test.
+        ❓ [CONSOLIDATION] : Une question pour tester sa compréhension.
        
-        👉 TRÈS IMPORTANT : Après la question de consolidation, ajoute une "Parole Charnière" chaleureuse pour inviter l'élève à continuer (ex: "Je reste à ton écoute si tu as une autre préoccupation...", "Y a-t-il un autre sujet que tu aimerais explorer avec moi ?", etc.).`;
+        👉 PAROLE CHARNIÈRE : Après la question de consolidation, ajoute une phrase chaleureuse montrant que tu restes disponible pour toute autre question ou curiosité.`;
 
         // 4. APPEL IA
         const completion = await openai.chat.completions.create({
@@ -133,15 +139,15 @@ app.post("/webhook", async (req, res) => {
 
         const reponseIA = completion.choices[0].message.content;
 
-        // 5. MISE À JOUR MÉMOIRE
+        // 5. MISE À JOUR DE L'HISTORIQUE
         historique.push({ role: "user", content: text }, { role: "assistant", content: reponseIA });
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique.slice(-10)), from]);
 
-        // 6. ENVOI FINAL
+        // 6. ENVOI DU MESSAGE FINAL (Règle d'Or)
         const messageFinal = `${HEADER_MWALIMU}\n________________________________\n\n${reponseIA}\n\n\n${citAleatoire}`;
         await envoyerWhatsApp(from, messageFinal);
 
-    } catch (e) { console.error("Erreur Webhook :", e.message); }
+    } catch (e) { console.error("Erreur :", e.message); }
 });
 
 app.get("/webhook", (req, res) => {
@@ -149,4 +155,5 @@ app.get("/webhook", (req, res) => {
     else res.sendStatus(403);
 });
 
-app.listen(process.env.PORT || 10000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Mwalimu EdTech opérationnel.`));
