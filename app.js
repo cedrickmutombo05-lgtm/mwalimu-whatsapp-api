@@ -9,12 +9,14 @@ const cron = require("node-cron");
 const app = express();
 app.use(express.json());
 
+// --- CONFIGURATION ---
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
+// --- RÈGLE D'OR : IDENTITÉ VISUELLE & CITATIONS ---
 const HEADER_MWALIMU = "🔴🟡🔵 **Je suis Mwalimu EdTech, ton assistant éducatif et ton mentor pour un DRC brillant** 🇨🇩";
 
 const CITATIONS = [
@@ -22,9 +24,23 @@ const CITATIONS = [
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
     "***« L'excellence n'est pas une action, c'est une habitude. »***",
-    "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***"
+    "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***",
+    "***« Ne demande pas ce que ton pays peut faire pour toi, mais ce que tu peux faire pour le Congo. »***"
 ];
 
+// --- RAPPEL AUTOMATIQUE DU MATIN (07:00) ---
+cron.schedule('0 7 * * *', async () => {
+    try {
+        const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
+        for (let eleve of eleves) {
+            const citation = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
+            const message = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir et celui du Grand Congo.\n\n${citation}\n\nExcellente journée d'études !`;
+            await envoyerWhatsApp(eleve.phone, message);
+        }
+    } catch (e) { console.error("Erreur Cron :", e.message); }
+}, { scheduled: true, timezone: "Africa/Lubumbashi" });
+
+// --- OUTILS DE NETTOYAGE ---
 function nettoyerEntree(texte) {
     if (!texte) return "";
     return texte
@@ -42,6 +58,7 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur WA"); }
 }
 
+// --- RECHERCHE BIBLIOTHÈQUE ---
 async function consulterBibliotheque(question) {
     if (!question || question.length < 3) return null;
     try {
@@ -60,6 +77,7 @@ async function consulterBibliotheque(question) {
     } catch (e) { return null; }
 }
 
+// --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -72,9 +90,10 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
+        // 1. INSCRIPTION
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech.\n\n🟡 Quel est ton **prénom** ?`);
         }
         if (!user.nom) {
             const nom = nettoyerEntree(text);
@@ -89,47 +108,46 @@ app.post("/webhook", async (req, res) => {
         if (!user.reve) {
             const reve = nettoyerEntree(text);
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reve, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n🔴 Magnifique ! Je t'aiderai à devenir **${reve}**.\n\nPose-moi ta question sur la RDC.`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔴 Magnifique ! Je t'aiderai à devenir **${reve}**.\n\nPose-moi ta question sur la RDC.`);
         }
 
+        // 2. PRÉPARATION
         const savoirSQL = await consulterBibliotheque(text);
         const citAleatoire = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
         let historique = JSON.parse(user.historique || "[]");
 
-        const systemPrompt = `Tu es Mwalimu EdTech, MENTOR D'ÉLITE.
-        ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}.
+        // 3. SYSTEM PROMPT (Strict et Directif)
+        const systemPrompt = `Tu es Mwalimu EdTech, Mentor d'Élite.
+        ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : ${user.reve}.
 
-        CONSIGNE DE SOURCE :
-        - SOURCE OFFICIELLE : ${savoirSQL || "NON_TROUVE"}.
-        - Si la SOURCE est présente, tu DOIS citer les chiffres exacts (ex: 100 km/h, Mazuku, OVG, 384m, etc.).
-        - Si la SOURCE cite des territoires précis (ex: Nyiragongo, Rutshuru, Masisi), ne cite QUE ceux-là.
-
-        CONSIGNE DE STYLE :
-        - Ne fais aucun bavardage avant ou après les sections.
-        - Ton message doit COMMENCER par 🔵 [VÉCU] et FINIR par ❓ [CONSOLIDATION].
-        - Ne dis pas "Continue à explorer, Dora" ou "🌟". Sois un mentor sérieux.
-
-        STRUCTURE OBLIGATOIRE :
-        🔵 [VÉCU] : ...
-        🟡 [SAVOIR] : ...
-        🔴 [INSPIRATION] : ...
-        ❓ [CONSOLIDATION] : ...
-       
-        PAROLE CHARNIÈRE : (Une seule phrase à la fin pour ouvrir le dialogue)`;
+        CONSIGNES CRITIQUES :
+        1. Utilise UNIQUEMENT cette SOURCE OFFICIELLE : ${savoirSQL || "NON_TROUVE"}.
+        2. Si la source dit "100 km/h", "Mazuku", "OVG" ou cite les territoires "Nyiragongo, Rutshuru et Masisi", tu DOIS les inclure. Ne cite pas Goma comme un territoire si la source ne le fait pas.
+        3. Ton message doit suivre CE FORMAT EXACT :
+           🔵 [VÉCU] : ...
+           🟡 [SAVOIR] : ...
+           🔴 [INSPIRATION] : ...
+           ❓ [CONSOLIDATION] : ...
+        4. PAROLE CHARNIÈRE : Après [CONSOLIDATION], ajoute une phrase chaleureuse pour dire que tu es ouvert à d'autres questions.
+        5. INTERDICTION : Ne salue pas au début (le Header le fait déjà). Pas d'émojis superflus comme 🌟. Pas de "Dora" ou "Mbote" dans le corps du texte.`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...historique.slice(-4), { role: "user", content: text }],
-            temperature: 0.2, // TRÈS BAS pour éviter que l'IA n'invente
+            temperature: 0.2,
         });
 
         const reponseIA = completion.choices[0].message.content;
+
+        // Mise à jour historique
         historique.push({ role: "user", content: text }, { role: "assistant", content: reponseIA });
         await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique.slice(-10)), from]);
 
-        await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n${reponseIA}\n\n\n${citAleatoire}`);
+        // 6. ENVOI FINAL
+        const messageFinal = `${HEADER_MWALIMU}\n________________________________\n\n${reponseIA}\n\n\n${citAleatoire}`;
+        await envoyerWhatsApp(from, messageFinal);
 
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Erreur :", e); }
 });
 
 app.get("/webhook", (req, res) => {
