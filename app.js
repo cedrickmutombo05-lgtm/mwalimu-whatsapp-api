@@ -25,13 +25,14 @@ const CITATIONS = [
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***"
 ];
 
-// --- 1. RAPPEL DU MATIN (07:00 Africa/Lubumbashi) ---
+// --- 1. RAPPEL DU MATIN (07:00) ---
 cron.schedule('0 7 * * *', async () => {
     try {
         const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (let eleve of eleves) {
             const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
-            await envoyerWhatsApp(eleve.phone, `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir. Le Grand Congo compte sur toi.\n\n${cit}\n\nExcellente journée d'études !`);
+            const msg = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${eleve.nom}** !\n\nUne nouvelle journée se lève pour bâtir ton excellence.\n\n${cit}\n\nExcellente journée d'études !`;
+            await envoyerWhatsApp(eleve.phone, msg);
         }
     } catch (e) { console.error("Erreur Cron"); }
 }, { scheduled: true, timezone: "Africa/Lubumbashi" });
@@ -50,40 +51,30 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur WA"); }
 }
 
-// --- 3. RECHERCHE SQL "CERVEAU GÉOGRAPHIQUE" ---
+// --- 3. RECHERCHE SQL AMÉLIORÉE (Cherche le mot technique Mazuku ou la Province) ---
 async function consulterBibliotheque(question) {
     if (!question) return null;
     try {
         const clean = question.toLowerCase().trim();
-        // Liste des provinces pour forcer la priorité
-        const provinces = ["haut-katanga", "lualaba", "sud-kivu", "nord-kivu", "maniema", "kongo-central"];
-        let provinceTrouvee = provinces.find(p => clean.includes(p));
+        const mots = clean.split(/\s+/).filter(m => m.length > 4);
+        const patterns = mots.map(m => `%${m.substring(0, 5)}%`);
 
-        let query, params;
-        if (provinceTrouvee) {
-            // Si une province est citée, on ne cherche QUE les fiches de cette province
-            query = `SELECT sujet, contenu FROM bibliotheque_mwalimu
-                     WHERE (unaccent(sujet) ILIKE $1 OR unaccent(contenu) ILIKE $1)
-                     AND (unaccent(sujet) ILIKE '%territoire%' OR unaccent(sujet) ILIKE '%ville%' OR unaccent(sujet) ILIKE '%province%')
-                     LIMIT 3`;
-            params = [`%${provinceTrouvee}%`];
-        } else {
-            // Sinon recherche classique par mots-clés
-            const mots = clean.split(/\s+/).filter(m => m.length > 4);
-            const patterns = mots.map(m => `%${m.substring(0, 5)}%`);
-            query = `SELECT sujet, contenu FROM bibliotheque_mwalimu WHERE unaccent(sujet) ILIKE ANY($1) OR unaccent(contenu) ILIKE ANY($1) LIMIT 2`;
-            params = [patterns];
-        }
+        // On prend les 2 fiches les plus pertinentes
+        const query = `
+            SELECT sujet, contenu FROM bibliotheque_mwalimu
+            WHERE unaccent(sujet) ILIKE ANY($1) OR unaccent(contenu) ILIKE ANY($1)
+            ORDER BY (CASE WHEN unaccent(sujet) ILIKE ANY($1) THEN 10 ELSE 1 END) DESC
+            LIMIT 2`;
 
-        const res = await pool.query(query, params);
+        const res = await pool.query(query, [patterns]);
         if (res.rows.length > 0) {
-            return res.rows.map(r => `[FICHE: ${r.sujet.toUpperCase()}] : ${r.contenu}`).join("\n\n");
+            return res.rows.map(r => `SOURCE [${r.sujet}] : ${r.contenu}`).join("\n\n");
         }
         return null;
     } catch (e) { return null; }
 }
 
-// --- 4. WEBHOOK ---
+// --- 4. WEBHOOK PRINCIPAL ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -96,7 +87,7 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- INSCRIPTION ---
+        // SEQUENCE D'INSCRIPTION
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
             return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor.\n\n🟡 Quel est ton **prénom** ?`);
@@ -117,39 +108,46 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔴 Magnifique ! Je t'aiderai à devenir **${reve}**.\n\nPose-moi ta question sur la RDC.`);
         }
 
+        // RÉPONSE IA
         const savoirSQL = await consulterBibliotheque(text);
         let historique = JSON.parse(user.historique || "[]");
 
-        // --- PROMPT DE RIGUEUR ABSOLUE ---
-        const systemPrompt = `Tu es Mwalimu EdTech, Mentor National.
-        ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : ${user.reve}.
+        const systemPrompt = `Tu es Mwalimu EdTech, Mentor National de la RDC. Ton ton est professionnel, chaleureux et pédagogue.
+        ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : Devenir ${user.reve}.
+       
+        DONNÉES DE LA BIBLIOTHÈQUE :
+        """
+        ${savoirSQL || "Information non répertoriée dans ma bibliothèque officielle."}
+        """
 
-        LOI N°1 (SOURCE) : """${savoirSQL || "AUCUNE_FICHE"}"""
-        LOI N°2 (VÉRITÉ) : Si la source est "AUCUNE_FICHE", dis "Je n'ai pas encore cette fiche officielle". Ne devine pas les territoires.
-        LOI N°3 (RECOPIE) : Tu as l'OBLIGATION de citer TOUS les territoires de la source. Cite "Mazuku", "100 km/h", "OVG", "Shituru" si présents.
-
-        ORDRE DE RÉPONSE INVIOLABLE :
-        1. 🔵 [VÉCU] : (Importance du sujet pour le Congo).
-        2. 🟡 [SAVOIR] : (Recopie exacte des faits de la SOURCE).
-        3. 🔴 [INSPIRATION] : (Lien avec le futur métier de ${user.reve}).
-        4. ❓ [CONSOLIDATION] : (Question de test sur un chiffre cité).
-        5. 👉 [OUVERTURE] : (Parole charnière pour la suite).
-
-        INTERDIT : Pas d'introduction IA. Pas de "Dora" ou "Bonjour". Température: 0.`;
+        INSTRUCTIONS :
+        1. Utilise les données fournies pour répondre. Si "Mazuku" ou "100 km/h" sont là, cite-les.
+        2. Respecte TOUJOURS cet ordre :
+           🔵 [VÉCU] : Contexte humain/congolais.
+           🟡 [SAVOIR] : Les faits précis de la bibliothèque.
+           🔴 [INSPIRATION] : Lien avec le rêve de devenir ${user.reve}.
+           ❓ [CONSOLIDATION] : Question de test.
+           👉 [OUVERTURE] : Phrase charnière.
+        3. Ne confonds pas le fleuve Lualaba avec la province du Lualaba.`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
-            messages: [{ role: "system", content: systemPrompt }, ...historique.slice(-2), { role: "user", content: text }],
-            temperature: 0,
+            messages: [{ role: "system", content: systemPrompt }, ...historique.slice(-4), { role: "user", content: text }],
+            temperature: 0.3,
         });
 
         const reponseIA = completion.choices[0].message.content;
         historique.push({ role: "user", content: text }, { role: "assistant", content: reponseIA });
-        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique.slice(-4)), from]);
+        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique.slice(-10)), from]);
 
         await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n${reponseIA}\n\n\n${CITATIONS[Math.floor(Math.random() * CITATIONS.length)]}`);
 
     } catch (e) { console.error("Erreur"); }
+});
+
+app.get("/webhook", (req, res) => {
+    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
+    else res.sendStatus(403);
 });
 
 const PORT = process.env.PORT || 10000;
