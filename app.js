@@ -116,4 +116,52 @@ app.post("/webhook", async (req, res) => {
         if (!user.reve) {
             const reve = nettoyerEntree(text);
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reve, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔴 Magnifique ! Je t'aiderai à devenir **${reve}**.\n\nP
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔴 Magnifique ! Je t'aiderai à devenir **${reve}**.\n\nPose-moi maintenant ta question sur la RDC ou tes cours.`);
+        }
+
+        // --- TRAITEMENT DE LA LEÇON ---
+        const savoirSQL = await consulterBibliotheque(text);
+        let historique = JSON.parse(user.historique || "[]");
+
+        const systemPrompt = `Tu es Mwalimu EdTech, mentor d'élite congolais. Ton ton est professionnel, pédagogue et fraternel.
+        ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : Devenir ${user.reve}.
+       
+        SOURCE SQL (OBLIGATION DE RECOPIE) : """${savoirSQL || "VIDE"}"""
+
+        CONSIGNES STRICTES :
+        1. RECOPIE INTÉGRALEMENT les termes techniques de la SOURCE (ex: Mazuku, 100 km/h, OVG, Territoire de Nyiragongo).
+        2. NE RÉSUME PAS. Si la source dit "100 km/h", n'écris pas "coulées rapides".
+        3. TEMPÉRATURE : 0 (Précision absolue).
+       
+        STRUCTURE OBLIGATOIRE :
+        🔵 [VÉCU] : Lien avec la vie réelle ou l'importance pour le pays.
+        🟡 [SAVOIR] : Recopie exacte et explication pédagogique des données SOURCE.
+        🔴 [INSPIRATION] : Conseil motivant lié à son rêve de devenir ${user.reve}.
+        ❓ [CONSOLIDATION] : Une question de test pour l'élève.
+        👉 [OUVERTURE] : Parole charnière chaleureuse pour inviter à continuer.`;
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "system", content: systemPrompt }, ...historique.slice(-4), { role: "user", content: text }],
+            temperature: 0,
+        });
+
+        const reponseIA = completion.choices[0].message.content;
+
+        // Sauvegarde de l'échange
+        historique.push({ role: "user", content: text }, { role: "assistant", content: reponseIA });
+        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique.slice(-10)), from]);
+
+        const messageFinal = `${HEADER_MWALIMU}\n________________________________\n\n${reponseIA}\n\n\n${CITATIONS[Math.floor(Math.random() * CITATIONS.length)]}`;
+        await envoyerWhatsApp(from, messageFinal);
+
+    } catch (e) { console.error("Erreur Webhook"); }
+});
+
+app.get("/webhook", (req, res) => {
+    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
+    else res.sendStatus(403);
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Mwalimu EdTech en ligne sur le port ${PORT}`));
