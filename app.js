@@ -25,13 +25,13 @@ const CITATIONS = [
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***"
 ];
 
-// --- 1. RAPPEL DU MATIN (07:00 Africa/Lubumbashi) ---
+// --- 1. RAPPEL DU MATIN (RESTAURÉ) ---
 cron.schedule('0 7 * * *', async () => {
     try {
         const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
         for (let eleve of eleves) {
             const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
-            const message = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${eleve.nom}** !\n\nLe soleil se lève sur notre grand pays. Prépare ton esprit, le Congo compte sur toi.\n\n${cit}\n\nExcellente journée d'études !`;
+            const message = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${eleve.nom}** !\n\nUne nouvelle journée se lève pour bâtir ton excellence. Prépare ton esprit, le Congo compte sur toi.\n\n${cit}\n\nExcellente journée d'études !`;
             await envoyerWhatsApp(eleve.phone, message);
         }
     } catch (e) { console.error("Erreur Cron"); }
@@ -51,7 +51,7 @@ async function envoyerWhatsApp(to, texte) {
     } catch (e) { console.error("Erreur WhatsApp"); }
 }
 
-// --- 3. RECHERCHE SQL AMÉLIORÉE (On prend 3 fiches pour ne rien rater) ---
+// --- 3. RECHERCHE SQL MULTI-FICHES (Pour ne plus rater Mazuku) ---
 async function consulterBibliotheque(question) {
     if (!question || question.length < 3) return null;
     try {
@@ -59,16 +59,19 @@ async function consulterBibliotheque(question) {
         const mots = clean.split(/\s+/).filter(m => m.length > 4);
         const patterns = mots.map(m => `%${m.substring(0, 5)}%`);
 
-        // Priorité au sujet, mais on prend les 3 meilleurs résultats
+        // On prend les 3 meilleures fiches pour avoir les détails techniques ET la province
         const query = `
-            SELECT contenu FROM bibliotheque_mwalimu
+            SELECT sujet, contenu FROM bibliotheque_mwalimu
             WHERE unaccent(sujet) ILIKE ANY($1) OR unaccent(contenu) ILIKE ANY($1)
-            ORDER BY (CASE WHEN unaccent(sujet) ILIKE ANY($1) THEN 1 ELSE 0 END) DESC
+            ORDER BY (CASE WHEN unaccent(sujet) ILIKE ANY($1) THEN 10 ELSE 1 END) DESC
             LIMIT 3`;
 
         const res = await pool.query(query, [patterns]);
-        // On fusionne les fiches trouvées pour donner tout le savoir à l'IA
-        return res.rows.length > 0 ? res.rows.map(r => r.contenu).join("\n---\n") : null;
+        if (res.rows.length > 0) {
+            // On envoie le SUJET + le CONTENU pour que l'IA sache dans quelle province elle est
+            return res.rows.map(r => `FICHE [${r.sujet}] : ${r.contenu}`).join("\n\n");
+        }
+        return null;
     } catch (e) { return null; }
 }
 
@@ -85,9 +88,10 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
+        // --- INSCRIPTION ---
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor.\n\n🟡 Quel est ton **prénom** ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.\n\n🟡 Quel est ton **prénom** ?`);
         }
         if (!user.nom) {
             const nom = nettoyerEntree(text);
@@ -108,30 +112,27 @@ app.post("/webhook", async (req, res) => {
         const savoirSQL = await consulterBibliotheque(text);
         let historique = JSON.parse(user.historique || "[]");
 
-        // --- PROMPT DE RIGUEUR MAXIMALE ---
-        const systemPrompt = `Tu es Mwalimu EdTech, Mentor National. Ton ton est professionnel, chaleureux et pédagogue.
-        ÉLÈVE : ${user.nom} | RÊVE : Devenir ${user.reve}.
+        // --- PROMPT DE RIGUEUR GÉOGRAPHIQUE ---
+        const systemPrompt = `Tu es Mwalimu EdTech, un Maître d'école congolais, rigoureux, chaleureux et pédagogue.
+        L'ÉLÈVE : ${user.nom} | RÊVE : Devenir ${user.reve}.
        
-        DONNÉES DE LA SOURCE SQL :
+        SOURCE SQL (TA SEULE VÉRITÉ) :
         """
         ${savoirSQL || "Information non répertoriée."}
         """
 
-        CONSIGNES INVIOLABLES :
-        1. Tu DOIS citer le phénomène "MAZUKU".
-        2. Tu DOIS citer la vitesse de "100 km/h".
-        3. Tu DOIS citer l'Observatoire Volcanologique de Goma (OVG).
-        4. Tu DOIS citer nommément les territoires de NYIRAGONGO, RUTSHURU et MASISI comme étant les territoires nourris et fertilisés par les cendres.
-        5. NE RÉSUME PAS ces points techniques. Écris-les clairement.
+        CONSIGNES DE FER :
+        1. ORDRE STRICT : Commence par 🔵 [VÉCU], puis 🟡 [SAVOIR], puis 🔴 [INSPIRATION], puis ❓ [CONSOLIDATION].
+        2. ANTI-HALLUCINATION : Ne confonds pas le nom du FLEUVE Lualaba avec la PROVINCE du Lualaba. Vérifie bien le titre de la fiche (entre crochets).
+        3. DÉTAILS OBLIGATOIRES : Tu DOIS citer "MAZUKU", "100 km/h", "OVG", "347m", "384m" et les territoires exacts s'ils sont dans la source.
+        4. TON : Professionnel, fraternel, pas de blabla d'IA. Finis par 👉 [OUVERTURE].
 
-        STRUCTURE OBLIGATOIRE :
-        🔵 [VÉCU] : Lien avec la vie réelle en RDC.
-        🟡 [SAVOIR] : Recopie exacte et explication des données SOURCE.
-        🔴 [INSPIRATION] : Motivation pour devenir ${user.reve}.
-        ❓ [CONSOLIDATION] : Question de test sur les chiffres ou noms cités.
-        👉 [OUVERTURE] : Phrase de transition chaleureuse.
-
-        INTERDIT : Pas d'introduction IA. Pas de "Dora" dans chaque phrase. Pas d'émojis IA à la fin.`;
+        STRUCTURE DE RÉPONSE :
+        🔵 [VÉCU] : ...
+        🟡 [SAVOIR] : ...
+        🔴 [INSPIRATION] : ...
+        ❓ [CONSOLIDATION] : ...
+        👉 [OUVERTURE] : ...`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -149,7 +150,10 @@ app.post("/webhook", async (req, res) => {
     } catch (e) { console.error("Erreur Webhook"); }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log(`Mwalimu EdTech opérationnel sur le port ${PORT}`);
+app.get("/webhook", (req, res) => {
+    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
+    else res.sendStatus(403);
 });
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Mwalimu EdTech opérationnel.`));
