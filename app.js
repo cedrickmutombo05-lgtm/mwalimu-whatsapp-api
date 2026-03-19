@@ -15,18 +15,13 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- 1. INITIALISATION & OPTIMISATION DB ---
+// --- INITIALISATION ---
 const initDB = async () => {
     try {
         await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
-        // Table anti-doublon
-        await pool.query(`CREATE TABLE IF NOT EXISTS processed_messages (
-            msg_id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );`);
-        // Indexation pour la vitesse de recherche à grande échelle
-        await pool.query("CREATE INDEX IF NOT EXISTS idx_biblio_sujet ON bibliotheque_mwalimu USING gin(to_tsvector('french', sujet));");
-        console.log("🚀 Bases de données optimisées.");
-    } catch (e) { console.error("Init Error:", e.message); }
+        await pool.query(`CREATE TABLE IF NOT EXISTS processed_messages (msg_id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
+        console.log("✅ Système de données prêt.");
+    } catch (e) { console.error("❌ Erreur Init DB:", e.message); }
 };
 initDB();
 
@@ -38,64 +33,58 @@ const CITATIONS = [
     "***« L'excellence n'est pas une action, c'est une habitude. »***"
 ];
 
-// --- 2. TÂCHES AUTOMATISÉES (CRON) ---
-
-// A. RAPPEL DU MATIN (07:00) - Envoi Turbo par rafales
+// --- 1. RAPPEL DU MATIN ---
 cron.schedule('0 7 * * *', async () => {
     try {
-        const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom != ''");
-        const batchSize = 25;
-        for (let i = 0; i < eleves.length; i += batchSize) {
-            const batch = eleves.slice(i, i + batchSize);
-            await Promise.all(batch.map(u => {
-                const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
-                return envoyerWhatsApp(u.phone, `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${u.nom}** !\n\nLe soleil se lève. Prépare ton esprit, le Congo compte sur toi.\n\n${cit}`);
-            }));
-            await new Promise(r => setTimeout(r, 200)); // Protection CPU
+        const { rows } = await pool.query("SELECT phone, nom FROM conversations WHERE nom != ''");
+        for (const u of rows) {
+            const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
+            await envoyerWhatsApp(u.phone, `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${u.nom}** !\n\nLe Congo compte sur toi. Prépare ton esprit.\n\n${cit}`);
+            await new Promise(r => setTimeout(r, 400));
         }
-    } catch (e) { console.error("Cron Morning Error"); }
+    } catch (e) { console.error("Cron Error"); }
 }, { scheduled: true, timezone: "Africa/Lubumbashi" });
 
-// B. NETTOYAGE DE NUIT (03:00) - Pour garder une DB légère
-cron.schedule('0 3 * * *', async () => {
-    await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '1 day'");
-    console.log("🧹 Nettoyage des logs effectué.");
-}, { scheduled: true, timezone: "Africa/Lubumbashi" });
-
-
-// --- 3. LOGIQUE MÉTIER & RECHERCHE ---
-
-const cacheSavoir = new Map(); // Cache simple en mémoire
-
+// --- 2. RECHERCHE SQL (Version Simplifiée et Bavarde) ---
 async function consulterBibliotheque(question) {
     if (!question || question.length < 3) return null;
     const cleanQ = question.toLowerCase().trim();
    
-    if (cacheSavoir.has(cleanQ)) return cacheSavoir.get(cleanQ);
-
     try {
-        const words = cleanQ.split(/\s+/).filter(w => w.length > 2);
-        const search = words.map(w => `%${w}%`);
+        // On prend le mot le plus long de la question (souvent le sujet : "Kindu", "Drapeau", "Maniema")
+        const words = cleanQ.split(/\s+/).filter(w => w.length > 3);
+        const keyword = words.length > 0 ? `%${words[words.length - 1]}%` : `%${cleanQ}%`;
+
+        console.log(`🔎 Mwalimu fouille la DB pour le mot-clé : ${keyword}`);
+
         const query = `
-            SELECT contenu FROM bibliotheque_mwalimu
-            WHERE unaccent(sujet) ILIKE ANY($1) OR unaccent(contenu) ILIKE ANY($1)
-            ORDER BY (unaccent(sujet) ILIKE ANY($1)) DESC LIMIT 3`;
+            SELECT sujet, contenu FROM bibliotheque_mwalimu
+            WHERE unaccent(sujet) ILIKE $1 OR unaccent(contenu) ILIKE $1
+            ORDER BY (unaccent(sujet) ILIKE $1) DESC LIMIT 1`;
        
-        const res = await pool.query(query, [search]);
-        const data = res.rows.length > 0 ? res.rows.map(r => r.contenu).join("\n\n") : null;
-       
-        if (data) cacheSavoir.set(cleanQ, data); // Mise en cache
-        return data;
-    } catch (e) { return null; }
+        const res = await pool.query(query, [keyword]);
+
+        if (res.rows.length > 0) {
+            console.log(`✅ TROUVÉ dans la DB : ${res.rows[0].sujet}`);
+            return `FICHE OFFICIELLE [${res.rows[0].sujet}] : ${res.rows[0].contenu}`;
+        } else {
+            console.log(`❌ RIEN TROUVÉ dans la DB pour : ${keyword}`);
+            return null;
+        }
+    } catch (e) {
+        console.error("❌ Erreur SQL Recherché :", e.message);
+        return null;
+    }
 }
 
+// --- 3. OUTILS ---
 async function envoyerWhatsApp(to, texte) {
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
             { messaging_product: "whatsapp", to, text: { body: texte } },
             { headers: { Authorization: `Bearer ${process.env.TOKEN}` }, timeout: 10000 }
         );
-    } catch (e) { console.error(`Err envoi ${to}`); }
+    } catch (e) { console.error(`Err WA ${to}`); }
 }
 
 function nettoyer(t) {
@@ -103,11 +92,9 @@ function nettoyer(t) {
             .replace(/[.,!?;: ]+/g, " ").trim();
 }
 
-// --- 4. WEBHOOK (Cœur du Réacteur) ---
-
+// --- 4. WEBHOOK ---
 app.post("/webhook", async (req, res) => {
-    res.sendStatus(200); // Libère Meta immédiatement
-
+    res.sendStatus(200);
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg?.text?.body) return;
    
@@ -116,7 +103,6 @@ app.post("/webhook", async (req, res) => {
     const msgId = msg.id;
 
     try {
-        // Idempotence réelle
         const check = await pool.query("INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING", [msgId]);
         if (check.rowCount === 0) return;
 
@@ -144,42 +130,34 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(from, `🔴 Magnifique ! Devenir **${reve}** est une noble ambition. Pose-moi ta question.`);
         }
 
-        // IA avec TIMEOUT OpenAI (Garde-fou crucial)
+        // IA
         const savoirSQL = await consulterBibliotheque(text);
         let historique = JSON.parse(user.historique || "[]");
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 secondes max
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: `Tu es Mwalimu EdTech, mentor congolais. Ton ton est chaleureux, exigeant et pédagogue.
+                S'ADRESSER À : ${user.nom}, future ${user.reve}.
+                SOURCE DE VÉRITÉ : """${savoirSQL || "Savoir général."}"""
+                RÈGLE : Si la SOURCE est présente, utilise ses chiffres et détails précis. Si elle est absente, explique que tu n'as pas encore la fiche officielle.
+                ORDRE : 🔵[VÉCU], 🟡[SAVOIR], 🔴[INSPIRATION], ❓[CONSOLIDATION], 👉[OUVERTURE].` },
+                ...historique.slice(-4),
+                { role: "user", content: text }
+            ],
+            temperature: 0.2
+        });
 
-        try {
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [
-                    { role: "system", content: `Mentor congolais. Ton: chaleureux/pédagogue. SOURCE: ${savoirSQL || "Général"}. Structure: 🔵[VÉCU], 🟡[SAVOIR], 🔴[INSPIRATION], ❓[CONSOLIDATION], 👉[OUVERTURE].` },
-                    ...historique.slice(-4),
-                    { role: "user", content: text }
-                ],
-                temperature: 0.3, max_tokens: 1000
-            }, { signal: controller.signal });
+        const reponse = completion.choices[0].message.content;
+        const nHist = JSON.stringify([...historique, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10));
+        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nHist, from]);
 
-            clearTimeout(timeoutId);
-            const reponse = completion.choices[0].message.content;
-
-            // Update historique
-            const nHist = JSON.stringify([...historique, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10));
-            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nHist, from]);
-
-            const finalMsg = savoirSQL ? `${HEADER_MWALIMU}\n________________________________\n\n${reponse}\n\n\n${CITATIONS[0]}` : `🎓 **Mwalimu** :\n\n${reponse}`;
-            await envoyerWhatsApp(from, finalMsg);
-
-        } catch (iaErr) {
-            if (iaErr.name === 'AbortError') throw new Error("Timeout OpenAI");
-            throw iaErr;
-        }
+        const messageFinal = savoirSQL ? `${HEADER_MWALIMU}\n________________________________\n\n${reponse}\n\n\n${CITATIONS[0]}` : `🎓 **Mwalimu** :\n\n${reponse}`;
+        await envoyerWhatsApp(from, messageFinal);
 
     } catch (e) {
         console.error("Master Error:", e.message);
-        await envoyerWhatsApp(from, "🔵 [VÉCU] : Mon esprit a besoin d'une petite pause. Repose ta question dans une minute !");
+        await envoyerWhatsApp(from, "🔵 [VÉCU] : Mon esprit a besoin d'une pause technique. Repose ta question dans une minute !");
     }
 });
 
@@ -189,4 +167,4 @@ app.get("/webhook", (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Mwalimu Enterprise-Ready sur port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Mwalimu prêt sur port ${PORT}`));
