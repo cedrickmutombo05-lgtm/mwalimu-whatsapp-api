@@ -7,7 +7,7 @@ const { OpenAI } = require("openai");
 const cron = require("node-cron");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pool = new Pool({
@@ -15,126 +15,178 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-const HEADER_MWALIMU = "🔴🟡🔵 **Mwalimu EdTech : Ton Mentor pour l'Excellence** 🇨🇩";
+// --- 1. INITIALISATION & OPTIMISATION DB ---
+const initDB = async () => {
+    try {
+        await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
+        // Table anti-doublon
+        await pool.query(`CREATE TABLE IF NOT EXISTS processed_messages (
+            msg_id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`);
+        // Indexation pour la vitesse de recherche à grande échelle
+        await pool.query("CREATE INDEX IF NOT EXISTS idx_biblio_sujet ON bibliotheque_mwalimu USING gin(to_tsvector('french', sujet));");
+        console.log("🚀 Bases de données optimisées.");
+    } catch (e) { console.error("Init Error:", e.message); }
+};
+initDB();
 
+const HEADER_MWALIMU = "🔴🟡🔵 **Mwalimu EdTech : Ton Mentor pour l'Excellence** 🇨🇩";
 const CITATIONS = [
     "***« L'éducation chrétienne de la jeunesse c'est le meilleur apostolat. »***",
     "***« Le Congo de demain se construit avec ton savoir d'aujourd'hui. »***",
     "***« Sans formation, on n'est rien du tout dans ce monde. » - Patrice Lumumba***",
-    "***« L'excellence n'est pas une action, c'est une habitude. »***",
-    "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***",
-    "***« Ne demande pas ce que ton pays peut faire pour toi, mais ce que tu peux faire pour le Congo. »***"
+    "***« L'excellence n'est pas une action, c'est une habitude. »***"
 ];
 
-// --- 1. LE RAPPEL DU MATIN (La Voix du Maître à l'aube) ---
+// --- 2. TÂCHES AUTOMATISÉES (CRON) ---
+
+// A. RAPPEL DU MATIN (07:00) - Envoi Turbo par rafales
 cron.schedule('0 7 * * *', async () => {
     try {
-        const { rows } = await pool.query("SELECT phone, nom FROM conversations WHERE nom != ''");
-        for (let user of rows) {
-            const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
-            const messageMatin = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${user.nom}** !\n\nLe soleil se lève sur notre grand pays. C'est une nouvelle chance pour toi de grandir en sagesse. Prépare ton esprit, car le Grand Congo compte sur ton génie.\n\n${cit}\n\nExcellente journée d'études !`;
-            await envoyerWhatsApp(user.phone, messageMatin);
+        const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom != ''");
+        const batchSize = 25;
+        for (let i = 0; i < eleves.length; i += batchSize) {
+            const batch = eleves.slice(i, i + batchSize);
+            await Promise.all(batch.map(u => {
+                const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
+                return envoyerWhatsApp(u.phone, `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour mon cher **${u.nom}** !\n\nLe soleil se lève. Prépare ton esprit, le Congo compte sur toi.\n\n${cit}`);
+            }));
+            await new Promise(r => setTimeout(r, 200)); // Protection CPU
         }
-    } catch (e) { console.error("Cron Error"); }
+    } catch (e) { console.error("Cron Morning Error"); }
 }, { scheduled: true, timezone: "Africa/Lubumbashi" });
 
-// --- 2. OUTILS ---
-function nettoyer(t) { return t ? t.replace(/mon prénom est|je m'appelle|mon nom est|je suis en|mon rêve est/gi, "").replace(/[.!]*/g, "").trim() : ""; }
+// B. NETTOYAGE DE NUIT (03:00) - Pour garder une DB légère
+cron.schedule('0 3 * * *', async () => {
+    await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '1 day'");
+    console.log("🧹 Nettoyage des logs effectué.");
+}, { scheduled: true, timezone: "Africa/Lubumbashi" });
 
-async function envoyerWhatsApp(to, texte) {
-    try {
-        await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
-            messaging_product: "whatsapp", to, text: { body: texte }
-        }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur WA"); }
-}
 
-// --- 3. RECHERCHE SQL (Système de Priorité Absolue) ---
+// --- 3. LOGIQUE MÉTIER & RECHERCHE ---
+
+const cacheSavoir = new Map(); // Cache simple en mémoire
+
 async function consulterBibliotheque(question) {
-    if (!question) return null;
+    if (!question || question.length < 3) return null;
+    const cleanQ = question.toLowerCase().trim();
+   
+    if (cacheSavoir.has(cleanQ)) return cacheSavoir.get(cleanQ);
+
     try {
-        const words = question.toLowerCase().trim().split(/\s+/).filter(w => w.length > 4);
-        const search = words.length > 0 ? `%${words[0]}%` : `%${question}%`;
-        const res = await pool.query(
-            "SELECT contenu FROM bibliotheque_mwalimu WHERE unaccent(sujet) ILIKE $1 OR unaccent(contenu) ILIKE $1 ORDER BY (unaccent(sujet) ILIKE $1) DESC LIMIT 1",
-            [search]
-        );
-        return res.rows[0]?.contenu || null;
+        const words = cleanQ.split(/\s+/).filter(w => w.length > 2);
+        const search = words.map(w => `%${w}%`);
+        const query = `
+            SELECT contenu FROM bibliotheque_mwalimu
+            WHERE unaccent(sujet) ILIKE ANY($1) OR unaccent(contenu) ILIKE ANY($1)
+            ORDER BY (unaccent(sujet) ILIKE ANY($1)) DESC LIMIT 3`;
+       
+        const res = await pool.query(query, [search]);
+        const data = res.rows.length > 0 ? res.rows.map(r => r.contenu).join("\n\n") : null;
+       
+        if (data) cacheSavoir.set(cleanQ, data); // Mise en cache
+        return data;
     } catch (e) { return null; }
 }
 
-// --- 4. WEBHOOK (L'Interaction Vibrante) ---
+async function envoyerWhatsApp(to, texte) {
+    try {
+        await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
+            { messaging_product: "whatsapp", to, text: { body: texte } },
+            { headers: { Authorization: `Bearer ${process.env.TOKEN}` }, timeout: 10000 }
+        );
+    } catch (e) { console.error(`Err envoi ${to}`); }
+}
+
+function nettoyer(t) {
+    return t.replace(/mon prénom est|je m'appelle|mon nom est|je suis en|ma classe est|mon rêve est/gi, "")
+            .replace(/[.,!?;: ]+/g, " ").trim();
+}
+
+// --- 4. WEBHOOK (Cœur du Réacteur) ---
+
 app.post("/webhook", async (req, res) => {
-    res.sendStatus(200);
+    res.sendStatus(200); // Libère Meta immédiatement
+
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg?.text?.body) return;
+   
     const from = msg.from;
     const text = msg.text.body;
+    const msgId = msg.id;
 
     try {
+        // Idempotence réelle
+        const check = await pool.query("INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING", [msgId]);
+        if (check.rowCount === 0) return;
+
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- ONBOARDING HUMAIN ---
+        // Inscription
         if (!user) {
             await pool.query("INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]')", [from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.\n\n🟡 Je vais t'accompagner dans tes études pour faire de toi une élite. Dis-moi, quel est ton **prénom** ?`);
+            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n\n🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor. Quel est ton **prénom** ?`);
         }
         if (!user.nom) {
             const nom = nettoyer(text);
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nom, from]);
-            return await envoyerWhatsApp(from, `🤝 Enchanté **${nom}** ! Un futur bâtisseur du pays. En quelle **classe** es-tu ?`);
+            return await envoyerWhatsApp(from, `🤝 Enchanté **${nom}** ! En quelle **classe** es-tu ?`);
         }
         if (!user.classe) {
-            const cl = nettoyer(text);
-            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [cl, from]);
-            return await envoyerWhatsApp(from, `🟡 C'est noté. La classe de **${cl}** demande de la rigueur. Quel est ton plus grand **rêve** professionnel ?`);
+            const classe = nettoyer(text);
+            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [classe, from]);
+            return await envoyerWhatsApp(from, `🟡 Quel est ton plus grand **rêve** professionnel ?`);
         }
         if (!user.reve) {
-            const rv = nettoyer(text);
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [rv, from]);
-            return await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n🔴 Magnifique ! Devenir **${rv}**, c'est servir la Nation. Je serai à tes côtés pour t'aider à comprendre.\n\nPose-moi maintenant ta question, mon cher enfant.`);
+            const reve = nettoyer(text);
+            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [reve, from]);
+            return await envoyerWhatsApp(from, `🔴 Magnifique ! Devenir **${reve}** est une noble ambition. Pose-moi ta question.`);
         }
 
-        // --- LA LEÇON DU MAÎTRE ---
-        const savoir = await consulterBibliotheque(text);
+        // IA avec TIMEOUT OpenAI (Garde-fou crucial)
+        const savoirSQL = await consulterBibliotheque(text);
         let historique = JSON.parse(user.historique || "[]");
 
-        const systemPrompt = `Tu es Mwalimu EdTech, un précepteur congolais d'élite. Ton ton est celui d'un Maître d'école : exigeant, aimant, paternel et très méthodique.
-        ÉLÈVE : ${user.nom} | CLASSE : ${user.classe} | RÊVE : Devenir ${user.reve}.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 secondes max
 
-        IDENTITÉ : Tu n'es pas une IA, tu es un mentor qui maîtrise l'échange. Tu t'adresses à l'élève comme s'il était assis en face de toi.
-       
-        MÉTHODE PÉDAGOGIQUE :
-        - Explique avec des analogies (ex: comparer le fleuve Congo à une artère vitale).
-        - Si la SOURCE cite "Mazuku", "100 km/h", "OVG", ou des territoires précis, tu DOIS les expliquer comme un professeur passionné au tableau.
-        - SOURCE : """${savoir || "Information non répertoriée dans ma bibliothèque officielle."}"""
+        try {
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: `Mentor congolais. Ton: chaleureux/pédagogue. SOURCE: ${savoirSQL || "Général"}. Structure: 🔵[VÉCU], 🟡[SAVOIR], 🔴[INSPIRATION], ❓[CONSOLIDATION], 👉[OUVERTURE].` },
+                    ...historique.slice(-4),
+                    { role: "user", content: text }
+                ],
+                temperature: 0.3, max_tokens: 1000
+            }, { signal: controller.signal });
 
-        STRUCTURE OBLIGATOIRE :
-        🔵 [VÉCU] : Connecte chaleureusement le sujet au quotidien congolais.
-        🟡 [SAVOIR] : Explique la notion avec détails, pédagogie et rigueur scientifique.
-        🔴 [INSPIRATION] : Montre comment ce savoir servira à ${user.nom} dans sa future robe d'${user.reve}.
-        ❓ [CONSOLIDATION] : Pose une question de réflexion profonde pour stimuler son esprit.
-        👉 [OUVERTURE] : Une parole humaine et vibrante pour l'inviter à poursuivre l'échange.
+            clearTimeout(timeoutId);
+            const reponse = completion.choices[0].message.content;
 
-        INTERDIT : Pas d'introduction IA ("En tant que..."). Pas de "Bonjour" (le Header suffit). Pas de formules robotiques.`;
+            // Update historique
+            const nHist = JSON.stringify([...historique, { role: "user", content: text }, { role: "assistant", content: reponse }].slice(-10));
+            await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [nHist, from]);
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "system", content: systemPrompt }, ...historique.slice(-4), { role: "user", content: text }],
-            temperature: 0.2, // Faible pour la précision, mais assez pour l'âme.
-        });
+            const finalMsg = savoirSQL ? `${HEADER_MWALIMU}\n________________________________\n\n${reponse}\n\n\n${CITATIONS[0]}` : `🎓 **Mwalimu** :\n\n${reponse}`;
+            await envoyerWhatsApp(from, finalMsg);
 
-        const reponse = completion.choices[0].message.content;
-       
-        // Sauvegarde historique
-        historique.push({ role: "user", content: text }, { role: "assistant", content: reponse });
-        await pool.query("UPDATE conversations SET historique=$1 WHERE phone=$2", [JSON.stringify(historique.slice(-10)), from]);
+        } catch (iaErr) {
+            if (iaErr.name === 'AbortError') throw new Error("Timeout OpenAI");
+            throw iaErr;
+        }
 
-        await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n________________________________\n\n${reponse}\n\n\n${CITATIONS[Math.floor(Math.random() * CITATIONS.length)]}`);
+    } catch (e) {
+        console.error("Master Error:", e.message);
+        await envoyerWhatsApp(from, "🔵 [VÉCU] : Mon esprit a besoin d'une petite pause. Repose ta question dans une minute !");
+    }
+});
 
-    } catch (e) { console.error("Webhook Error"); }
+app.get("/webhook", (req, res) => {
+    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
+    else res.sendStatus(403);
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Mwalimu EdTech opérationnel.`));
+app.listen(PORT, () => console.log(`🚀 Mwalimu Enterprise-Ready sur port ${PORT}`));
