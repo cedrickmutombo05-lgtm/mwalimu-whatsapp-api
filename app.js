@@ -25,13 +25,21 @@ const CITATIONS = [
     "***« Un DRC brillant demande des citoyens intègres qui soutiennent l'État pour une souveraineté réelle. »***"
 ];
 
+// --- RAPPEL DU MATIN ---
+cron.schedule('0 7 * * *', async () => {
+    try {
+        const { rows: eleves } = await pool.query("SELECT phone, nom FROM conversations WHERE nom IS NOT NULL AND nom != ''");
+        for (let eleve of eleves) {
+            const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
+            const msg = `${HEADER_MWALIMU}\n________________________________\n\n☀️ Bonjour **${eleve.nom}** !\n\nC'est l'heure de te lever pour bâtir ton avenir.\n\n${cit}\n\nExcellente journée !`;
+            await envoyerWhatsApp(eleve.phone, msg);
+        }
+    } catch (e) { console.error("Cron Error"); }
+}, { scheduled: true, timezone: "Africa/Lubumbashi" });
+
 function nettoyerEntree(texte) {
     if (!texte) return "";
-    return texte
-        .replace(/mon prénom est|je m'appelle|mon nom est|je suis/gi, "")
-        .replace(/en classe de|je suis en/gi, "")
-        .replace(/mon plus grand rêve professionnel est de devenir|mon plus grand rêve est de devenir|mon rêve est de devenir|je voudrais devenir|je veux devenir|je rêve d'être/gi, "")
-        .replace(/[.!]*/g, "").trim();
+    return texte.replace(/mon prénom est|je m'appelle|mon nom est|je suis|en classe de|mon rêve est de devenir|mon plus grand rêve professionnel est de devenir|je voudrais devenir|je veux devenir|je rêve d'être/gi, "").replace(/[.!]*/g, "").trim();
 }
 
 async function envoyerWhatsApp(to, texte) {
@@ -39,7 +47,7 @@ async function envoyerWhatsApp(to, texte) {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
             messaging_product: "whatsapp", to, text: { body: texte }
         }, { headers: { Authorization: `Bearer ${process.env.TOKEN}` } });
-    } catch (e) { console.error("Erreur WA"); }
+    } catch (e) { console.error("WA Error"); }
 }
 
 async function consulterBibliotheque(question) {
@@ -56,7 +64,9 @@ async function consulterBibliotheque(question) {
              OR unaccent(contenu) ILIKE ANY($1)
              LIMIT 2`, [motsCles]
         );
-        return res.rows.length > 0 ? res.rows.map(r => r.contenu).join("\n\n") : null;
+        const result = res.rows.length > 0 ? res.rows.map(r => r.contenu).join("\n\n") : null;
+        console.log("--- DONNÉES SQL TROUVÉES : ---", result); // Pour ton débug Render
+        return result;
     } catch (e) { return null; }
 }
 
@@ -96,31 +106,27 @@ app.post("/webhook", async (req, res) => {
         const citAleatoire = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
         let historique = JSON.parse(user.historique || "[]");
 
-        const systemPrompt = `Tu es Mwalimu EdTech, MENTOR D'ÉLITE.
+        const systemPrompt = `Tu es Mwalimu EdTech, mentor d'élite en RDC.
         ÉLÈVE : ${user.nom} | RÊVE : ${user.reve}.
 
-        CONSIGNE DE SOURCE :
-        - SOURCE OFFICIELLE : ${savoirSQL || "NON_TROUVE"}.
-        - Si la SOURCE est présente, tu DOIS citer les chiffres exacts (ex: 100 km/h, Mazuku, OVG, 384m, etc.).
-        - Si la SOURCE cite des territoires précis (ex: Nyiragongo, Rutshuru, Masisi), ne cite QUE ceux-là.
-
-        CONSIGNE DE STYLE :
-        - Ne fais aucun bavardage avant ou après les sections.
-        - Ton message doit COMMENCER par 🔵 [VÉCU] et FINIR par ❓ [CONSOLIDATION].
-        - Ne dis pas "Continue à explorer, Dora" ou "🌟". Sois un mentor sérieux.
-
-        STRUCTURE OBLIGATOIRE :
-        🔵 [VÉCU] : ...
-        🟡 [SAVOIR] : ...
-        🔴 [INSPIRATION] : ...
-        ❓ [CONSOLIDATION] : ...
+        INSTRUCTION ABSOLUE :
+        1. Tu DOIS utiliser les données de cette SOURCE : ${savoirSQL || "NON_TROUVE"}.
+        2. Si la SOURCE contient des termes techniques (Mazuku, OVG, 100 km/h, 384m, etc.), tu DOIS les recopier. Ne les résume pas.
+        3. Si la SOURCE liste des territoires précis (Nyiragongo, Rutshuru, Masisi), cite uniquement ceux-là.
        
-        PAROLE CHARNIÈRE : (Une seule phrase à la fin pour ouvrir le dialogue)`;
+        STRUCTURE DE RÉPONSE (STRICTE) :
+        🔵 [VÉCU] : Contexte humain.
+        🟡 [SAVOIR] : Transposition précise des données de la SOURCE.
+        🔴 [INSPIRATION] : Lien avec le rêve de devenir ${user.reve}.
+        ❓ [CONSOLIDATION] : Question de test.
+        👉 [PAROLE CHARNIÈRE] : Phrase d'ouverture pour la suite.
+
+        INTERDICTION : Pas de "Dora", pas de "Mbote", pas de salutation finale de type IA. Termine par la Parole Charnière.`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "system", content: systemPrompt }, ...historique.slice(-4), { role: "user", content: text }],
-            temperature: 0.2, // TRÈS BAS pour éviter que l'IA n'invente
+            temperature: 0.1, // Précision maximale
         });
 
         const reponseIA = completion.choices[0].message.content;
@@ -132,9 +138,5 @@ app.post("/webhook", async (req, res) => {
     } catch (e) { console.error(e); }
 });
 
-app.get("/webhook", (req, res) => {
-    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) res.send(req.query["hub.challenge"]);
-    else res.sendStatus(403);
-});
-
-app.listen(process.env.PORT || 10000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Mwalimu opérationnel.`));
