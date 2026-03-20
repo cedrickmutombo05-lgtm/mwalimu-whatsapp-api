@@ -39,19 +39,25 @@ const ACCUEILS = [
     "Mbote ! Je suis Mwalimu EdTech, ton précepteur numérique bienveillant."
 ];
 
+const MOTS_ENCOURAGEMENT = [
+    "🌟 Mot d'encouragement : Chaque effort compte. Continue, tu progresses vraiment.",
+    "🌟 Mot d'encouragement : Même les grands mathématiciens avancent étape par étape.",
+    "🌟 Mot d'encouragement : Tu n'as pas besoin d'aller vite, tu as besoin d'être régulier.",
+    "🌟 Mot d'encouragement : Avec la méthode et la patience, tu peux réussir."
+];
+
 const REGLE_FORMAT_MATH = `
 FORMAT OBLIGATOIRE D'ÉCRITURE MATHÉMATIQUE (WhatsApp) :
 
-- Utilise des écritures très simples, propres et lisibles sur WhatsApp
+- Utilise des écritures simples, propres et lisibles sur WhatsApp
 - Puissance → x², x³, a², b² (jamais x^2, a^2)
 - Multiplication → × (jamais *)
 - Division → ÷ ou / selon ce qui est le plus clair
 - Parenthèses → ( ) uniquement
 - Évite { } et [ ] sauf nécessité absolue
-- Évite les symboles compliqués ou confus
 - Pas de LaTeX : jamais \\frac, \\sqrt, ^{}, \\left, \\right
 - Pour une racine, écris : √9 ou racine carrée de 9
-- Pour une fraction simple, écris par exemple : 3/4
+- Pour une fraction simple, écris : 3/4
 - Pour une équation, garde une présentation aérée et propre
 
 EXEMPLES CORRECTS :
@@ -66,6 +72,30 @@ INTERDICTIONS :
 - N'écris jamais 2*x
 - N'utilise pas d'accolades inutiles
 - N'utilise pas de crochets inutiles
+`;
+
+const REGLE_CALCUL_INTELLIGENT = `
+RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES DE MATHÉMATIQUES :
+
+- Tu dois être extrêmement rigoureux dans les calculs
+- Tu vérifies chaque étape avant de l'écrire
+- Tu avances ligne par ligne, sans sauter d'étape importante
+- Tu expliques la logique avant le résultat
+- Tu privilégies la méthode scolaire claire
+- Tu évites les raccourcis compliqués si une méthode simple existe
+- Tu n'inventes jamais un chiffre
+- Tu distingues clairement : donnée, opération, méthode, résultat intermédiaire, conclusion
+- Si l'exercice demande une réponse finale mais que la règle impose de ne pas la donner, tu t'arrêtes juste avant la dernière étape
+- Si l'élève s'est trompé, tu corriges avec douceur et précision
+- Pour les puissances, fractions, équations, produits remarquables et calculs littéraux, tu écris de façon propre et lisible sur WhatsApp
+- Tu dois obligatoirement respecter l'ordre suivant :
+  ACCUEIL,
+  VÉCU,
+  SAVOIR,
+  INSPIRATION,
+  CONSOLIDATION,
+  OUVERTURE,
+  puis MOT D'ENCOURAGEMENT
 `;
 
 async function initDB() {
@@ -127,6 +157,10 @@ function choisirAleatoire(tableau) {
     return tableau[Math.floor(Math.random() * tableau.length)];
 }
 
+function choisirMotEncouragement() {
+    return MOTS_ENCOURAGEMENT[Math.floor(Math.random() * MOTS_ENCOURAGEMENT.length)];
+}
+
 function nettoyer(t) {
     if (!t) return "";
     return t
@@ -154,18 +188,18 @@ function estQuestionTechnique(texte = "") {
 function extensionDepuisMime(mimeType = "") {
     const map = {
         "audio/ogg": ".ogg",
-        "audio/opus": ".opus",
+        "audio/opus": ".ogg",
         "audio/mpeg": ".mp3",
         "audio/mp3": ".mp3",
-        "audio/mp4": ".m4a",
-        "audio/x-m4a": ".m4a",
+        "audio/mp4": ".mp4",
+        "audio/m4a": ".m4a",
+        "audio/aac": ".aac",
+        "audio/amr": ".amr",
         "audio/wav": ".wav",
         "audio/x-wav": ".wav",
-        "audio/webm": ".webm",
-        "image/jpeg": ".jpg",
-        "image/png": ".png"
+        "audio/webm": ".webm"
     };
-    return map[mimeType] || ".bin";
+    return map[mimeType] || ".ogg";
 }
 
 async function envoyerWhatsApp(to, texte) {
@@ -184,6 +218,35 @@ async function envoyerWhatsApp(to, texte) {
         );
     } catch (e) {
         console.error("Erreur WA:", e.response?.data || e.message);
+    }
+}
+
+async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
+    let tempPath = null;
+
+    try {
+        const extension = extensionDepuisMime(mimeType);
+        tempPath = path.join(os.tmpdir(), `mwalimu-audio-${Date.now()}${extension}`);
+
+        await fs.promises.writeFile(tempPath, audioBuffer);
+
+        const transcription = await openai.audio.transcriptions.create({
+            file: fs.createReadStream(tempPath),
+            model: "gpt-4o-mini-transcribe",
+            language: "fr",
+            response_format: "json"
+        });
+
+        return transcription?.text?.trim() || "";
+    } catch (e) {
+        console.error("Erreur transcription audio:", e.message);
+        return "";
+    } finally {
+        if (tempPath) {
+            try {
+                await fs.promises.unlink(tempPath);
+            } catch {}
+        }
     }
 }
 
@@ -249,6 +312,8 @@ CONSIGNE TECHNIQUE SUPPLÉMENTAIRE :
 - Invite l'élève à essayer lui-même.
 - Si tu utilises une formule, explique à quoi elle sert.
 - Quand tu écris des expressions mathématiques, respecte strictement le format mathématique propre pour WhatsApp.
+
+${REGLE_CALCUL_INTELLIGENT}
 ` : ""}
 
 STRUCTURE OBLIGATOIRE :
@@ -258,6 +323,7 @@ STRUCTURE OBLIGATOIRE :
 🔴 [INSPIRATION] : encouragement lié à son rêve.
 ❓ [CONSOLIDATION] : question courte et intelligente.
 👉 [OUVERTURE] : phrase humaine et motivante.
+🌟 [MOT D'ENCOURAGEMENT] : termine par un court mot d'encouragement.
 
 ${REGLE_FORMAT_MATH}
                 `.trim()
@@ -308,6 +374,10 @@ CONSIGNE TECHNIQUE :
 - Puis invite l'élève à essayer lui-même.
 - Corrige avec douceur, jamais brutalement.
 - Quand tu écris des mathématiques, utilise un affichage très propre et simple pour WhatsApp.
+- Pour les calculs, sois plus rigoureux qu'un assistant ordinaire : vérifie chaque opération avant de répondre.
+- N'écris jamais une étape mathématique sans l'avoir vérifiée.
+
+${REGLE_CALCUL_INTELLIGENT}
 ` : `
 CONSIGNE GÉNÉRALE :
 - Réponds simplement, clairement et humainement.
@@ -321,6 +391,7 @@ STRUCTURE OBLIGATOIRE :
 🔴 [INSPIRATION]
 ❓ [CONSOLIDATION]
 👉 [OUVERTURE]
+🌟 [MOT D'ENCOURAGEMENT]
 
 ${REGLE_FORMAT_MATH}
                 `.trim()
@@ -362,7 +433,13 @@ ORDRE STRICT À RESPECTER :
 - Respecte les nombres, signes, unités et formulations.
 - Si une partie est illisible, écris exactement : "Une partie de l'exercice est illisible".
 
-🔍 [COMPRÉHENSION] :
+🔵 [ACCUEIL] :
+- Accueille l'élève avec chaleur.
+
+🔵 [VÉCU] :
+- Fais un lien simple avec son quotidien ou sa manière d'apprendre.
+
+🟡 [SAVOIR] :
 - Explique simplement ce que demande l'exercice ou ce que montre l'image.
 
 🧠 [MÉTHODE] :
@@ -380,12 +457,16 @@ ORDRE STRICT À RESPECTER :
 👉 [OUVERTURE] :
 - Termine par une phrase humaine et chaleureuse.
 
+🌟 [MOT D'ENCOURAGEMENT] :
+- Termine par un court mot d'encouragement.
+
 INTERDICTIONS :
 - Ne saute jamais [LECTURE].
 - Ne donne jamais la réponse directe.
 - N'invente rien.
 - Si le texte est illisible, ne suppose pas.
 
+${REGLE_CALCUL_INTELLIGENT}
 ${REGLE_FORMAT_MATH}
                 `.trim()
             },
@@ -394,7 +475,7 @@ ${REGLE_FORMAT_MATH}
                 content: [
                     {
                         type: "text",
-                        text: "Lis cette photo, recopie d'abord fidèlement le contenu visible, puis explique la méthode sans donner la réponse finale."
+                        text: "Lis cette photo, recopie d'abord fidèlement le contenu visible, puis explique la méthode sans donner la réponse finale. Respecte obligatoirement l'ordre : Accueil, Vécu, Savoir, Inspiration, Consolidation, Ouverture, puis Mot d'encouragement."
                     },
                     {
                         type: "image_url",
@@ -410,25 +491,6 @@ ${REGLE_FORMAT_MATH}
     return completion.choices[0].message.content?.trim() || "Je n'ai pas pu analyser correctement l'image.";
 }
 
-// --- AJOUT AUDIO : TRANSCRIPTION OPENAI ---
-async function transcrireAudioAvecOpenAI(audioBuffer, mimeType = "audio/ogg") {
-    const ext = extensionDepuisMime(mimeType);
-    const tempPath = path.join(os.tmpdir(), `mwalimu-audio-${Date.now()}${ext}`);
-
-    try {
-        fs.writeFileSync(tempPath, audioBuffer);
-
-        const transcript = await openai.audio.transcriptions.create({
-            file: fs.createReadStream(tempPath),
-            model: "gpt-4o-mini-transcribe"
-        });
-
-        return transcript.text?.trim() || "";
-    } finally {
-        try { fs.unlinkSync(tempPath); } catch {}
-    }
-}
-
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
 
@@ -438,7 +500,7 @@ app.post("/webhook", async (req, res) => {
     const image = msg.image;
     const audio = msg.audio;
     const from = msg.from;
-    const initialText = msg.text?.body || "";
+    let texteUtilisateur = msg.text?.body || "";
     const msgId = msg.id;
 
     try {
@@ -453,8 +515,6 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        let texteUtilisateur = initialText;
-
         if (!user) {
             await pool.query(
                 "INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1,'','','','[]')",
@@ -468,66 +528,6 @@ app.post("/webhook", async (req, res) => {
 
 🟡 Quel est ton **prénom** ?`
             );
-        }
-
-        // --- AUDIO ENTRANT ---
-        if (audio?.id) {
-            try {
-                const media = await axios.get(
-                    `https://graph.facebook.com/v18.0/${audio.id}`,
-                    {
-                        headers: { Authorization: `Bearer ${process.env.TOKEN}` },
-                        timeout: 10000
-                    }
-                );
-
-                const mediaUrl = media.data.url;
-
-                const audioResponse = await axios.get(mediaUrl, {
-                    headers: { Authorization: `Bearer ${process.env.TOKEN}` },
-                    responseType: "arraybuffer",
-                    timeout: 20000
-                });
-
-                const mimeType = audio.mime_type || "audio/ogg";
-                const audioBuffer = Buffer.from(audioResponse.data);
-                const transcription = await transcrireAudioAvecOpenAI(audioBuffer, mimeType);
-
-                if (!transcription) {
-                    return envoyerWhatsApp(
-                        from,
-                        `${HEADER_MWALIMU}
-
-🎤 J’ai bien reçu ton audio.
-
-🟡 Je n’ai pas pu le transcrire correctement.
-👉 Envoie un audio plus clair, plus court, ou parle un peu plus lentement.`
-                    );
-                }
-
-                texteUtilisateur = transcription;
-
-                await envoyerWhatsApp(
-                    from,
-                    `${HEADER_MWALIMU}
-
-🎤 J’ai bien reçu ton audio.
-
-📝 **Transcription :**
-${transcription}`
-                );
-            } catch (e) {
-                console.error("Erreur audio:", e.response?.data || e.message);
-                return envoyerWhatsApp(
-                    from,
-                    `${HEADER_MWALIMU}
-
-🎤 J’ai bien reçu ton audio.
-
-🟡 Je n'arrive pas encore à le traiter correctement.
-👉 Réessaie avec un message vocal plus clair et sans bruit autour.`
-                );
-            }
         }
 
         if (!user.nom) {
@@ -574,6 +574,68 @@ ${transcription}`
             historique = [];
         }
 
+        if (audio?.id) {
+            try {
+                const media = await axios.get(
+                    `https://graph.facebook.com/v18.0/${audio.id}`,
+                    {
+                        headers: { Authorization: `Bearer ${process.env.TOKEN}` },
+                        timeout: 10000
+                    }
+                );
+
+                const mediaUrl = media.data.url;
+
+                const audioFile = await axios.get(mediaUrl, {
+                    headers: { Authorization: `Bearer ${process.env.TOKEN}` },
+                    responseType: "arraybuffer",
+                    timeout: 20000
+                });
+
+                const mimeType = audio.mime_type || "audio/ogg";
+                const audioBuffer = Buffer.from(audioFile.data);
+
+                const transcription = await transcrireAudioAvecIA(audioBuffer, mimeType);
+
+                if (!transcription) {
+                    return envoyerWhatsApp(
+                        from,
+                        `${HEADER_MWALIMU}
+
+🎤 J’ai bien reçu ton audio.
+
+🟡 Je n’ai pas pu bien comprendre la voix.
+👉 Parle un peu plus lentement, dans un endroit calme, puis renvoie l’audio.`
+                    );
+                }
+
+                texteUtilisateur = transcription;
+
+                const nouvelHistoriqueAudio = JSON.stringify([
+                    ...historique,
+                    { role: "user", content: `[Audio] ${texteUtilisateur}` }
+                ].slice(-10));
+
+                await pool.query(
+                    "UPDATE conversations SET historique=$1 WHERE phone=$2",
+                    [nouvelHistoriqueAudio, from]
+                );
+
+                historique = JSON.parse(nouvelHistoriqueAudio);
+            } catch (e) {
+                console.error("Erreur audio:", e.response?.data || e.message);
+                return envoyerWhatsApp(
+                    from,
+                    `${HEADER_MWALIMU}
+
+🎤 J’ai bien reçu ton audio.
+
+🟡 Je rencontre une difficulté pour le lire correctement.
+👉 Réessaie avec un audio plus court, plus clair et sans bruit autour de toi.`
+                );
+            }
+        }
+
         if (image?.id) {
             try {
                 const media = await axios.get(
@@ -616,7 +678,8 @@ ${transcription}`
 
 ${explicationImage}
 
-${choisirAleatoire(OUVERTURES)}`
+${choisirAleatoire(OUVERTURES)}
+${choisirMotEncouragement()}`
                 );
             } catch (e) {
                 console.error("Erreur image:", e.response?.data || e.message);
@@ -639,7 +702,7 @@ ${choisirAleatoire(OUVERTURES)}`
                 from,
                 `${HEADER_MWALIMU}
 
-📚 **FICHE OFFICIELLE : ${fiche.sujet}**
+${audio?.id ? `🎤 **TON AUDIO TRANSCRIT :** ${texteUtilisateur}\n\n` : ""}📚 **FICHE OFFICIELLE : ${fiche.sujet}**
 
 ${fiche.contenu}`
             );
@@ -663,7 +726,8 @@ ${fiche.contenu}`
 
 ${explication}
 
-${choisirAleatoire(CITATIONS)}`
+${choisirAleatoire(CITATIONS)}
+${choisirMotEncouragement()}`
             );
         }
 
@@ -684,9 +748,10 @@ ${choisirAleatoire(CITATIONS)}`
             from,
             `${HEADER_MWALIMU}
 
-${reponseLibre}
+${audio?.id ? `🎤 **J'ai compris ton audio comme ceci :** ${texteUtilisateur}\n\n` : ""}${reponseLibre}
 
-${choisirAleatoire(OUVERTURES)}`
+${choisirAleatoire(OUVERTURES)}
+${choisirMotEncouragement()}`
         );
 
     } catch (e) {
