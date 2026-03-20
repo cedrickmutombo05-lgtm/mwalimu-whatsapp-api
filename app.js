@@ -5,6 +5,9 @@ const axios = require("axios");
 const { Pool } = require("pg");
 const { OpenAI } = require("openai");
 const cron = require("node-cron");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -36,7 +39,35 @@ const ACCUEILS = [
     "Mbote ! Je suis Mwalimu EdTech, ton précepteur numérique bienveillant."
 ];
 
-// --- INITIALISATION DB ---
+const REGLE_FORMAT_MATH = `
+FORMAT OBLIGATOIRE D'ÉCRITURE MATHÉMATIQUE (WhatsApp) :
+
+- Utilise des écritures très simples, propres et lisibles sur WhatsApp
+- Puissance → x², x³, a², b² (jamais x^2, a^2)
+- Multiplication → × (jamais *)
+- Division → ÷ ou / selon ce qui est le plus clair
+- Parenthèses → ( ) uniquement
+- Évite { } et [ ] sauf nécessité absolue
+- Évite les symboles compliqués ou confus
+- Pas de LaTeX : jamais \\frac, \\sqrt, ^{}, \\left, \\right
+- Pour une racine, écris : √9 ou racine carrée de 9
+- Pour une fraction simple, écris par exemple : 3/4
+- Pour une équation, garde une présentation aérée et propre
+
+EXEMPLES CORRECTS :
+- 2x² + 3x
+- (x + 2) × (x - 1)
+- x² - 4 = 0
+- 3/4 + 1/4 = 1
+- √16 = 4
+
+INTERDICTIONS :
+- N'écris jamais x^2
+- N'écris jamais 2*x
+- N'utilise pas d'accolades inutiles
+- N'utilise pas de crochets inutiles
+`;
+
 async function initDB() {
     try {
         await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
@@ -57,7 +88,6 @@ async function initDB() {
 }
 initDB();
 
-// --- CRON : RAPPEL DU MATIN ---
 cron.schedule('0 7 * * *', async () => {
     try {
         const { rows } = await pool.query("SELECT phone, nom FROM conversations WHERE nom != ''");
@@ -80,7 +110,6 @@ ${cit}`
     }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- CRON : NETTOYAGE ANTI-DOUBLON ---
 cron.schedule('0 3 * * *', async () => {
     try {
         await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '2 days'");
@@ -90,7 +119,6 @@ cron.schedule('0 3 * * *', async () => {
     }
 }, { timezone: "Africa/Lubumbashi" });
 
-// --- OUTILS ---
 function pause(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -116,9 +144,28 @@ function estQuestionTechnique(texte = "") {
         "fraction", "produit", "somme", "soustraction", "multiplication", "division",
         "physique", "chimie", "mécanique", "mecanique", "force", "vitesse",
         "accélération", "acceleration", "masse", "énergie", "energie", "courant",
-        "tension", "mole", "solution", "exercice", "problème", "probleme", "formule"
+        "tension", "mole", "solution", "exercice", "problème", "probleme", "formule",
+        "algèbre", "algebre", "géométrie", "geometrie", "triangle", "carré", "carre",
+        "rectangle", "puissance", "racine", "racine carrée", "pourcentage"
     ];
     return mots.some(m => t.includes(m));
+}
+
+function extensionDepuisMime(mimeType = "") {
+    const map = {
+        "audio/ogg": ".ogg",
+        "audio/opus": ".opus",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/mp4": ".m4a",
+        "audio/x-m4a": ".m4a",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/webm": ".webm",
+        "image/jpeg": ".jpg",
+        "image/png": ".png"
+    };
+    return map[mimeType] || ".bin";
 }
 
 async function envoyerWhatsApp(to, texte) {
@@ -169,7 +216,7 @@ async function expliquerFiche(user, fiche, questionEleve) {
 
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        temperature: 0.25,
+        temperature: 0.2,
         messages: [
             {
                 role: "system",
@@ -201,6 +248,7 @@ CONSIGNE TECHNIQUE SUPPLÉMENTAIRE :
 - Donne une piste claire.
 - Invite l'élève à essayer lui-même.
 - Si tu utilises une formule, explique à quoi elle sert.
+- Quand tu écris des expressions mathématiques, respecte strictement le format mathématique propre pour WhatsApp.
 ` : ""}
 
 STRUCTURE OBLIGATOIRE :
@@ -210,6 +258,8 @@ STRUCTURE OBLIGATOIRE :
 🔴 [INSPIRATION] : encouragement lié à son rêve.
 ❓ [CONSOLIDATION] : question courte et intelligente.
 👉 [OUVERTURE] : phrase humaine et motivante.
+
+${REGLE_FORMAT_MATH}
                 `.trim()
             },
             {
@@ -228,7 +278,7 @@ ${fiche.contenu}
         ]
     });
 
-    return completion.choices[0].message.content;
+    return completion.choices[0].message.content?.trim() || "Je n'ai pas pu expliquer correctement la fiche.";
 }
 
 async function repondreSansFiche(user, texte, historique) {
@@ -236,7 +286,7 @@ async function repondreSansFiche(user, texte, historique) {
 
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        temperature: 0.25,
+        temperature: 0.2,
         messages: [
             {
                 role: "system",
@@ -257,6 +307,7 @@ CONSIGNE TECHNIQUE :
 - Donne un exemple proche.
 - Puis invite l'élève à essayer lui-même.
 - Corrige avec douceur, jamais brutalement.
+- Quand tu écris des mathématiques, utilise un affichage très propre et simple pour WhatsApp.
 ` : `
 CONSIGNE GÉNÉRALE :
 - Réponds simplement, clairement et humainement.
@@ -270,6 +321,8 @@ STRUCTURE OBLIGATOIRE :
 🔴 [INSPIRATION]
 ❓ [CONSOLIDATION]
 👉 [OUVERTURE]
+
+${REGLE_FORMAT_MATH}
                 `.trim()
             },
             ...historique.slice(-4),
@@ -277,47 +330,76 @@ STRUCTURE OBLIGATOIRE :
         ]
     });
 
-    return completion.choices[0].message.content;
+    return completion.choices[0].message.content?.trim() || "Je n'ai pas pu répondre correctement.";
 }
 
-// --- AJOUT IMAGE : EXPLICATION D'UN EXERCICE EN PHOTO ---
-async function expliquerImageAvecIA(user, base64Image) {
+async function expliquerImageAvecIA(user, base64Image, mimeType = "image/jpeg") {
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        temperature: 0.25,
+        temperature: 0.2,
         messages: [
             {
                 role: "system",
                 content: `
-Tu es Mwalimu EdTech, un précepteur congolais bienveillant, humain et pédagogique.
+Tu es Mwalimu EdTech, précepteur congolais rigoureux, humain et bienveillant.
 
-RÈGLES :
-- Tu analyses l'image reçue.
-- Si c'est un exercice, tu guides l'élève sans donner directement la réponse finale.
-- Tu expliques la méthode étape par étape.
-- Tu peux relever les données visibles sur l'image.
-- Si l'image est floue ou illisible, dis-le clairement.
-- Tu encourages l'élève à essayer lui-même.
-- Adresse-toi à ${user.nom || "mon cher élève"}, en adaptant ton langage au niveau ${user.classe || "de l'élève"}.
-- L'élève rêve de devenir ${user.reve || "un grand professionnel"}.
+RÈGLE CRITIQUE ABSOLUE :
+- Tu dois TOUJOURS commencer par lire et recopier fidèlement l'exercice ou le texte visible sur l'image.
+- Tu ne passes JAMAIS directement à l'explication.
+- Tu ne modifies aucun chiffre, symbole, mot, donnée ou unité visible.
+- Si l'image contient un exercice, tu guides l'élève sans donner directement la réponse finale.
+- Si l'image est floue ou partiellement illisible, tu le dis clairement sans inventer.
 
-STRUCTURE OBLIGATOIRE :
-🔵 [ACCUEIL]
-🔵 [VÉCU]
-🟡 [SAVOIR]
-🔴 [INSPIRATION]
-❓ [CONSOLIDATION]
-👉 [OUVERTURE]
+ADAPTATION :
+- Élève : ${user.nom || "mon cher élève"}
+- Classe : ${user.classe || "niveau inconnu"}
+- Rêve : ${user.reve || "grand professionnel"}
+
+ORDRE STRICT À RESPECTER :
+
+📝 [LECTURE] :
+- Recopie exactement l'énoncé ou le texte visible sur l'image.
+- Respecte les nombres, signes, unités et formulations.
+- Si une partie est illisible, écris exactement : "Une partie de l'exercice est illisible".
+
+🔍 [COMPRÉHENSION] :
+- Explique simplement ce que demande l'exercice ou ce que montre l'image.
+
+🧠 [MÉTHODE] :
+- Donne la démarche étape par étape.
+- N'apporte PAS la solution finale.
+- Guide l'élève pour qu'il travaille lui-même.
+- Si tu écris des mathématiques, elles doivent être propres, simples et lisibles sur WhatsApp.
+
+🔴 [INSPIRATION] :
+- Encourage l'élève en lien avec son rêve.
+
+❓ [CONSOLIDATION] :
+- Pose une petite question pour vérifier sa compréhension.
+
+👉 [OUVERTURE] :
+- Termine par une phrase humaine et chaleureuse.
+
+INTERDICTIONS :
+- Ne saute jamais [LECTURE].
+- Ne donne jamais la réponse directe.
+- N'invente rien.
+- Si le texte est illisible, ne suppose pas.
+
+${REGLE_FORMAT_MATH}
                 `.trim()
             },
             {
                 role: "user",
                 content: [
-                    { type: "text", text: "Analyse cette image et explique-la à l'élève sans donner directement la réponse finale si c'est un exercice." },
+                    {
+                        type: "text",
+                        text: "Lis cette photo, recopie d'abord fidèlement le contenu visible, puis explique la méthode sans donner la réponse finale."
+                    },
                     {
                         type: "image_url",
                         image_url: {
-                            url: `data:image/jpeg;base64,${base64Image}`
+                            url: `data:${mimeType};base64,${base64Image}`
                         }
                     }
                 ]
@@ -325,10 +407,28 @@ STRUCTURE OBLIGATOIRE :
         ]
     });
 
-    return completion.choices[0].message.content;
+    return completion.choices[0].message.content?.trim() || "Je n'ai pas pu analyser correctement l'image.";
 }
 
-// --- WEBHOOK ---
+// --- AJOUT AUDIO : TRANSCRIPTION OPENAI ---
+async function transcrireAudioAvecOpenAI(audioBuffer, mimeType = "audio/ogg") {
+    const ext = extensionDepuisMime(mimeType);
+    const tempPath = path.join(os.tmpdir(), `mwalimu-audio-${Date.now()}${ext}`);
+
+    try {
+        fs.writeFileSync(tempPath, audioBuffer);
+
+        const transcript = await openai.audio.transcriptions.create({
+            file: fs.createReadStream(tempPath),
+            model: "gpt-4o-mini-transcribe"
+        });
+
+        return transcript.text?.trim() || "";
+    } finally {
+        try { fs.unlinkSync(tempPath); } catch {}
+    }
+}
+
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
 
@@ -336,12 +436,12 @@ app.post("/webhook", async (req, res) => {
     if (!msg) return;
 
     const image = msg.image;
+    const audio = msg.audio;
     const from = msg.from;
-    const text = msg.text?.body || "";
+    const initialText = msg.text?.body || "";
     const msgId = msg.id;
 
     try {
-        // --- ANTI-DOUBLON ---
         if (msgId) {
             const check = await pool.query(
                 "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
@@ -353,7 +453,8 @@ app.post("/webhook", async (req, res) => {
         let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
         let user = rows[0];
 
-        // --- INSCRIPTION ---
+        let texteUtilisateur = initialText;
+
         if (!user) {
             await pool.query(
                 "INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1,'','','','[]')",
@@ -369,8 +470,68 @@ app.post("/webhook", async (req, res) => {
             );
         }
 
+        // --- AUDIO ENTRANT ---
+        if (audio?.id) {
+            try {
+                const media = await axios.get(
+                    `https://graph.facebook.com/v18.0/${audio.id}`,
+                    {
+                        headers: { Authorization: `Bearer ${process.env.TOKEN}` },
+                        timeout: 10000
+                    }
+                );
+
+                const mediaUrl = media.data.url;
+
+                const audioResponse = await axios.get(mediaUrl, {
+                    headers: { Authorization: `Bearer ${process.env.TOKEN}` },
+                    responseType: "arraybuffer",
+                    timeout: 20000
+                });
+
+                const mimeType = audio.mime_type || "audio/ogg";
+                const audioBuffer = Buffer.from(audioResponse.data);
+                const transcription = await transcrireAudioAvecOpenAI(audioBuffer, mimeType);
+
+                if (!transcription) {
+                    return envoyerWhatsApp(
+                        from,
+                        `${HEADER_MWALIMU}
+
+🎤 J’ai bien reçu ton audio.
+
+🟡 Je n’ai pas pu le transcrire correctement.
+👉 Envoie un audio plus clair, plus court, ou parle un peu plus lentement.`
+                    );
+                }
+
+                texteUtilisateur = transcription;
+
+                await envoyerWhatsApp(
+                    from,
+                    `${HEADER_MWALIMU}
+
+🎤 J’ai bien reçu ton audio.
+
+📝 **Transcription :**
+${transcription}`
+                );
+            } catch (e) {
+                console.error("Erreur audio:", e.response?.data || e.message);
+                return envoyerWhatsApp(
+                    from,
+                    `${HEADER_MWALIMU}
+
+🎤 J’ai bien reçu ton audio.
+
+🟡 Je n'arrive pas encore à le traiter correctement.
+👉 Réessaie avec un message vocal plus clair et sans bruit autour.`
+                );
+            }
+        }
+
         if (!user.nom) {
-            const nom = nettoyer(text);
+            const nom = nettoyer(texteUtilisateur);
             await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nom, from]);
             return envoyerWhatsApp(
                 from,
@@ -381,7 +542,7 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!user.classe) {
-            const cl = nettoyer(text);
+            const cl = nettoyer(texteUtilisateur);
             await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [cl, from]);
             return envoyerWhatsApp(
                 from,
@@ -394,7 +555,7 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!user.reve) {
-            const rv = nettoyer(text);
+            const rv = nettoyer(texteUtilisateur);
             await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [rv, from]);
             return envoyerWhatsApp(
                 from,
@@ -413,7 +574,6 @@ app.post("/webhook", async (req, res) => {
             historique = [];
         }
 
-        // --- AJOUT IMAGE ---
         if (image?.id) {
             try {
                 const media = await axios.get(
@@ -459,20 +619,20 @@ ${explicationImage}
 ${choisirAleatoire(OUVERTURES)}`
                 );
             } catch (e) {
-                console.error("Erreur image:", e.message);
+                console.error("Erreur image:", e.response?.data || e.message);
                 return envoyerWhatsApp(
                     from,
                     `${HEADER_MWALIMU}
 
 🔵 [ACCUEIL] : J'ai bien vu que tu as envoyé une image.
-🟡 [SAVOIR] : Je n'arrive pas encore à la lire correctement.
+📝 [LECTURE] : Je n'arrive pas encore à lire correctement son contenu.
+🟡 [SAVOIR] : L'image est peut-être floue, sombre ou mal cadrée.
 👉 [OUVERTURE] : Envoie une photo plus claire, bien cadrée et bien éclairée.`
                 );
             }
         }
 
-        // --- DB D'ABORD ---
-        const fiche = await consulterBibliotheque(text);
+        const fiche = await consulterBibliotheque(texteUtilisateur);
 
         if (fiche) {
             await envoyerWhatsApp(
@@ -484,11 +644,11 @@ ${choisirAleatoire(OUVERTURES)}`
 ${fiche.contenu}`
             );
 
-            const explication = await expliquerFiche(user, fiche, text);
+            const explication = await expliquerFiche(user, fiche, texteUtilisateur);
 
             const nouvelHistorique = JSON.stringify([
                 ...historique,
-                { role: "user", content: text },
+                { role: "user", content: texteUtilisateur },
                 { role: "assistant", content: explication }
             ].slice(-10));
 
@@ -507,12 +667,11 @@ ${choisirAleatoire(CITATIONS)}`
             );
         }
 
-        // --- PAS DE FICHE : IA GUIDÉE ---
-        const reponseLibre = await repondreSansFiche(user, text, historique);
+        const reponseLibre = await repondreSansFiche(user, texteUtilisateur, historique);
 
         const nouvelHistorique = JSON.stringify([
             ...historique,
-            { role: "user", content: text },
+            { role: "user", content: texteUtilisateur },
             { role: "assistant", content: reponseLibre }
         ].slice(-10));
 
@@ -531,7 +690,7 @@ ${choisirAleatoire(OUVERTURES)}`
         );
 
     } catch (e) {
-        console.error("Erreur générale:", e.message);
+        console.error("Erreur générale:", e.response?.data || e.message);
         await envoyerWhatsApp(
             from,
             `${HEADER_MWALIMU}
