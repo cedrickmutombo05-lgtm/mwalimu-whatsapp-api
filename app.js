@@ -280,15 +280,64 @@ STRUCTURE OBLIGATOIRE :
     return completion.choices[0].message.content;
 }
 
+// --- AJOUT IMAGE : EXPLICATION D'UN EXERCICE EN PHOTO ---
+async function expliquerImageAvecIA(user, base64Image) {
+    const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.25,
+        messages: [
+            {
+                role: "system",
+                content: `
+Tu es Mwalimu EdTech, un précepteur congolais bienveillant, humain et pédagogique.
+
+RÈGLES :
+- Tu analyses l'image reçue.
+- Si c'est un exercice, tu guides l'élève sans donner directement la réponse finale.
+- Tu expliques la méthode étape par étape.
+- Tu peux relever les données visibles sur l'image.
+- Si l'image est floue ou illisible, dis-le clairement.
+- Tu encourages l'élève à essayer lui-même.
+- Adresse-toi à ${user.nom || "mon cher élève"}, en adaptant ton langage au niveau ${user.classe || "de l'élève"}.
+- L'élève rêve de devenir ${user.reve || "un grand professionnel"}.
+
+STRUCTURE OBLIGATOIRE :
+🔵 [ACCUEIL]
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+👉 [OUVERTURE]
+                `.trim()
+            },
+            {
+                role: "user",
+                content: [
+                    { type: "text", text: "Analyse cette image et explique-la à l'élève sans donner directement la réponse finale si c'est un exercice." },
+                    {
+                        type: "image_url",
+                        image_url: {
+                            url: `data:image/jpeg;base64,${base64Image}`
+                        }
+                    }
+                ]
+            }
+        ]
+    });
+
+    return completion.choices[0].message.content;
+}
+
 // --- WEBHOOK ---
 app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
 
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!msg?.text?.body) return;
+    if (!msg) return;
 
+    const image = msg.image;
     const from = msg.from;
-    const text = msg.text.body;
+    const text = msg.text?.body || "";
     const msgId = msg.id;
 
     try {
@@ -362,6 +411,64 @@ app.post("/webhook", async (req, res) => {
             historique = JSON.parse(user.historique || "[]");
         } catch {
             historique = [];
+        }
+
+        // --- AJOUT IMAGE ---
+        if (image?.id) {
+            try {
+                const media = await axios.get(
+                    `https://graph.facebook.com/v18.0/${image.id}`,
+                    {
+                        headers: { Authorization: `Bearer ${process.env.TOKEN}` },
+                        timeout: 10000
+                    }
+                );
+
+                const mediaUrl = media.data.url;
+
+                const imgBuffer = await axios.get(mediaUrl, {
+                    headers: { Authorization: `Bearer ${process.env.TOKEN}` },
+                    responseType: "arraybuffer",
+                    timeout: 15000
+                });
+
+                const mimeType = image.mime_type || "image/jpeg";
+                const base64Image = Buffer.from(imgBuffer.data).toString("base64");
+
+                const explicationImage = await expliquerImageAvecIA(user, base64Image, mimeType);
+
+                const nouvelHistorique = JSON.stringify([
+                    ...historique,
+                    { role: "user", content: "[Image envoyée]" },
+                    { role: "assistant", content: explicationImage }
+                ].slice(-10));
+
+                await pool.query(
+                    "UPDATE conversations SET historique=$1 WHERE phone=$2",
+                    [nouvelHistorique, from]
+                );
+
+                return envoyerWhatsApp(
+                    from,
+                    `${HEADER_MWALIMU}
+
+📸 J’ai bien reçu ton image.
+
+${explicationImage}
+
+${choisirAleatoire(OUVERTURES)}`
+                );
+            } catch (e) {
+                console.error("Erreur image:", e.message);
+                return envoyerWhatsApp(
+                    from,
+                    `${HEADER_MWALIMU}
+
+🔵 [ACCUEIL] : J'ai bien vu que tu as envoyé une image.
+🟡 [SAVOIR] : Je n'arrive pas encore à la lire correctement.
+👉 [OUVERTURE] : Envoie une photo plus claire, bien cadrée et bien éclairée.`
+                );
+            }
         }
 
         // --- DB D'ABORD ---
