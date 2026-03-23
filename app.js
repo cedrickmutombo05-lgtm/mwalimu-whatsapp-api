@@ -8,9 +8,26 @@ const cron = require("node-cron");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({
+    limit: "1mb",
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+
+const webhookLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: "Too many requests"
+});
+
+app.use("/webhook", webhookLimiter);
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pool = new Pool({
@@ -23,7 +40,11 @@ const HEADER_MWALIMU = "🔴🟡🔵 **Mwalimu EdTech : Ton Mentor pour l'Excell
 const CITATIONS = [
     "***« L'éducation est l'arme la plus puissante pour changer le Congo. »***",
     "***« Le savoir d'aujourd'hui est le socle de la souveraineté de demain. »***",
-    "***« Un DRC brillant demande des citoyens intègres et instruits. »***"
+    "***« Un DRC brillant demande des citoyens intègres et instruits. »***",
+    "***« La discipline d’aujourd’hui construit la réussite de demain. »***",
+    "***« Chaque leçon comprise est une victoire pour ton avenir. »***",
+    "***« Le Congo se relèvera aussi par des élèves sérieux et courageux. »***",
+    "***« L'éducation Chrétienne de la jeunesse c'est le meilleur apostolat. »***"
 ];
 
 const OUVERTURES = [
@@ -97,6 +118,72 @@ RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES DE MATHÉMATIQUES :
   OUVERTURE,
   puis MOT D'ENCOURAGEMENT
 `;
+
+function verifierSignatureMeta(req) {
+    try {
+        const appSecret = process.env.APP_SECRET;
+        const signature = req.get("x-hub-signature-256");
+
+        if (!appSecret || !signature || !req.rawBody) return false;
+
+        const expectedSignature =
+            "sha256=" +
+            crypto
+                .createHmac("sha256", appSecret)
+                .update(req.rawBody)
+                .digest("hex");
+
+        const sigBuffer = Buffer.from(signature);
+        const expectedBuffer = Buffer.from(expectedSignature);
+
+        if (sigBuffer.length !== expectedBuffer.length) return false;
+
+        return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
+    } catch (e) {
+        console.error("Erreur vérification signature:", e.message);
+        return false;
+    }
+}
+
+function extraireMessageWhatsApp(body) {
+    const value = body?.entry?.[0]?.changes?.[0]?.value;
+    if (!value) return null;
+
+    if (value.statuses?.length) return null;
+    if (!value.messages?.length) return null;
+
+    return value.messages[0];
+}
+
+function genreEleve(nom = "") {
+    const prenom = String(nom || "").trim().toLowerCase();
+
+    const prenomsFemininsConnus = [
+        "dora", "marie", "anne", "anna", "annie", "anuarite", "ruth",
+        "grace", "esther", "sarah", "debora", "débora", "fatou",
+        "chantal", "nadine", "brigitte", "joyce", "elodie", "élodie",
+        "mireille", "patience", "rebecca", "rebeca", "prisca", "gloria"
+    ];
+
+    if (prenomsFemininsConnus.includes(prenom)) {
+        return "mon élève";
+    }
+
+    const terminaisonsFeminines = ["a", "ia", "na", "ssa", "elle", "ine", "ette", "line"];
+    if (terminaisonsFeminines.some(fin => prenom.endsWith(fin))) {
+        return "mon élève";
+    }
+
+    return "mon cher élève";
+}
+
+function adapterTexteGenre(texte = "", nom = "") {
+    const formule = genreEleve(nom);
+    if (formule === "mon élève") {
+        return texte.replaceAll("mon cher élève", "mon élève");
+    }
+    return texte;
+}
 
 async function initDB() {
     try {
@@ -232,7 +319,7 @@ async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
 
         const transcription = await openai.audio.transcriptions.create({
             file: fs.createReadStream(tempPath),
-            model: "gpt-4o-mini-transcribe",
+            model: "whisper-1",
             language: "fr",
             response_format: "json"
         });
@@ -276,6 +363,7 @@ async function consulterBibliotheque(question) {
 
 async function expliquerFiche(user, fiche, questionEleve) {
     const technique = estQuestionTechnique(questionEleve);
+    const appelEleve = genreEleve(user.nom);
 
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -296,6 +384,8 @@ RÈGLE D'OR ABSOLUE :
 STYLE :
 - L'élève doit se sentir accueilli, écouté, apprécié et encouragé.
 - Ton ton doit être naturel, clair, vivant et bienveillant.
+- Adresse-toi à l'élève avec cette formule : ${appelEleve}
+- Si le prénom semble féminin, évite absolument l'expression "mon cher élève" et utilise plutôt "mon élève".
 
 ADAPTATION :
 - ÉLÈVE : ${user.nom}
@@ -349,6 +439,7 @@ ${fiche.contenu}
 
 async function repondreSansFiche(user, texte, historique) {
     const technique = estQuestionTechnique(texte);
+    const appelEleve = genreEleve(user.nom);
 
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -364,6 +455,8 @@ RÈGLES :
 - N'invente pas de faits précis.
 - Adresse-toi à ${user.nom}, qui rêve de devenir ${user.reve}.
 - Adapte ton langage au niveau de la classe ${user.classe}.
+- Utilise la formule suivante pour t'adresser à l'élève : ${appelEleve}
+- Si le prénom semble féminin, n'utilise jamais "mon cher élève", mais "mon élève".
 
 ${technique ? `
 CONSIGNE TECHNIQUE :
@@ -405,6 +498,8 @@ ${REGLE_FORMAT_MATH}
 }
 
 async function expliquerImageAvecIA(user, base64Image, mimeType = "image/jpeg") {
+    const appelEleve = genreEleve(user.nom);
+
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         temperature: 0.2,
@@ -420,9 +515,11 @@ RÈGLE CRITIQUE ABSOLUE :
 - Tu ne modifies aucun chiffre, symbole, mot, donnée ou unité visible.
 - Si l'image contient un exercice, tu guides l'élève sans donner directement la réponse finale.
 - Si l'image est floue ou partiellement illisible, tu le dis clairement sans inventer.
+- Utilise la formule suivante pour t'adresser à l'élève : ${appelEleve}
+- Si le prénom semble féminin, n'utilise jamais "mon cher élève", mais "mon élève".
 
 ADAPTATION :
-- Élève : ${user.nom || "mon cher élève"}
+- Élève : ${user.nom || "mon élève"}
 - Classe : ${user.classe || "niveau inconnu"}
 - Rêve : ${user.reve || "grand professionnel"}
 
@@ -492,10 +589,17 @@ ${REGLE_FORMAT_MATH}
 }
 
 app.post("/webhook", async (req, res) => {
-    res.sendStatus(200);
+    if (!verifierSignatureMeta(req)) {
+        console.warn("⛔ Requête rejetée : signature invalide.");
+        return res.sendStatus(403);
+    }
 
-    const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!msg) return;
+    const msg = extraireMessageWhatsApp(req.body);
+    if (!msg) {
+        return res.sendStatus(200);
+    }
+
+    res.sendStatus(200);
 
     const image = msg.image;
     const audio = msg.audio;
@@ -504,6 +608,8 @@ app.post("/webhook", async (req, res) => {
     const msgId = msg.id;
 
     try {
+        if (!from || !msgId) return;
+
         if (msgId) {
             const check = await pool.query(
                 "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
@@ -657,7 +763,8 @@ app.post("/webhook", async (req, res) => {
                 const mimeType = image.mime_type || "image/jpeg";
                 const base64Image = Buffer.from(imgBuffer.data).toString("base64");
 
-                const explicationImage = await expliquerImageAvecIA(user, base64Image, mimeType);
+                const explicationImageBrute = await expliquerImageAvecIA(user, base64Image, mimeType);
+                const explicationImage = adapterTexteGenre(explicationImageBrute, user.nom);
 
                 const nouvelHistorique = JSON.stringify([
                     ...historique,
@@ -678,7 +785,7 @@ app.post("/webhook", async (req, res) => {
 
 ${explicationImage}
 
-${choisirAleatoire(OUVERTURES)}
+${adapterTexteGenre(choisirAleatoire(OUVERTURES), user.nom)}
 ${choisirMotEncouragement()}`
                 );
             } catch (e) {
@@ -707,7 +814,8 @@ ${audio?.id ? `🎤 **TON AUDIO TRANSCRIT :** ${texteUtilisateur}\n\n` : ""}📚
 ${fiche.contenu}`
             );
 
-            const explication = await expliquerFiche(user, fiche, texteUtilisateur);
+            const explicationBrute = await expliquerFiche(user, fiche, texteUtilisateur);
+            const explication = adapterTexteGenre(explicationBrute, user.nom);
 
             const nouvelHistorique = JSON.stringify([
                 ...historique,
@@ -731,7 +839,8 @@ ${choisirMotEncouragement()}`
             );
         }
 
-        const reponseLibre = await repondreSansFiche(user, texteUtilisateur, historique);
+        const reponseLibreBrute = await repondreSansFiche(user, texteUtilisateur, historique);
+        const reponseLibre = adapterTexteGenre(reponseLibreBrute, user.nom);
 
         const nouvelHistorique = JSON.stringify([
             ...historique,
@@ -750,7 +859,7 @@ ${choisirMotEncouragement()}`
 
 ${audio?.id ? `🎤 **J'ai compris ton audio comme ceci :** ${texteUtilisateur}\n\n` : ""}${reponseLibre}
 
-${choisirAleatoire(OUVERTURES)}
+${adapterTexteGenre(choisirAleatoire(OUVERTURES), user.nom)}
 ${choisirMotEncouragement()}`
         );
 
