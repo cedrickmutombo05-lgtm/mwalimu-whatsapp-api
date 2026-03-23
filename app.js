@@ -1,6 +1,5 @@
 
-
-require('dotenv').config();
+require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const { Pool } = require("pg");
@@ -13,6 +12,33 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 
 const app = express();
+
+/* =========================================================
+   1) CONFIG & GARDE-FOUS
+========================================================= */
+
+function requireEnv(name) {
+    if (!process.env[name] || !String(process.env[name]).trim()) {
+        throw new Error(`Variable d'environnement manquante : ${name}`);
+    }
+    return process.env[name];
+}
+
+const PORT = process.env.PORT || 10000;
+const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
+const DATABASE_URL = requireEnv("DATABASE_URL");
+const TOKEN = requireEnv("TOKEN");
+const PHONE_NUMBER_ID = requireEnv("PHONE_NUMBER_ID");
+const VERIFY_TOKEN = requireEnv("VERIFY_TOKEN");
+const APP_SECRET = requireEnv("APP_SECRET");
+
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
 app.use(express.json({
     limit: "1mb",
     verify: (req, res, buf) => {
@@ -30,11 +56,9 @@ const webhookLimiter = rateLimit({
 
 app.use("/webhook", webhookLimiter);
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
+/* =========================================================
+   2) CONSTANTES MWALIMU
+========================================================= */
 
 const HEADER_MWALIMU = "🔴🟡🔵 **Mwalimu EdTech : Ton Mentor pour l'Excellence** 🇨🇩";
 
@@ -70,7 +94,6 @@ const MOTS_ENCOURAGEMENT = [
 
 const REGLE_FORMAT_MATH = `
 FORMAT OBLIGATOIRE D'ÉCRITURE MATHÉMATIQUE (WhatsApp) :
-
 - Utilise des écritures simples, propres et lisibles sur WhatsApp
 - Puissance → x², x³, a², b² (jamais x^2, a^2)
 - Multiplication → × (jamais *)
@@ -81,24 +104,10 @@ FORMAT OBLIGATOIRE D'ÉCRITURE MATHÉMATIQUE (WhatsApp) :
 - Pour une racine, écris : √9 ou racine carrée de 9
 - Pour une fraction simple, écris : 3/4
 - Pour une équation, garde une présentation aérée et propre
-
-EXEMPLES CORRECTS :
-- 2x² + 3x
-- (x + 2) × (x - 1)
-- x² - 4 = 0
-- 3/4 + 1/4 = 1
-- √16 = 4
-
-INTERDICTIONS :
-- N'écris jamais x^2
-- N'écris jamais 2*x
-- N'utilise pas d'accolades inutiles
-- N'utilise pas de crochets inutiles
 `;
 
 const REGLE_CALCUL_INTELLIGENT = `
 RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES DE MATHÉMATIQUES :
-
 - Tu dois être extrêmement rigoureux dans les calculs
 - Tu vérifies chaque étape avant de l'écrire
 - Tu avances ligne par ligne, sans sauter d'étape importante
@@ -109,377 +118,37 @@ RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES DE MATHÉMATIQUES :
 - Tu distingues clairement : donnée, opération, méthode, résultat intermédiaire, conclusion
 - Si l'exercice demande une réponse finale mais que la règle impose de ne pas la donner, tu t'arrêtes juste avant la dernière étape
 - Si l'élève s'est trompé, tu corriges avec douceur et précision
-- Pour les puissances, fractions, équations, produits remarquables et calculs littéraux, tu écris de façon propre et lisible sur WhatsApp
 - Tu dois obligatoirement respecter l'ordre suivant :
-  ACCUEIL,
-  VÉCU,
-  SAVOIR,
-  INSPIRATION,
-  CONSOLIDATION,
-  OUVERTURE,
-  puis MOT D'ENCOURAGEMENT
+  ACCUEIL, VÉCU, SAVOIR, INSPIRATION, CONSOLIDATION, OUVERTURE, puis MOT D'ENCOURAGEMENT
 `;
 
-function verifierSignatureMeta(req) {
-    try {
-        const appSecret = process.env.APP_SECRET;
-        const signature = req.get("x-hub-signature-256");
+const SYSTEM_BASE = `
+Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
 
-        if (!appSecret || !signature || !req.rawBody) return false;
+MISSION :
+- Aider l'élève à comprendre
+- Guider sans faire le travail à sa place
+- Expliquer comme un vrai précepteur
+- Utiliser un ton humain, simple, motivant et respectueux
+- Adapter le niveau à la classe de l'élève
+- Te référer au contexte scolaire de la RDC lorsque c'est pertinent
 
-        const expectedSignature =
-            "sha256=" +
-            crypto
-                .createHmac("sha256", appSecret)
-                .update(req.rawBody)
-                .digest("hex");
+STYLE OBLIGATOIRE :
+- Réponse claire, structurée et chaleureuse
+- Phrases naturelles, pas robotiques
+- Toujours encourager l'élève
+- Ne jamais humilier l'élève
+- Si l'élève pose une question d'exercice :
+  1. expliquer la méthode
+  2. montrer les étapes
+  3. inviter l'élève à essayer
+  4. corriger ensuite si l'élève donne sa réponse
+- Si l'information n'est pas certaine, le dire honnêtement
+- Ne pas inventer de référence scolaire ou scientifique
+- Pour les maths et sciences, respecter strictement les règles de présentation
+- Répondre en français sauf si l'élève change de langue
 
-        const sigBuffer = Buffer.from(signature);
-        const expectedBuffer = Buffer.from(expectedSignature);
-
-        if (sigBuffer.length !== expectedBuffer.length) return false;
-
-        return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
-    } catch (e) {
-        console.error("Erreur vérification signature:", e.message);
-        return false;
-    }
-}
-
-function extraireMessageWhatsApp(body) {
-    const value = body?.entry?.[0]?.changes?.[0]?.value;
-    if (!value) return null;
-
-    if (value.statuses?.length) return null;
-    if (!value.messages?.length) return null;
-
-    return value.messages[0];
-}
-
-function genreEleve(nom = "") {
-    const prenom = String(nom || "").trim().toLowerCase();
-
-    const prenomsFemininsConnus = [
-        "dora", "marie", "anne", "anna", "annie", "anuarite", "ruth",
-        "grace", "esther", "sarah", "debora", "débora", "fatou",
-        "chantal", "nadine", "brigitte", "joyce", "elodie", "élodie",
-        "mireille", "patience", "rebecca", "rebeca", "prisca", "gloria"
-    ];
-
-    if (prenomsFemininsConnus.includes(prenom)) {
-        return "mon élève";
-    }
-
-    const terminaisonsFeminines = ["a", "ia", "na", "ssa", "elle", "ine", "ette", "line"];
-    if (terminaisonsFeminines.some(fin => prenom.endsWith(fin))) {
-        return "mon élève";
-    }
-
-    return "mon cher élève";
-}
-
-function adapterTexteGenre(texte = "", nom = "") {
-    const formule = genreEleve(nom);
-    if (formule === "mon élève") {
-        return texte.replaceAll("mon cher élève", "mon élève");
-    }
-    return texte;
-}
-
-async function initDB() {
-    try {
-        await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS processed_messages (
-                msg_id TEXT PRIMARY KEY,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at
-            ON processed_messages(created_at);
-        `);
-        console.log("✅ DB prête.");
-    } catch (e) {
-        console.error("Init DB Error:", e.message);
-    }
-}
-initDB();
-
-cron.schedule('0 7 * * *', async () => {
-    try {
-        const { rows } = await pool.query("SELECT phone, nom FROM conversations WHERE nom != ''");
-        for (const u of rows) {
-            const cit = CITATIONS[Math.floor(Math.random() * CITATIONS.length)];
-            await envoyerWhatsApp(
-                u.phone,
-                `${HEADER_MWALIMU}
-
-☀️ Bonjour **${u.nom}** !
-
-Le Congo compte sur toi aujourd’hui. Prépare ton esprit et avance avec confiance.
-
-${cit}`
-            );
-            await pause(250);
-        }
-    } catch (e) {
-        console.error("Cron Error:", e.message);
-    }
-}, { timezone: "Africa/Lubumbashi" });
-
-cron.schedule('0 3 * * *', async () => {
-    try {
-        await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '2 days'");
-        console.log("🧹 Nettoyage processed_messages effectué.");
-    } catch (e) {
-        console.error("Cleanup Error:", e.message);
-    }
-}, { timezone: "Africa/Lubumbashi" });
-
-function pause(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function choisirAleatoire(tableau) {
-    return tableau[Math.floor(Math.random() * tableau.length)];
-}
-
-function choisirMotEncouragement() {
-    return MOTS_ENCOURAGEMENT[Math.floor(Math.random() * MOTS_ENCOURAGEMENT.length)];
-}
-
-function nettoyer(t) {
-    if (!t) return "";
-    return t
-        .replace(/je m'appelle|mon nom est|mon prénom est|je suis en|ma classe est|mon rêve est|je veux devenir/gi, "")
-        .replace(/^devenir\s+/i, "")
-        .replace(/^être\s+/i, "")
-        .replace(/[.,!?;: ]+/g, " ")
-        .trim();
-}
-
-function estQuestionTechnique(texte = "") {
-    const t = texte.toLowerCase();
-    const mots = [
-        "calcule", "calculer", "résous", "resous", "résoudre", "équation", "equation",
-        "fraction", "produit", "somme", "soustraction", "multiplication", "division",
-        "physique", "chimie", "mécanique", "mecanique", "force", "vitesse",
-        "accélération", "acceleration", "masse", "énergie", "energie", "courant",
-        "tension", "mole", "solution", "exercice", "problème", "probleme", "formule",
-        "algèbre", "algebre", "géométrie", "geometrie", "triangle", "carré", "carre",
-        "rectangle", "puissance", "racine", "racine carrée", "pourcentage"
-    ];
-    return mots.some(m => t.includes(m));
-}
-
-function extensionDepuisMime(mimeType = "") {
-    const map = {
-        "audio/ogg": ".ogg",
-        "audio/opus": ".ogg",
-        "audio/mpeg": ".mp3",
-        "audio/mp3": ".mp3",
-        "audio/mp4": ".mp4",
-        "audio/m4a": ".m4a",
-        "audio/aac": ".aac",
-        "audio/amr": ".amr",
-        "audio/wav": ".wav",
-        "audio/x-wav": ".wav",
-        "audio/webm": ".webm"
-    };
-    return map[mimeType] || ".ogg";
-}
-
-async function envoyerWhatsApp(to, texte) {
-    try {
-        await axios.post(
-            `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
-            {
-                messaging_product: "whatsapp",
-                to,
-                text: { body: texte }
-            },
-            {
-                headers: { Authorization: `Bearer ${process.env.TOKEN}` },
-                timeout: 10000
-            }
-        );
-    } catch (e) {
-        console.error("Erreur WA:", e.response?.data || e.message);
-    }
-}
-
-async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
-    let tempPath = null;
-
-    try {
-        const extension = extensionDepuisMime(mimeType);
-        tempPath = path.join(os.tmpdir(), `mwalimu-audio-${Date.now()}${extension}`);
-
-        await fs.promises.writeFile(tempPath, audioBuffer);
-
-        const transcription = await openai.audio.transcriptions.create({
-            file: fs.createReadStream(tempPath),
-            model: "whisper-1",
-            language: "fr",
-            response_format: "json"
-        });
-
-        return transcription?.text?.trim() || "";
-    } catch (e) {
-        console.error("Erreur transcription audio:", e.message);
-        return "";
-    } finally {
-        if (tempPath) {
-            try {
-                await fs.promises.unlink(tempPath);
-            } catch {}
-        }
-    }
-}
-
-async function consulterBibliotheque(question) {
-    if (!question) return null;
-
-    try {
-        const mots = question.toLowerCase().split(/\s+/).filter(m => m.length > 2);
-        const search = mots.length ? mots.map(m => `%${m}%`) : [`%${question}%`];
-
-        const res = await pool.query(
-            `SELECT sujet, contenu
-             FROM bibliotheque_mwalimu
-             WHERE unaccent(sujet) ILIKE ANY($1)
-                OR unaccent(contenu) ILIKE ANY($1)
-             ORDER BY (unaccent(sujet) ILIKE ANY($1)) DESC
-             LIMIT 1`,
-            [search]
-        );
-
-        return res.rows[0] || null;
-    } catch (e) {
-        console.error("Erreur SQL:", e.message);
-        return null;
-    }
-}
-
-async function expliquerFiche(user, fiche, questionEleve) {
-    const technique = estQuestionTechnique(questionEleve);
-    const appelEleve = genreEleve(user.nom);
-
-    const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-            {
-                role: "system",
-                content: `
-Tu es Mwalimu EdTech, un précepteur congolais chaleureux, rassurant, exigeant et humain.
-
-RÈGLE D'OR ABSOLUE :
-- Tu expliques uniquement la fiche.
-- Tu ne modifies aucun fait.
-- Tu n'ajoutes aucun territoire, ville, chiffre, date ou élément absent de la fiche.
-- Si une liste existe dans la fiche, tu ne la réécris pas autrement.
-- Tu peux expliquer et illustrer, mais sans changer les faits.
-
-STYLE :
-- L'élève doit se sentir accueilli, écouté, apprécié et encouragé.
-- Ton ton doit être naturel, clair, vivant et bienveillant.
-- Adresse-toi à l'élève avec cette formule : ${appelEleve}
-- Si le prénom semble féminin, évite absolument l'expression "mon cher élève" et utilise plutôt "mon élève".
-
-ADAPTATION :
-- ÉLÈVE : ${user.nom}
-- CLASSE : ${user.classe}
-- RÊVE : ${user.reve}
-
-${technique ? `
-CONSIGNE TECHNIQUE SUPPLÉMENTAIRE :
-- La question de l'élève est technique ou pratique.
-- Sois particulièrement attentif à la démarche étape par étape.
-- N'offre pas une correction brute.
-- Explique la méthode.
-- Donne une piste claire.
-- Invite l'élève à essayer lui-même.
-- Si tu utilises une formule, explique à quoi elle sert.
-- Quand tu écris des expressions mathématiques, respecte strictement le format mathématique propre pour WhatsApp.
-
-${REGLE_CALCUL_INTELLIGENT}
-` : ""}
-
-STRUCTURE OBLIGATOIRE :
-🔵 [ACCUEIL] : adresse l'élève par son prénom avec chaleur.
-🔵 [VÉCU] : lien simple avec son quotidien.
-🟡 [SAVOIR] : explication fidèle de la fiche.
-🔴 [INSPIRATION] : encouragement lié à son rêve.
-❓ [CONSOLIDATION] : question courte et intelligente.
-👉 [OUVERTURE] : phrase humaine et motivante.
-🌟 [MOT D'ENCOURAGEMENT] : termine par un court mot d'encouragement.
-
-${REGLE_FORMAT_MATH}
-                `.trim()
-            },
-            {
-                role: "user",
-                content: `
-QUESTION DE L'ÉLÈVE :
-${questionEleve}
-
-FICHE OFFICIELLE :
-SUJET : ${fiche.sujet}
-
-CONTENU EXACT :
-${fiche.contenu}
-                `.trim()
-            }
-        ]
-    });
-
-    return completion.choices[0].message.content?.trim() || "Je n'ai pas pu expliquer correctement la fiche.";
-}
-
-async function repondreSansFiche(user, texte, historique) {
-    const technique = estQuestionTechnique(texte);
-    const appelEleve = genreEleve(user.nom);
-
-    const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-            {
-                role: "system",
-                content: `
-Tu es Mwalimu EdTech, un précepteur congolais bienveillant, humain et pédagogique.
-
-RÈGLES :
-- Si tu n'es pas sûr, dis-le clairement.
-- N'invente pas de faits précis.
-- Adresse-toi à ${user.nom}, qui rêve de devenir ${user.reve}.
-- Adapte ton langage au niveau de la classe ${user.classe}.
-- Utilise la formule suivante pour t'adresser à l'élève : ${appelEleve}
-- Si le prénom semble féminin, n'utilise jamais "mon cher élève", mais "mon élève".
-
-${technique ? `
-CONSIGNE TECHNIQUE :
-- La question est technique ou pratique.
-- Tu dois guider sans donner directement toute la réponse finale.
-- Explique la méthode étape par étape.
-- Donne un exemple proche.
-- Puis invite l'élève à essayer lui-même.
-- Corrige avec douceur, jamais brutalement.
-- Quand tu écris des mathématiques, utilise un affichage très propre et simple pour WhatsApp.
-- Pour les calculs, sois plus rigoureux qu'un assistant ordinaire : vérifie chaque opération avant de répondre.
-- N'écris jamais une étape mathématique sans l'avoir vérifiée.
-
-${REGLE_CALCUL_INTELLIGENT}
-` : `
-CONSIGNE GÉNÉRALE :
-- Réponds simplement, clairement et humainement.
-- Mets l'élève à l'aise et donne envie de continuer l'échange.
-`}
-
-STRUCTURE OBLIGATOIRE :
-🔵 [ACCUEIL]
+STRUCTURE SOUHAITÉE :
 🔵 [VÉCU]
 🟡 [SAVOIR]
 🔴 [INSPIRATION]
@@ -487,404 +156,719 @@ STRUCTURE OBLIGATOIRE :
 👉 [OUVERTURE]
 🌟 [MOT D'ENCOURAGEMENT]
 
+${REGLE_CALCUL_INTELLIGENT}
 ${REGLE_FORMAT_MATH}
-                `.trim()
-            },
-            ...historique.slice(-4),
-            { role: "user", content: texte }
-        ]
-    });
+`;
 
-    return completion.choices[0].message.content?.trim() || "Je n'ai pas pu répondre correctement.";
+/* =========================================================
+   3) OUTILS SIMPLES
+========================================================= */
+
+function pick(arr = []) {
+    if (!arr.length) return "";
+    return arr[Math.floor(Math.random() * arr.length)];
 }
 
-async function expliquerImageAvecIA(user, base64Image, mimeType = "image/jpeg") {
-    const appelEleve = genreEleve(user.nom);
+function safeJsonParse(v, fallback) {
+    try {
+        return JSON.parse(v);
+    } catch {
+        return fallback;
+    }
+}
 
+function nettoyer(t) {
+    if (!t) return "";
+    return String(t)
+        .replace(/je m'appelle|mon nom est|mon prénom est|je suis en|ma classe est|mon rêve est|je veux devenir/gi, "")
+        .replace(/^devenir\s+/i, "")
+        .replace(/^être\s+/i, "")
+        .replace(/[.,!?;: ]+/g, " ")
+        .trim();
+}
+
+function tronquerTexte(texte = "", max = 3500) {
+    const t = String(texte || "").trim();
+    return t.length <= max ? t : `${t.slice(0, max)}...`;
+}
+
+function normaliserNom(nom = "") {
+    return String(nom || "").trim().replace(/\s+/g, " ");
+}
+
+function genreEleve(nom = "") {
+    const prenom = String(nom || "").trim().split(" ")[0].toLowerCase();
+    const prenomsFeminins = [
+        "dora", "marie", "anne", "anna", "annie", "anuarite", "ruth", "grace", "grâce",
+        "esther", "sarah", "sara", "debora", "débora", "fatou", "chantal", "nadine",
+        "brigitte", "joyce", "elodie", "élodie", "mireille", "patience", "rebecca",
+        "rebeca", "prisca", "gloria", "divine", "mercie", "naomie", "noella", "blandine", "huguette"
+    ];
+    const terminaisonsFeminines = ["a", "ia", "na", "ssa", "elle", "ine", "ette", "line"];
+
+    if (prenomsFeminins.includes(prenom) || terminaisonsFeminines.some(fin => prenom.endsWith(fin))) {
+        return "ma chère";
+    }
+    return "mon cher";
+}
+
+function adapterTexteGenre(texte = "", nom = "") {
+    const prenomNettoye = normaliserNom(nom).split(" ")[0] || "élève";
+    const prefixe = genreEleve(prenomNettoye);
+    const appelComplet = `${prefixe} **${prenomNettoye}**`;
+
+    return String(texte || "")
+        .replace(/mon cher élève/gi, appelComplet)
+        .replace(/ma chère élève/gi, appelComplet)
+        .replace(/mon élève/gi, appelComplet)
+        .replace(/cher élève/gi, appelComplet);
+}
+
+function construireAppel(user) {
+    const prenom = normaliserNom(user?.nom || "élève").split(" ")[0];
+    return `${genreEleve(prenom)} ${prenom}`;
+}
+
+function estQuestionTechnique(texte = "") {
+    const t = String(texte || "").toLowerCase();
+    const mots = [
+        "calcule", "calculer", "résous", "resous", "équation", "equation", "fraction",
+        "physique", "chimie", "exercice", "problème", "probleme", "géométrie",
+        "geometrie", "puissance", "racine", "math", "maths", "formule"
+    ];
+    return mots.some(m => t.includes(m));
+}
+
+function typeMessage(msg) {
+    if (!msg) return "unknown";
+    if (msg.text?.body) return "text";
+    if (msg.audio) return "audio";
+    if (msg.image) return "image";
+    if (msg.document) return "document";
+    if (msg.interactive) return "interactive";
+    return msg.type || "unknown";
+}
+
+/* =========================================================
+   4) DB
+========================================================= */
+
+async function initDB() {
+    try {
+        await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS processed_messages (
+                msg_id TEXT PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS conversations (
+                phone TEXT PRIMARY KEY,
+                nom TEXT DEFAULT '',
+                classe TEXT DEFAULT '',
+                reve TEXT DEFAULT '',
+                historique JSONB DEFAULT '[]'::jsonb,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS bibliotheque (
+                id SERIAL PRIMARY KEY,
+                titre TEXT,
+                matiere TEXT,
+                classe TEXT,
+                mots_cles TEXT,
+                contenu TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        console.log("✅ DB prête.");
+    } catch (e) {
+        console.error("Init DB Error:", e.message);
+        process.exit(1);
+    }
+}
+
+async function getUser(phone) {
+    const { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [phone]);
+    return rows[0] || null;
+}
+
+async function createUser(phone) {
+    await pool.query(
+        "INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]'::jsonb) ON CONFLICT (phone) DO NOTHING",
+        [phone]
+    );
+    return getUser(phone);
+}
+
+async function updateUserField(phone, field, value) {
+    const allowed = ["nom", "classe", "reve", "historique"];
+    if (!allowed.includes(field)) throw new Error("Champ non autorisé");
+    const query = `UPDATE conversations SET ${field}=$1, updated_at=NOW() WHERE phone=$2`;
+    await pool.query(query, [value, phone]);
+}
+
+async function appendHistorique(phone, role, content) {
+    const user = await getUser(phone);
+    const hist = Array.isArray(user?.historique) ? user.historique : safeJsonParse(user?.historique, []);
+    hist.push({
+        role,
+        content: tronquerTexte(content, 2500),
+        ts: new Date().toISOString()
+    });
+    const histCompact = hist.slice(-12);
+    await updateUserField(phone, "historique", JSON.stringify(histCompact));
+    return histCompact;
+}
+
+/* =========================================================
+   5) SÉCURITÉ WEBHOOK
+========================================================= */
+
+function verifierSignatureMeta(req) {
+    try {
+        const signature = req.get("x-hub-signature-256");
+        if (!APP_SECRET || !signature || !req.rawBody) return false;
+
+        const expectedSignature =
+            "sha256=" +
+            crypto
+                .createHmac("sha256", APP_SECRET)
+                .update(req.rawBody)
+                .digest("hex");
+
+        const sigBuf = Buffer.from(signature);
+        const expBuf = Buffer.from(expectedSignature);
+
+        if (sigBuf.length !== expBuf.length) return false;
+        return crypto.timingSafeEqual(sigBuf, expBuf);
+    } catch {
+        return false;
+    }
+}
+
+function extraireMessageWhatsApp(body) {
+    const value = body?.entry?.[0]?.changes?.[0]?.value;
+    if (!value || value.statuses?.length || !value.messages?.length) return null;
+    return value.messages[0];
+}
+
+/* =========================================================
+   6) WHATSAPP
+========================================================= */
+
+async function envoyerWhatsApp(to, texte) {
+    try {
+        await axios.post(
+            `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+            {
+                messaging_product: "whatsapp",
+                to,
+                type: "text",
+                text: { body: tronquerTexte(texte, 3900) }
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${TOKEN}`,
+                    "Content-Type": "application/json"
+                },
+                timeout: 15000
+            }
+        );
+    } catch (e) {
+        console.error("Erreur WA:", e.response?.data || e.message);
+    }
+}
+
+async function recupererMediaUrl(mediaId) {
+    const r = await axios.get(
+        `https://graph.facebook.com/v18.0/${mediaId}`,
+        {
+            headers: { Authorization: `Bearer ${TOKEN}` },
+            timeout: 15000
+        }
+    );
+    return r.data?.url || null;
+}
+
+async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
+    const mediaUrl = await recupererMediaUrl(mediaId);
+    if (!mediaUrl) throw new Error("URL média introuvable");
+
+    const response = await axios.get(mediaUrl, {
+        responseType: "arraybuffer",
+        headers: { Authorization: `Bearer ${TOKEN}` },
+        timeout: 30000,
+        maxContentLength: maxBytes,
+        maxBodyLength: maxBytes,
+        validateStatus: (s) => s >= 200 && s < 300
+    });
+
+    const contentType = response.headers["content-type"] || "application/octet-stream";
+    const contentLength = Number(response.headers["content-length"] || response.data?.byteLength || 0);
+
+    if (contentLength > maxBytes) {
+        throw new Error("Fichier trop volumineux");
+    }
+
+    return {
+        buffer: Buffer.from(response.data),
+        mimeType: contentType
+    };
+}
+
+/* =========================================================
+   7) IA : BIBLIOTHÈQUE / AUDIO / IMAGE / TEXTE
+========================================================= */
+
+async function consulterBibliotheque(question = "", classe = "") {
+    try {
+        const q = `
+            SELECT id, titre, matiere, classe, contenu
+            FROM bibliotheque
+            WHERE (
+                unaccent(lower(coalesce(titre, ''))) LIKE unaccent(lower($1))
+                OR unaccent(lower(coalesce(matiere, ''))) LIKE unaccent(lower($1))
+                OR unaccent(lower(coalesce(mots_cles, ''))) LIKE unaccent(lower($1))
+                OR unaccent(lower(coalesce(contenu, ''))) LIKE unaccent(lower($1))
+            )
+            AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
+            ORDER BY id DESC
+            LIMIT 1
+        `;
+
+        const motifQuestion = `%${question}%`;
+        const motifClasse = `%${classe}%`;
+
+        const { rows } = await pool.query(q, [motifQuestion, classe || "", motifClasse]);
+        return rows[0] || null;
+    } catch (e) {
+        console.error("Erreur consulterBibliotheque:", e.message);
+        return null;
+    }
+}
+
+async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
+    const extMap = {
+        "audio/ogg": ".ogg",
+        "audio/opus": ".ogg",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/mp4": ".m4a",
+        "audio/aac": ".aac",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav"
+    };
+
+    const ext = extMap[mimeType] || ".ogg";
+    const tempPath = path.join(os.tmpdir(), `mwalimu_${Date.now()}${ext}`);
+
+    try {
+        fs.writeFileSync(tempPath, audioBuffer);
+
+        const transcript = await openai.audio.transcriptions.create({
+            file: fs.createReadStream(tempPath),
+            model: "whisper-1"
+        });
+
+        return String(transcript?.text || "").trim();
+    } finally {
+        try {
+            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch {}
+    }
+}
+
+async function appelerChatCompletion(messages) {
     const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         temperature: 0.2,
-        messages: [
-            {
-                role: "system",
-                content: `
-Tu es Mwalimu EdTech, précepteur congolais rigoureux, humain et bienveillant.
-
-RÈGLE CRITIQUE ABSOLUE :
-- Tu dois TOUJOURS commencer par lire et recopier fidèlement l'exercice ou le texte visible sur l'image.
-- Tu ne passes JAMAIS directement à l'explication.
-- Tu ne modifies aucun chiffre, symbole, mot, donnée ou unité visible.
-- Si l'image contient un exercice, tu guides l'élève sans donner directement la réponse finale.
-- Si l'image est floue ou partiellement illisible, tu le dis clairement sans inventer.
-- Utilise la formule suivante pour t'adresser à l'élève : ${appelEleve}
-- Si le prénom semble féminin, n'utilise jamais "mon cher élève", mais "mon élève".
-
-ADAPTATION :
-- Élève : ${user.nom || "mon élève"}
-- Classe : ${user.classe || "niveau inconnu"}
-- Rêve : ${user.reve || "grand professionnel"}
-
-ORDRE STRICT À RESPECTER :
-
-📝 [LECTURE] :
-- Recopie exactement l'énoncé ou le texte visible sur l'image.
-- Respecte les nombres, signes, unités et formulations.
-- Si une partie est illisible, écris exactement : "Une partie de l'exercice est illisible".
-
-🔵 [ACCUEIL] :
-- Accueille l'élève avec chaleur.
-
-🔵 [VÉCU] :
-- Fais un lien simple avec son quotidien ou sa manière d'apprendre.
-
-🟡 [SAVOIR] :
-- Explique simplement ce que demande l'exercice ou ce que montre l'image.
-
-🧠 [MÉTHODE] :
-- Donne la démarche étape par étape.
-- N'apporte PAS la solution finale.
-- Guide l'élève pour qu'il travaille lui-même.
-- Si tu écris des mathématiques, elles doivent être propres, simples et lisibles sur WhatsApp.
-
-🔴 [INSPIRATION] :
-- Encourage l'élève en lien avec son rêve.
-
-❓ [CONSOLIDATION] :
-- Pose une petite question pour vérifier sa compréhension.
-
-👉 [OUVERTURE] :
-- Termine par une phrase humaine et chaleureuse.
-
-🌟 [MOT D'ENCOURAGEMENT] :
-- Termine par un court mot d'encouragement.
-
-INTERDICTIONS :
-- Ne saute jamais [LECTURE].
-- Ne donne jamais la réponse directe.
-- N'invente rien.
-- Si le texte est illisible, ne suppose pas.
-
-${REGLE_CALCUL_INTELLIGENT}
-${REGLE_FORMAT_MATH}
-                `.trim()
-            },
-            {
-                role: "user",
-                content: [
-                    {
-                        type: "text",
-                        text: "Lis cette photo, recopie d'abord fidèlement le contenu visible, puis explique la méthode sans donner la réponse finale. Respecte obligatoirement l'ordre : Accueil, Vécu, Savoir, Inspiration, Consolidation, Ouverture, puis Mot d'encouragement."
-                    },
-                    {
-                        type: "image_url",
-                        image_url: {
-                            url: `data:${mimeType};base64,${base64Image}`
-                        }
-                    }
-                ]
-            }
-        ]
+        messages
     });
-
-    return completion.choices[0].message.content?.trim() || "Je n'ai pas pu analyser correctement l'image.";
+    return completion.choices?.[0]?.message?.content?.trim() || "";
 }
+
+function construireSystemPrompt(user) {
+    const appelEleve = construireAppel(user);
+    const classe = user?.classe ? `Classe de l'élève : ${user.classe}` : "Classe non précisée";
+    const reve = user?.reve ? `Rêve de l'élève : ${user.reve}` : "Rêve non précisé";
+
+    return `
+${SYSTEM_BASE}
+
+PERSONNALISATION :
+- Adresse l'élève ainsi : ${appelEleve}
+- ${classe}
+- ${reve}
+
+INTERDICTION :
+- Ne dis pas "mon élève"
+- Utilise naturellement le prénom quand c'est utile
+- Ne donne pas une réponse froide de moteur de recherche
+- Ne saute pas à la conclusion
+`;
+}
+
+async function expliquerFiche(user, fiche, questionEleve, historique = []) {
+    const system = construireSystemPrompt(user);
+
+    return appelerChatCompletion([
+        { role: "system", content: system },
+        ...historique.slice(-6),
+        {
+            role: "user",
+            content: `
+QUESTION DE L'ÉLÈVE :
+${questionEleve}
+
+FICHE DE BIBLIOTHÈQUE :
+Titre : ${fiche?.titre || "Sans titre"}
+Matière : ${fiche?.matiere || "Non précisée"}
+Classe : ${fiche?.classe || "Non précisée"}
+
+Contenu :
+${fiche?.contenu || ""}
+`
+        }
+    ]);
+}
+
+async function repondreSansFiche(user, texte, historique = []) {
+    const system = construireSystemPrompt(user);
+
+    return appelerChatCompletion([
+        { role: "system", content: system },
+        ...historique.slice(-6),
+        { role: "user", content: texte }
+    ]);
+}
+
+async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
+    const system = construireSystemPrompt(user);
+
+    return appelerChatCompletion([
+        { role: "system", content: system },
+        ...historique.slice(-4),
+        {
+            role: "user",
+            content: [
+                { type: "text", text: "Analyse cette image d'exercice ou de leçon, explique-la pas à pas à l'élève sans faire brutalement à sa place." },
+                { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
+            ]
+        }
+    ]);
+}
+
+function construireMessageFinal(user, reponseBrute) {
+    const citation = pick(CITATIONS);
+    const ouverture = adapterTexteGenre(pick(OUVERTURES), user.nom);
+    const encouragement = pick(MOTS_ENCOURAGEMENT);
+    const corps = adapterTexteGenre(reponseBrute, user.nom);
+
+    return `${HEADER_MWALIMU}
+
+${corps}
+
+${ouverture}
+
+${encouragement}
+
+${citation}`;
+}
+
+function messageSecours(user) {
+    const appel = `${genreEleve(user?.nom || "élève")} **${normaliserNom(user?.nom || "élève").split(" ")[0]}**`;
+    return `${HEADER_MWALIMU}
+
+🔵 J'ai bien reçu ton message, ${appel}.
+
+🟡 Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
+
+🔴 Réessaie dans un instant, ou reformule ta question plus simplement.
+
+❓ Tu peux aussi m'envoyer une seule question à la fois pour que je t'aide mieux.
+
+👉 Je reste à tes côtés.
+
+🌟 Mot d'encouragement : Même quand cela bloque un peu, on continue avec calme et méthode.`;
+}
+
+/* =========================================================
+   8) TRAITEMENT PAR TYPE DE MESSAGE
+========================================================= */
+
+async function traiterTexte(user, texteUtilisateur, historique) {
+    const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
+    if (fiche) {
+        return expliquerFiche(user, fiche, texteUtilisateur, historique);
+    }
+    return repondreSansFiche(user, texteUtilisateur, historique);
+}
+
+async function traiterAudio(user, msg, historique) {
+    const audioId = msg.audio?.id;
+    if (!audioId) {
+        return "🔵 J'ai bien reçu ton audio.\n\n🟡 Mais je n'arrive pas à l'ouvrir correctement.\n\n👉 Réessaie avec un autre message vocal plus clair.";
+    }
+
+    const { buffer, mimeType } = await telechargerMedia(audioId, 8 * 1024 * 1024);
+    const transcription = await transcrireAudioAvecIA(buffer, mimeType);
+
+    if (!transcription) {
+        return "🔵 J’ai bien reçu ton audio.\n\n🟡 Je n'arrive pas encore à le traiter correctement.\n\n👉 Réessaie avec un message vocal plus clair et sans bruit autour.";
+    }
+
+    const fiche = await consulterBibliotheque(transcription, user.classe || "");
+    if (fiche) {
+        return expliquerFiche(user, fiche, transcription, historique);
+    }
+
+    return repondreSansFiche(
+        user,
+        `L'élève a envoyé un message vocal. Voici la transcription : ${transcription}`,
+        historique
+    );
+}
+
+async function traiterImage(user, msg, historique) {
+    const imageId = msg.image?.id;
+    if (!imageId) {
+        return "🔵 J'ai bien reçu ton image.\n\n🟡 Mais je n'arrive pas à l'ouvrir correctement.\n\n👉 Réessaie en envoyant une image plus nette.";
+    }
+
+    const { buffer, mimeType } = await telechargerMedia(imageId, 8 * 1024 * 1024);
+    const base64Image = buffer.toString("base64");
+
+    return expliquerImageAvecIA(user, base64Image, mimeType, historique);
+}
+
+/* =========================================================
+   9) CRON
+========================================================= */
+
+cron.schedule("0 7 * * *", async () => {
+    try {
+        console.log("⏰ Rappel matinal exécuté.");
+        // Ici tu pourras plus tard envoyer les rappels pédagogiques ciblés
+    } catch (e) {
+        console.error("Erreur cron bonjour:", e.message);
+    }
+}, { timezone: "Africa/Lubumbashi" });
+
+cron.schedule("0 3 * * *", async () => {
+    try {
+        await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '2 days'");
+        console.log("🧹 Nettoyage processed_messages terminé.");
+    } catch (e) {
+        console.error("Erreur cron nettoyage:", e.message);
+    }
+}, { timezone: "Africa/Lubumbashi" });
+
+/* =========================================================
+   10) WEBHOOK PRINCIPAL
+========================================================= */
 
 app.post("/webhook", async (req, res) => {
     if (!verifierSignatureMeta(req)) {
-        console.warn("⛔ Requête rejetée : signature invalide.");
         return res.sendStatus(403);
     }
 
     const msg = extraireMessageWhatsApp(req.body);
-    if (!msg) {
-        return res.sendStatus(200);
-    }
+    if (!msg) return res.sendStatus(200);
 
     res.sendStatus(200);
 
-    const image = msg.image;
-    const audio = msg.audio;
     const from = msg.from;
-    let texteUtilisateur = msg.text?.body || "";
     const msgId = msg.id;
+    const texteUtilisateur = msg.text?.body?.trim() || "";
+    const msgType = typeMessage(msg);
 
     try {
-        if (!from || !msgId) return;
+        const check = await pool.query(
+            "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
+            [msgId]
+        );
+        if (check.rowCount === 0) return;
 
-        if (msgId) {
-            const check = await pool.query(
-                "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
-                [msgId]
-            );
-            if (check.rowCount === 0) return;
-        }
-
-        let { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [from]);
-        let user = rows[0];
-
-        if (!user) {
+        // /profil
+        if (msgType === "text" && texteUtilisateur.toLowerCase() === "/profil") {
             await pool.query(
-                "INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1,'','','','[]')",
+                "UPDATE conversations SET nom='', classe='', reve='', historique='[]'::jsonb, updated_at=NOW() WHERE phone=$1",
                 [from]
             );
-            return envoyerWhatsApp(
+            return await envoyerWhatsApp(
                 from,
                 `${HEADER_MWALIMU}
 
-🔵 ${choisirAleatoire(ACCUEILS)}
+🔄 **Mise à jour de ton profil**
 
 🟡 Quel est ton **prénom** ?`
             );
         }
 
-        if (!user.nom) {
-            const nom = nettoyer(texteUtilisateur);
-            await pool.query("UPDATE conversations SET nom=$1 WHERE phone=$2", [nom, from]);
-            return envoyerWhatsApp(
+        let user = await getUser(from);
+
+        if (!user) {
+            await createUser(from);
+            return await envoyerWhatsApp(
                 from,
-                `🤝 Enchanté **${nom}** ! Je suis heureux de faire ta connaissance.
+                `${HEADER_MWALIMU}
+
+🔵 ${ACCUEILS[0]}
+
+🟡 Quel est ton **prénom** ?`
+            );
+        }
+
+        // Flux d'inscription
+        if (!user.nom) {
+            const nom = normaliserNom(nettoyer(texteUtilisateur));
+            if (!nom) {
+                return await envoyerWhatsApp(
+                    from,
+                    `${HEADER_MWALIMU}
+
+🟡 Donne-moi simplement ton **prénom**, s'il te plaît.`
+                );
+            }
+
+            await updateUserField(from, "nom", nom);
+
+            return await envoyerWhatsApp(
+                from,
+                `🤝 Enchanté **${nom}** !
 
 🟡 En quelle **classe** es-tu ?`
             );
         }
 
         if (!user.classe) {
-            const cl = nettoyer(texteUtilisateur);
-            await pool.query("UPDATE conversations SET classe=$1 WHERE phone=$2", [cl, from]);
-            return envoyerWhatsApp(
+            const cl = normaliserNom(nettoyer(texteUtilisateur));
+            if (!cl) {
+                return await envoyerWhatsApp(
+                    from,
+                    `🟡 Écris-moi ta **classe** simplement.
+Exemple : 6e, 8e, Terminale, 1ère secondaire.`
+                );
+            }
+
+            await updateUserField(from, "classe", cl);
+            user = await getUser(from);
+
+            return await envoyerWhatsApp(
                 from,
                 `🟡 C'est bien noté, **${user.nom}**.
-
-🔵 La classe de **${cl}** demande de la régularité et du courage.
 
 ❓ Quel est ton plus grand **rêve** professionnel ?`
             );
         }
 
         if (!user.reve) {
-            const rv = nettoyer(texteUtilisateur);
-            await pool.query("UPDATE conversations SET reve=$1 WHERE phone=$2", [rv, from]);
-            return envoyerWhatsApp(
-                from,
-                `🔴 Magnifique ! Devenir **${rv}** est une belle ambition.
-
-🔵 Je serai à tes côtés pour t'aider à progresser avec méthode et confiance.
-
-👉 Pose-moi maintenant ta question.`
-            );
-        }
-
-        let historique = [];
-        try {
-            historique = JSON.parse(user.historique || "[]");
-        } catch {
-            historique = [];
-        }
-
-        if (audio?.id) {
-            try {
-                const media = await axios.get(
-                    `https://graph.facebook.com/v18.0/${audio.id}`,
-                    {
-                        headers: { Authorization: `Bearer ${process.env.TOKEN}` },
-                        timeout: 10000
-                    }
-                );
-
-                const mediaUrl = media.data.url;
-
-                const audioFile = await axios.get(mediaUrl, {
-                    headers: { Authorization: `Bearer ${process.env.TOKEN}` },
-                    responseType: "arraybuffer",
-                    timeout: 20000
-                });
-
-                const mimeType = audio.mime_type || "audio/ogg";
-                const audioBuffer = Buffer.from(audioFile.data);
-
-                const transcription = await transcrireAudioAvecIA(audioBuffer, mimeType);
-
-                if (!transcription) {
-                    return envoyerWhatsApp(
-                        from,
-                        `${HEADER_MWALIMU}
-
-🎤 J’ai bien reçu ton audio.
-
-🟡 Je n’ai pas pu bien comprendre la voix.
-👉 Parle un peu plus lentement, dans un endroit calme, puis renvoie l’audio.`
-                    );
-                }
-
-                texteUtilisateur = transcription;
-
-                const nouvelHistoriqueAudio = JSON.stringify([
-                    ...historique,
-                    { role: "user", content: `[Audio] ${texteUtilisateur}` }
-                ].slice(-10));
-
-                await pool.query(
-                    "UPDATE conversations SET historique=$1 WHERE phone=$2",
-                    [nouvelHistoriqueAudio, from]
-                );
-
-                historique = JSON.parse(nouvelHistoriqueAudio);
-            } catch (e) {
-                console.error("Erreur audio:", e.response?.data || e.message);
-                return envoyerWhatsApp(
+            const rv = normaliserNom(nettoyer(texteUtilisateur));
+            if (!rv) {
+                return await envoyerWhatsApp(
                     from,
-                    `${HEADER_MWALIMU}
-
-🎤 J’ai bien reçu ton audio.
-
-🟡 Je rencontre une difficulté pour le lire correctement.
-👉 Réessaie avec un audio plus court, plus clair et sans bruit autour de toi.`
+                    `❓ Dis-moi simplement ton **rêve** professionnel.
+Exemple : avocat, médecin, ingénieur, pilote.`
                 );
             }
-        }
 
-        if (image?.id) {
-            try {
-                const media = await axios.get(
-                    `https://graph.facebook.com/v18.0/${image.id}`,
-                    {
-                        headers: { Authorization: `Bearer ${process.env.TOKEN}` },
-                        timeout: 10000
-                    }
-                );
+            await updateUserField(from, "reve", rv);
+            user = await getUser(from);
 
-                const mediaUrl = media.data.url;
+            const appel = `${genreEleve(user.nom)} **${user.nom}**`;
 
-                const imgBuffer = await axios.get(mediaUrl, {
-                    headers: { Authorization: `Bearer ${process.env.TOKEN}` },
-                    responseType: "arraybuffer",
-                    timeout: 15000
-                });
-
-                const mimeType = image.mime_type || "image/jpeg";
-                const base64Image = Buffer.from(imgBuffer.data).toString("base64");
-
-                const explicationImageBrute = await expliquerImageAvecIA(user, base64Image, mimeType);
-                const explicationImage = adapterTexteGenre(explicationImageBrute, user.nom);
-
-                const nouvelHistorique = JSON.stringify([
-                    ...historique,
-                    { role: "user", content: "[Image envoyée]" },
-                    { role: "assistant", content: explicationImage }
-                ].slice(-10));
-
-                await pool.query(
-                    "UPDATE conversations SET historique=$1 WHERE phone=$2",
-                    [nouvelHistorique, from]
-                );
-
-                return envoyerWhatsApp(
-                    from,
-                    `${HEADER_MWALIMU}
-
-📸 J’ai bien reçu ton image.
-
-${explicationImage}
-
-${adapterTexteGenre(choisirAleatoire(OUVERTURES), user.nom)}
-${choisirMotEncouragement()}`
-                );
-            } catch (e) {
-                console.error("Erreur image:", e.response?.data || e.message);
-                return envoyerWhatsApp(
-                    from,
-                    `${HEADER_MWALIMU}
-
-🔵 [ACCUEIL] : J'ai bien vu que tu as envoyé une image.
-📝 [LECTURE] : Je n'arrive pas encore à lire correctement son contenu.
-🟡 [SAVOIR] : L'image est peut-être floue, sombre ou mal cadrée.
-👉 [OUVERTURE] : Envoie une photo plus claire, bien cadrée et bien éclairée.`
-                );
-            }
-        }
-
-        const fiche = await consulterBibliotheque(texteUtilisateur);
-
-        if (fiche) {
-            await envoyerWhatsApp(
+            return await envoyerWhatsApp(
                 from,
-                `${HEADER_MWALIMU}
+                `✨ **Quelle ambition magnifique !**
 
-${audio?.id ? `🎤 **TON AUDIO TRANSCRIT :** ${texteUtilisateur}\n\n` : ""}📚 **FICHE OFFICIELLE : ${fiche.sujet}**
+🔴 Devenir **${rv}** est un rêve noble, et je sais que tu en es capable, ${appel}.
 
-${fiche.contenu}`
-            );
-
-            const explicationBrute = await expliquerFiche(user, fiche, texteUtilisateur);
-            const explication = adapterTexteGenre(explicationBrute, user.nom);
-
-            const nouvelHistorique = JSON.stringify([
-                ...historique,
-                { role: "user", content: texteUtilisateur },
-                { role: "assistant", content: explication }
-            ].slice(-10));
-
-            await pool.query(
-                "UPDATE conversations SET historique=$1 WHERE phone=$2",
-                [nouvelHistorique, from]
-            );
-
-            return envoyerWhatsApp(
-                from,
-                `🎓 **EXPLICATION DE MWALIMU**
-
-${explication}
-
-${choisirAleatoire(CITATIONS)}
-${choisirMotEncouragement()}`
+🔵 **Pour commencer notre parcours ensemble, dis-moi :**
+👉 Quelle est la matière ou le chapitre qui te pose problème en ce moment ?`
             );
         }
 
-        const reponseLibreBrute = await repondreSansFiche(user, texteUtilisateur, historique);
-        const reponseLibre = adapterTexteGenre(reponseLibreBrute, user.nom);
+        // Conversation normale
+        let historique = Array.isArray(user.historique)
+            ? user.historique
+            : safeJsonParse(user.historique, []);
 
-        const nouvelHistorique = JSON.stringify([
-            ...historique,
-            { role: "user", content: texteUtilisateur },
-            { role: "assistant", content: reponseLibre }
-        ].slice(-10));
+        let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
-        await pool.query(
-            "UPDATE conversations SET historique=$1 WHERE phone=$2",
-            [nouvelHistorique, from]
-        );
+        if (msgType === "text" && texteUtilisateur) {
+            await appendHistorique(from, "user", texteUtilisateur);
+            historique = (await getUser(from)).historique || [];
+        }
 
-        return envoyerWhatsApp(
-            from,
-            `${HEADER_MWALIMU}
+        let reponseBrute = "";
 
-${audio?.id ? `🎤 **J'ai compris ton audio comme ceci :** ${texteUtilisateur}\n\n` : ""}${reponseLibre}
+        if (msgType === "text") {
+            reponseBrute = await traiterTexte(user, texteUtilisateur, historique);
+        } else if (msgType === "audio") {
+            reponseBrute = await traiterAudio(user, msg, historique);
+            contenuUtilisateurPourMemoire = "[audio envoyé]";
+            await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+        } else if (msgType === "image") {
+            reponseBrute = await traiterImage(user, msg, historique);
+            contenuUtilisateurPourMemoire = "[image envoyée]";
+            await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+        } else {
+            reponseBrute = `🔵 J'ai bien reçu ton message.
 
-${adapterTexteGenre(choisirAleatoire(OUVERTURES), user.nom)}
-${choisirMotEncouragement()}`
-        );
+🟡 Pour l'instant, je traite surtout les textes, les audios et les images.
+
+👉 Envoie-moi ta question par écrit, par audio ou avec une image nette de l'exercice.`;
+        }
+
+        if (!reponseBrute || !String(reponseBrute).trim()) {
+            reponseBrute = "🔵 J'ai bien reçu ta demande.\n\n🟡 Mais je n'ai pas encore pu produire une réponse claire.\n\n👉 Reformule ta question en une seule phrase, et je t'aiderai pas à pas.";
+        }
+
+        const messageFinal = construireMessageFinal(user, reponseBrute);
+        await envoyerWhatsApp(from, messageFinal);
+        await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
 
     } catch (e) {
         console.error("Erreur générale:", e.response?.data || e.message);
-        await envoyerWhatsApp(
-            from,
-            `${HEADER_MWALIMU}
 
-🔵 [ACCUEIL] : Je suis toujours là pour toi.
-🟡 [SAVOIR] : Je rencontre juste une petite difficulté technique.
-👉 [OUVERTURE] : Repose ta question dans une minute, et nous reprendrons ensemble.`
-        );
+        try {
+            let user = await getUser(from);
+            if (!user) {
+                user = { nom: "élève" };
+            }
+            await envoyerWhatsApp(from, messageSecours(user));
+        } catch (e2) {
+            console.error("Erreur secours:", e2.message);
+        }
     }
 });
+
+/* =========================================================
+   11) WEBHOOK VERIFY
+========================================================= */
 
 app.get("/webhook", (req, res) => {
-    if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
-        res.send(req.query["hub.challenge"]);
-    } else {
-        res.sendStatus(403);
+    if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
+        return res.send(req.query["hub.challenge"]);
     }
+    return res.sendStatus(403);
 });
 
-app.listen(process.env.PORT || 10000, () => {
-    console.log("Mwalimu en marche.");
-});
+/* =========================================================
+   12) DÉMARRAGE
+========================================================= */
+
+(async () => {
+    await initDB();
+    app.listen(PORT, () => {
+        console.log(`✅ Mwalimu en marche sur le port ${PORT}`);
+    });
+})();
