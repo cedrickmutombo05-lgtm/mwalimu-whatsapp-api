@@ -161,6 +161,31 @@ ${REGLE_CALCUL_INTELLIGENT}
 ${REGLE_FORMAT_MATH}
 `;
 
+const SYSTEM_HUMAIN = `
+HUMANISATION FORTE :
+- Parle comme un vrai précepteur humain, proche, calme et chaleureux
+- Commence naturellement, sans ton mécanique
+- Ne répète jamais le header "Mwalimu EdTech"
+- N'ajoute jamais de citation finale
+- N'ajoute jamais toi-même de "mot d'encouragement final"
+- N'ajoute pas une deuxième ouverture finale
+- Évite le ton de robot, de moteur de recherche ou de fiche Wikipédia
+- Évite les phrases trop longues et trop abstraites
+- Utilise un français simple, vivant et naturel
+- Quand l'élève parle de sa journée, de la pluie, de sa fatigue, de sa vie, réponds d'abord humainement avant d'enseigner
+- Si la question n'est pas scolaire, réponds avec chaleur et intelligence, sans forcer un cours
+- Fais sentir que tu écoutes vraiment l'élève
+- Tu peux montrer une petite empathie naturelle
+- Tu peux faire référence au vécu congolais quand c'est utile et naturel
+- Évite les répétitions
+- Une seule structure suffit
+- Ne duplique jamais ACCUEIL, OUVERTURE, encouragement ou citation
+- Si la question est simple, réponds simplement
+- Si la question est émotionnelle ou quotidienne, sois d'abord humain, puis utile
+- N'utilise [ACCUEIL] que si c'est vraiment utile
+- Les sections doivent rester naturelles et légères, pas forcées
+`;
+
 /* =========================================================
    3) OUTILS SIMPLES
 ========================================================= */
@@ -176,6 +201,43 @@ function safeJsonParse(v, fallback) {
     } catch {
         return fallback;
     }
+}
+
+function nettoyerReponseIA(texte = "") {
+    if (!texte) return "";
+
+    let t = String(texte);
+
+    t = t.replace(/🔴🟡🔵\s*\*\*Mwalimu EdTech\s*:\s*Ton Mentor pour l'Excellence\*\*\s*🇨🇩/gi, "");
+    t = t.replace(/\*\*\*«[^»]+»\*\*\*/g, "");
+    t = t.replace(/^\s*🌟\s*\*?\*?\s*\[?MOT D['’]ENCOURAGEMENT\]?\s*\*?\*?\s*:\s*.*$/gim, "");
+    t = t.replace(/^\s*🌟\s*Mot d['’]encouragement\s*:\s*.*$/gim, "");
+    t = t.replace(/^\s*👉\s*\*?\*?\s*\[?OUVERTURE\]?\s*\*?\*?\s*:\s*.*$/gim, "");
+    t = t.replace(/^\s*🔵\s*\*?\*?\[ACCUEIL\]\*?\*?\s*:\s*/gim, "🔵 ");
+    t = t.replace(/\n{3,}/g, "\n\n").trim();
+
+    return t;
+}
+
+function humaniserDebutReponse(texte = "", user = {}) {
+    if (!texte) return "";
+
+    const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
+    const t = String(texte).trim();
+
+    const introNaturelles = [
+        `Je te comprends, ${prenom}.`,
+        `D'accord, ${prenom}.`,
+        `Très bien, ${prenom}.`,
+        `Je vois bien ce que tu veux dire, ${prenom}.`,
+        `Oui, ${prenom}, c'est une bonne observation.`
+    ];
+
+    const contientDejaIntro = /je te comprends|très bien|d'accord|je vois bien|oui,/i.test(t);
+
+    if (contientDejaIntro) return t;
+
+    return `${pick(introNaturelles)}\n\n${t}`.trim();
 }
 
 function nettoyer(t) {
@@ -546,6 +608,8 @@ function construireSystemPrompt(user) {
     return `
 ${SYSTEM_BASE}
 
+${SYSTEM_HUMAIN}
+
 PERSONNALISATION :
 - Adresse l'élève ainsi : ${appelEleve}
 - ${classe}
@@ -556,6 +620,10 @@ INTERDICTION :
 - Utilise naturellement le prénom quand c'est utile
 - Ne donne pas une réponse froide de moteur de recherche
 - Ne saute pas à la conclusion
+- Ne répète jamais le header Mwalimu
+- Ne génère jamais une citation finale
+- Ne génère jamais une deuxième ouverture finale
+- Ne génère jamais un mot d'encouragement final
 `;
 }
 
@@ -564,6 +632,7 @@ async function expliquerFiche(user, fiche, questionEleve, historique = []) {
 
     return appelerChatCompletion([
         { role: "system", content: system },
+        { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
         ...historique.slice(-6),
         {
             role: "user",
@@ -588,6 +657,7 @@ async function repondreSansFiche(user, texte, historique = []) {
 
     return appelerChatCompletion([
         { role: "system", content: system },
+        { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
         ...historique.slice(-6),
         { role: "user", content: texte }
     ]);
@@ -598,6 +668,7 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
 
     return appelerChatCompletion([
         { role: "system", content: system },
+        { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
         ...historique.slice(-4),
         {
             role: "user",
@@ -613,7 +684,10 @@ function construireMessageFinal(user, reponseBrute) {
     const citation = pick(CITATIONS);
     const ouverture = adapterTexteGenre(pick(OUVERTURES), user.nom);
     const encouragement = pick(MOTS_ENCOURAGEMENT);
-    const corps = adapterTexteGenre(reponseBrute, user.nom);
+
+    const reponseNettoyee = nettoyerReponseIA(reponseBrute);
+    const reponseHumanisee = humaniserDebutReponse(reponseNettoyee, user);
+    const corps = adapterTexteGenre(reponseHumanisee, user.nom);
 
     return `${HEADER_MWALIMU}
 
