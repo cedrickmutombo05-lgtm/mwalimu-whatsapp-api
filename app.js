@@ -12,6 +12,7 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 
 const app = express();
+app.set("trust proxy", 1);
 
 /* =========================================================
    1) CONFIG & GARDE-FOUS
@@ -274,6 +275,48 @@ async function initDB() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+        `);
+
+        await pool.query(`
+            ALTER TABLE conversations
+            ADD COLUMN IF NOT EXISTS nom TEXT DEFAULT '';
+        `);
+
+        await pool.query(`
+            ALTER TABLE conversations
+            ADD COLUMN IF NOT EXISTS classe TEXT DEFAULT '';
+        `);
+
+        await pool.query(`
+            ALTER TABLE conversations
+            ADD COLUMN IF NOT EXISTS reve TEXT DEFAULT '';
+        `);
+
+        await pool.query(`
+            ALTER TABLE conversations
+            ADD COLUMN IF NOT EXISTS historique JSONB DEFAULT '[]'::jsonb;
+        `);
+
+        await pool.query(`
+            ALTER TABLE conversations
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+        `);
+
+        await pool.query(`
+            ALTER TABLE conversations
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+        `);
+
+        await pool.query(`
+            UPDATE conversations
+            SET updated_at = CURRENT_TIMESTAMP
+            WHERE updated_at IS NULL;
+        `);
+
+        await pool.query(`
+            UPDATE conversations
+            SET historique = '[]'::jsonb
+            WHERE historique IS NULL;
         `);
 
         await pool.query(`
