@@ -740,7 +740,6 @@ app.post("/webhook", async (req, res) => {
         );
         if (check.rowCount === 0) return;
 
-        // /profil
         if (msgType === "text" && texteUtilisateur.toLowerCase() === "/profil") {
             await pool.query(
                 "UPDATE conversations SET nom='', classe='', reve='', historique='[]'::jsonb, updated_at=NOW() WHERE phone=$1",
@@ -770,7 +769,6 @@ app.post("/webhook", async (req, res) => {
             );
         }
 
-        // Flux d'inscription
         if (!user.nom) {
             const nom = normaliserNom(nettoyer(texteUtilisateur));
             if (!nom) {
@@ -839,7 +837,6 @@ Exemple : avocat, médecin, ingénieur, pilote.`
             );
         }
 
-        // Conversation normale
         let historique = Array.isArray(user.historique)
             ? user.historique
             : safeJsonParse(user.historique, []);
@@ -848,7 +845,11 @@ Exemple : avocat, médecin, ingénieur, pilote.`
 
         if (msgType === "text" && texteUtilisateur) {
             await appendHistorique(from, "user", texteUtilisateur);
-            historique = (await getUser(from)).historique || [];
+
+            const userFresh = await getUser(from);
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique, []);
         }
 
         let reponseBrute = "";
@@ -859,10 +860,20 @@ Exemple : avocat, médecin, ingénieur, pilote.`
             reponseBrute = await traiterAudio(user, msg, historique);
             contenuUtilisateurPourMemoire = "[audio envoyé]";
             await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+
+            const userFresh = await getUser(from);
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique, []);
         } else if (msgType === "image") {
             reponseBrute = await traiterImage(user, msg, historique);
             contenuUtilisateurPourMemoire = "[image envoyée]";
             await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+
+            const userFresh = await getUser(from);
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique, []);
         } else {
             reponseBrute = `🔵 J'ai bien reçu ton message.
 
