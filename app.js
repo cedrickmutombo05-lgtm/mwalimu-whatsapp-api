@@ -119,8 +119,6 @@ RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES DE MATHÉMATIQUES :
 - Tu distingues clairement : donnée, opération, méthode, résultat intermédiaire, conclusion
 - Si l'exercice demande une réponse finale mais que la règle impose de ne pas la donner, tu t'arrêtes juste avant la dernière étape
 - Si l'élève s'est trompé, tu corriges avec douceur et précision
-- Tu dois obligatoirement respecter l'ordre suivant :
-  ACCUEIL, VÉCU, SAVOIR, INSPIRATION, CONSOLIDATION, OUVERTURE, puis MOT D'ENCOURAGEMENT
 `;
 
 const SYSTEM_BASE = `
@@ -139,23 +137,19 @@ STYLE OBLIGATOIRE :
 - Phrases naturelles, pas robotiques
 - Toujours encourager l'élève
 - Ne jamais humilier l'élève
-- Si l'élève pose une question d'exercice :
-  1. expliquer la méthode
-  2. montrer les étapes
-  3. inviter l'élève à essayer
-  4. corriger ensuite si l'élève donne sa réponse
 - Si l'information n'est pas certaine, le dire honnêtement
 - Ne pas inventer de référence scolaire ou scientifique
 - Pour les maths et sciences, respecter strictement les règles de présentation
 - Répondre en français sauf si l'élève change de langue
+- Même pour une question théorique, rendre l'échange vivant
+- Après une réponse théorique, proposer une petite question de retour naturelle
+- Cette question de retour doit être simple, utile et liée au sujet
 
 STRUCTURE SOUHAITÉE :
 🔵 [VÉCU]
 🟡 [SAVOIR]
 🔴 [INSPIRATION]
 ❓ [CONSOLIDATION]
-👉 [OUVERTURE]
-🌟 [MOT D'ENCOURAGEMENT]
 
 ${REGLE_CALCUL_INTELLIGENT}
 ${REGLE_FORMAT_MATH}
@@ -184,6 +178,37 @@ HUMANISATION FORTE :
 - Si la question est émotionnelle ou quotidienne, sois d'abord humain, puis utile
 - N'utilise [ACCUEIL] que si c'est vraiment utile
 - Les sections doivent rester naturelles et légères, pas forcées
+`;
+
+const SYSTEM_TUTORAT = `
+RÈGLES DE TUTORAT STRICTES :
+- Tu es un précepteur, pas un solveur automatique
+- Tu n'as pas le droit de faire tout l'exercice à la place de l'élève
+- Pour un exercice, tu dois :
+  1. identifier le type d'exercice
+  2. expliquer calmement la méthode
+  3. montrer seulement le démarrage ou une partie guidée
+  4. laisser l'élève continuer lui-même
+  5. demander à l'élève de proposer sa réponse
+  6. corriger ensuite avec douceur, précision et encouragement
+
+- Tu ne dois pas donner directement la réponse finale si l'élève n'a pas encore essayé
+- Tu peux montrer un exemple proche, mais pas résoudre entièrement l'exercice exact jusqu'au bout
+- Si l'élève soumet une réponse, tu dois :
+  1. féliciter l'effort
+  2. vérifier calmement
+  3. dire ce qui est juste
+  4. corriger avec tendresse ce qui est faux
+  5. encourager l'élève à recommencer si nécessaire
+
+- Quand l'élève se trompe, tu ne le brusques jamais
+- Tu corriges avec amour, patience, douceur et clarté
+- Tu te comportes comme un enseignant assis en face de l'élève
+- Tu échanges naturellement avec lui
+- Tu privilégies le dialogue à la récitation
+- Pour une question purement théorique, tu peux répondre normalement
+- Pour un exercice, tu guides sans terminer à la place de l'élève
+- À la fin d'une réponse théorique, ajoute une petite question de retour pour maintenir l'échange vivant
 `;
 
 /* =========================================================
@@ -238,6 +263,83 @@ function humaniserDebutReponse(texte = "", user = {}) {
     if (contientDejaIntro) return t;
 
     return `${pick(introNaturelles)}\n\n${t}`.trim();
+}
+
+function estSoumissionReponse(texte = "") {
+    const t = String(texte || "").toLowerCase().trim();
+
+    const indices = [
+        "ma réponse",
+        "ma reponse",
+        "j'ai trouvé",
+        "jai trouvé",
+        "jai trouve",
+        "j'ai trouvé que",
+        "j'ai fait",
+        "voici ma réponse",
+        "voici ma reponse",
+        "mon résultat",
+        "mon resultat",
+        "j'obtiens",
+        "j’ai obtenu",
+        "j'ai obtenu",
+        "le résultat est",
+        "le resultat est",
+        "ça donne",
+        "cela donne"
+    ];
+
+    if (indices.some(i => t.includes(i))) return true;
+
+    if (/^[0-9xXyYzZ\s=+\-÷/*().,]+$/.test(t) && t.length <= 80) return true;
+
+    return false;
+}
+
+function construireConsignePedagogique(texte = "", type = "text") {
+    const t = String(texte || "");
+
+    if (type === "image") {
+        return `
+MODE PÉDAGOGIQUE IMAGE :
+- Il s'agit probablement d'un exercice envoyé en image
+- Tu expliques la démarche
+- Tu aides l'élève à comprendre ce qu'il doit faire
+- Tu ne résous pas tout jusqu'à la réponse finale
+- Tu termines en demandant à l'élève d'essayer lui-même puis de t'envoyer sa réponse
+`;
+    }
+
+    if (estSoumissionReponse(t)) {
+        return `
+MODE CORRECTION BIENVEILLANTE :
+- L'élève soumet probablement sa propre réponse
+- Tu dois d'abord féliciter son effort
+- Tu vérifies calmement
+- Tu corriges avec douceur si nécessaire
+- Tu expliques précisément l'erreur
+- Tu encourages l'élève avec chaleur
+`;
+    }
+
+    if (estQuestionTechnique(t)) {
+        return `
+MODE EXERCICE GUIDÉ :
+- C'est un exercice ou un calcul
+- Tu expliques la méthode
+- Tu montres le démarrage utile
+- Tu ne donnes pas la réponse finale complète à la place de l'élève
+- Tu invites l'élève à continuer
+- Tu lui demandes ensuite de t'envoyer sa réponse pour vérification
+`;
+    }
+
+    return `
+MODE ÉCHANGE NORMAL :
+- Réponds naturellement
+- Sois humain, chaleureux et utile
+- Après la réponse, pose une petite question de retour liée au sujet
+`;
 }
 
 function nettoyer(t) {
@@ -610,6 +712,8 @@ ${SYSTEM_BASE}
 
 ${SYSTEM_HUMAIN}
 
+${SYSTEM_TUTORAT}
+
 PERSONNALISATION :
 - Adresse l'élève ainsi : ${appelEleve}
 - ${classe}
@@ -624,15 +728,17 @@ INTERDICTION :
 - Ne génère jamais une citation finale
 - Ne génère jamais une deuxième ouverture finale
 - Ne génère jamais un mot d'encouragement final
+- Ne termine jamais un exercice complet à la place de l'élève
 `;
 }
 
-async function expliquerFiche(user, fiche, questionEleve, historique = []) {
+async function expliquerFiche(user, fiche, questionEleve, historique = [], consignePedagogique = "") {
     const system = construireSystemPrompt(user);
 
     return appelerChatCompletion([
         { role: "system", content: system },
         { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
+        { role: "system", content: consignePedagogique || "Sois pédagogique et bienveillant." },
         ...historique.slice(-6),
         {
             role: "user",
@@ -652,12 +758,13 @@ ${fiche?.contenu || ""}
     ]);
 }
 
-async function repondreSansFiche(user, texte, historique = []) {
+async function repondreSansFiche(user, texte, historique = [], consignePedagogique = "") {
     const system = construireSystemPrompt(user);
 
     return appelerChatCompletion([
         { role: "system", content: system },
         { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
+        { role: "system", content: consignePedagogique || "Sois pédagogique et bienveillant." },
         ...historique.slice(-6),
         { role: "user", content: texte }
     ]);
@@ -665,15 +772,20 @@ async function repondreSansFiche(user, texte, historique = []) {
 
 async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
     const system = construireSystemPrompt(user);
+    const consignePedagogique = construireConsignePedagogique("", "image");
 
     return appelerChatCompletion([
         { role: "system", content: system },
         { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
+        { role: "system", content: consignePedagogique },
         ...historique.slice(-4),
         {
             role: "user",
             content: [
-                { type: "text", text: "Analyse cette image d'exercice ou de leçon, explique-la pas à pas à l'élève sans faire brutalement à sa place." },
+                {
+                    type: "text",
+                    text: "Analyse cette image d'exercice ou de leçon. Explique pas à pas, aide l'élève à comprendre, mais ne fais pas tout l'exercice complet à sa place. Invite-le ensuite à essayer lui-même puis à t'envoyer sa réponse."
+                },
                 { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
             ]
         }
@@ -723,10 +835,13 @@ function messageSecours(user) {
 
 async function traiterTexte(user, texteUtilisateur, historique) {
     const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
+    const consignePedagogique = construireConsignePedagogique(texteUtilisateur, "text");
+
     if (fiche) {
-        return expliquerFiche(user, fiche, texteUtilisateur, historique);
+        return expliquerFiche(user, fiche, texteUtilisateur, historique, consignePedagogique);
     }
-    return repondreSansFiche(user, texteUtilisateur, historique);
+
+    return repondreSansFiche(user, texteUtilisateur, historique, consignePedagogique);
 }
 
 async function traiterAudio(user, msg, historique) {
@@ -743,14 +858,17 @@ async function traiterAudio(user, msg, historique) {
     }
 
     const fiche = await consulterBibliotheque(transcription, user.classe || "");
+    const consignePedagogique = construireConsignePedagogique(transcription, "audio");
+
     if (fiche) {
-        return expliquerFiche(user, fiche, transcription, historique);
+        return expliquerFiche(user, fiche, transcription, historique, consignePedagogique);
     }
 
     return repondreSansFiche(
         user,
         `L'élève a envoyé un message vocal. Voici la transcription : ${transcription}`,
-        historique
+        historique,
+        consignePedagogique
     );
 }
 
@@ -770,10 +888,48 @@ async function traiterImage(user, msg, historique) {
    9) CRON
 ========================================================= */
 
-cron.schedule("0 7 * * *", async () => {
+cron.schedule("0 5 * * *", async () => {
     try {
         console.log("⏰ Rappel matinal exécuté.");
-        // Ici tu pourras plus tard envoyer les rappels pédagogiques ciblés
+
+        const { rows } = await pool.query(`
+            SELECT phone, nom, classe, reve
+            FROM conversations
+            WHERE coalesce(phone, '') <> ''
+              AND coalesce(nom, '') <> ''
+        `);
+
+        for (const eleve of rows) {
+            try {
+                const prenom = normaliserNom(eleve.nom).split(" ")[0] || "élève";
+                const appel = `${genreEleve(prenom)} **${prenom}**`;
+                const citation = pick(CITATIONS);
+
+                const messageRappel = `${HEADER_MWALIMU}
+
+🌅 Bonjour ${appel}.
+
+🔵 J’espère que tu as bien commencé ta journée.
+
+🟡 Petit rappel du matin :
+Aujourd’hui, avance avec calme, sérieux et confiance. Même un petit effort bien fait peut te rapprocher de ton rêve.
+
+🔴 Ton objectif n’est pas d’aller vite, mais de bien comprendre.
+
+❓ Dis-moi plus tard :
+Quelle matière veux-tu travailler aujourd’hui ?
+
+👉 Je reste à tes côtés pour t’accompagner pas à pas.
+
+🌟 Mot d'encouragement : Un élève constant finit toujours par progresser.
+
+${citation}`;
+
+                await envoyerWhatsApp(eleve.phone, messageRappel);
+            } catch (e) {
+                console.error("Erreur envoi rappel matinal:", e.message);
+            }
+        }
     } catch (e) {
         console.error("Erreur cron bonjour:", e.message);
     }
