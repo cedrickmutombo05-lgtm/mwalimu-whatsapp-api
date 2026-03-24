@@ -1,5 +1,4 @@
 
-
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
@@ -352,8 +351,64 @@ function normaliserTexteMemoire(texte = "") {
         .trim();
 }
 
+function estMessageSalutation(texte = "") {
+    const t = String(texte || "").toLowerCase().trim();
+
+    if (!t) return false;
+
+    const salutationsExactes = [
+        "bonjour",
+        "bonsoir",
+        "salut",
+        "cc",
+        "coucou",
+        "hello",
+        "bjr",
+        "bonne nuit",
+        "bonne soirée",
+        "bonne soiree",
+        "à demain",
+        "a demain",
+        "bon après-midi",
+        "bon apres-midi",
+        "bon apres midi",
+        "bonjour mwalimu",
+        "bonsoir mwalimu",
+        "salut mwalimu",
+        "cc mwalimu",
+        "coucou mwalimu",
+        "hello mwalimu",
+        "bjr mwalimu",
+        "mbote",
+        "mbote mwalimu"
+    ];
+
+    if (salutationsExactes.includes(t)) return true;
+
+    return /^(bonjour|bonsoir|salut|hello|coucou|mbote|bjr)(\s+mwalimu)?[!\s.]*$/i.test(t);
+}
+
 function extraireSujetMemoire(texte = "") {
-    const t = normaliserTexteMemoire(texte);
+    const brut = String(texte || "").trim();
+    const t = normaliserTexteMemoire(brut);
+
+    if (!t) return "";
+
+    if (estMessageRelationnelSimple(brut)) return "";
+
+    const motsASupprimer = [
+        "bonjour", "bonsoir", "salut", "hello", "coucou", "mbote",
+        "merci", "mwalimu", "cc", "bjr", "bonne nuit", "bonne soiree",
+        "a demain", "ca va", "ça va", "ok", "okay", "dac", "d accord"
+    ];
+
+    const motsUtiles = t
+        .split(" ")
+        .filter(Boolean)
+        .filter(m => !motsASupprimer.includes(m));
+
+    const texteFiltre = motsUtiles.join(" ").trim();
+    if (!texteFiltre) return "";
 
     const sujets = [
         "nepal", "chine", "geo", "geographie", "math", "mathematiques", "equation",
@@ -363,10 +418,10 @@ function extraireSujetMemoire(texte = "") {
     ];
 
     for (const s of sujets) {
-        if (t.includes(s)) return s;
+        if (texteFiltre.includes(s)) return s;
     }
 
-    const mots = t.split(" ").filter(Boolean);
+    const mots = texteFiltre.split(" ").filter(Boolean);
     return mots.length ? mots.slice(0, 4).join(" ") : "";
 }
 
@@ -390,6 +445,8 @@ function retrouverSujetProche(historique = [], texteActuel = "") {
 }
 
 function construirePhraseRetourMemoire(historique = [], texteActuel = "", user = {}) {
+    if (estMessageRelationnelSimple(texteActuel)) return "";
+
     const sujet = retrouverSujetProche(historique, texteActuel);
     const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
 
@@ -615,18 +672,6 @@ function typeMessage(msg) {
     return msg.type || "unknown";
 }
 
-function estMessageSalutation(texte = "") {
-    const t = String(texte || "").toLowerCase().trim();
-
-    const salutations = [
-        "bonjour", "bonsoir", "salut", "cc", "coucou", "hello", "bjr",
-        "bonne nuit", "bonne soirée", "bonne soiree",
-        "à demain", "a demain", "bon après-midi", "bon apres-midi", "bon apres midi"
-    ];
-
-    return salutations.includes(t);
-}
-
 function estMessageRemerciement(texte = "") {
     const t = String(texte || "").toLowerCase().trim();
 
@@ -657,104 +702,92 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
 
     const reponsesSalut = [
         `🔵 [VÉCU] :
-Bonjour ${appel}. Je suis heureux de te retrouver.
+Bonjour ${appel}. Je suis vraiment heureux de te retrouver.
 
 🟡 [SAVOIR] :
-Je suis bien là pour toi aujourd’hui.
+Je suis bien là, disponible pour t’accompagner tranquillement aujourd’hui.
 
 🔴 [INSPIRATION] :
-Chaque nouveau message est une nouvelle occasion d’apprendre avec calme.
+Chaque échange compte, même un simple bonjour, parce qu’il ouvre la porte à de belles choses.
 
 ❓ [CONSOLIDATION] :
-Que veux-tu travailler ou comprendre maintenant ?`,
+Comment vas-tu, et sur quoi veux-tu qu’on avance ensemble ?`,
 
         `🔵 [VÉCU] :
-Bonsoir ${appel}. Merci de revenir vers moi.
+Bonsoir ${appel}. Cela me fait plaisir de te lire.
 
 🟡 [SAVOIR] :
-Nous pouvons avancer tranquillement ensemble.
+Nous pouvons prendre ce moment calmement et avancer à ton rythme.
 
 🔴 [INSPIRATION] :
-Même une petite question peut t’aider à progresser.
+On progresse souvent mieux quand on garde un cœur paisible et une pensée claire.
 
 ❓ [CONSOLIDATION] :
-Dis-moi simplement ce que tu veux revoir.`,
+Veux-tu simplement me saluer, ou bien as-tu une question à me confier ?`,
 
         `🔵 [VÉCU] :
-Salut ${appel}. Cela me fait plaisir de te lire.
+Salut ${appel}. Merci d’être revenu vers moi.
 
 🟡 [SAVOIR] :
-Je suis disponible pour t’accompagner.
+Je suis prêt à t’écouter et à t’aider avec simplicité.
 
 🔴 [INSPIRATION] :
-On avance mieux quand on ose poser ses questions.
+Quand on garde l’habitude d’échanger avec confiance, on apprend aussi avec plus d’assurance.
 
 ❓ [CONSOLIDATION] :
-Sur quoi veux-tu qu’on travaille aujourd’hui ?`
+Dis-moi ce que tu veux travailler, ou comment se passe ta journée.`
     ];
 
     const reponsesMerci = [
         `🔵 [VÉCU] :
-Avec plaisir, ${appel}. Je suis content d’avoir pu t’aider.
+Avec plaisir, ${appel}. Cela me fait vraiment plaisir de pouvoir t’aider.
 
 🟡 [SAVOIR] :
-Tu peux revenir chaque fois que tu as besoin d’une explication.
+Je reste disponible chaque fois que tu as besoin d’une explication ou d’un accompagnement.
 
 🔴 [INSPIRATION] :
-Les élèves qui demandent, vérifient et reviennent progressent vraiment.
+La gratitude et la constance sont de belles forces dans le chemin de l’apprentissage.
 
 ❓ [CONSOLIDATION] :
-Veux-tu qu’on continue avec une autre question ?`,
+Veux-tu qu’on continue, ou préfères-tu reprendre plus tard ?`,
 
         `🔵 [VÉCU] :
-Je t’en prie, ${appel}. C’est toujours un plaisir de t’accompagner.
+Je t’en prie, ${appel}. Merci aussi pour ta confiance.
 
 🟡 [SAVOIR] :
-Tu n’es pas seul ; nous pouvons reprendre autant de fois que nécessaire.
+Tu peux revenir sans hésiter chaque fois qu’un point n’est pas encore clair.
 
 🔴 [INSPIRATION] :
-La constance dans l’apprentissage finit toujours par donner de beaux résultats.
+Les élèves qui osent demander finissent souvent par comprendre plus solidement.
 
 ❓ [CONSOLIDATION] :
-Y a-t-il un autre point que tu veux éclaircir ?`,
-
-        `🔵 [VÉCU] :
-Merci à toi aussi, ${appel}, pour ta confiance.
-
-🟡 [SAVOIR] :
-Je reste disponible pour t’aider encore.
-
-🔴 [INSPIRATION] :
-Quand on apprend avec patience, on avance solidement.
-
-❓ [CONSOLIDATION] :
-Veux-tu poser une autre question ou t’arrêter ici pour aujourd’hui ?`
+Y a-t-il encore un point que tu veux revoir avec moi ?`
     ];
 
     const reponsesBonneNuit = [
         `🔵 [VÉCU] :
-Bonne nuit ${appel}. Repose-toi bien.
+Bonne nuit ${appel}. Merci pour ce moment partagé.
 
 🟡 [SAVOIR] :
-Le repos aide aussi l’esprit à mieux retenir.
+Le repos aide aussi l’esprit à mieux retenir et à revenir plus fort.
 
 🔴 [INSPIRATION] :
-Demain sera une nouvelle occasion d’apprendre avec force et sérénité.
+Un élève qui sait aussi se reposer construit un apprentissage plus solide.
 
 ❓ [CONSOLIDATION] :
-Quand tu reviendras, nous continuerons ensemble.`,
-
+Reviens quand tu voudras ; nous continuerons ensemble avec calme.`,
+       
         `🔵 [VÉCU] :
-Bonne soirée ${appel}. Merci pour cet échange.
+Bonne soirée ${appel}. Je suis content d’avoir échangé avec toi.
 
 🟡 [SAVOIR] :
-Prendre du repos fait aussi partie d’un bon apprentissage.
+Tu peux maintenant te reposer tranquillement.
 
 🔴 [INSPIRATION] :
-Un élève qui prend soin de son rythme apprend souvent mieux.
+Demain sera encore une belle occasion d’apprendre avec confiance.
 
 ❓ [CONSOLIDATION] :
-Je serai là quand tu voudras reprendre.`
+Je resterai disponible quand tu voudras reprendre.`
     ];
 
     const reponsesCourtes = [
@@ -762,25 +795,25 @@ Je serai là quand tu voudras reprendre.`
 Très bien ${appel}.
 
 🟡 [SAVOIR] :
-Nous pouvons avancer à ton rythme.
+Je te suis et je reste disponible pour la suite.
 
 🔴 [INSPIRATION] :
-Chaque petit pas bien fait compte vraiment.
+Même les petits échanges entretiennent la confiance et la progression.
 
 ❓ [CONSOLIDATION] :
-Quelle est la suite pour toi ?`,
+Que veux-tu faire maintenant ?`,
 
         `🔵 [VÉCU] :
-D’accord ${appel}, je te suis.
+D’accord ${appel}, je suis avec toi.
 
 🟡 [SAVOIR] :
-Nous restons concentrés sur l’essentiel.
+Nous pouvons avancer simplement, sans nous presser.
 
 🔴 [INSPIRATION] :
-La régularité aide beaucoup dans les études.
+La régularité dans les petits pas produit souvent de grands résultats.
 
 ❓ [CONSOLIDATION] :
-Que veux-tu faire maintenant ?`
+Quelle est la suite pour toi ?`
     ];
 
     if (t === "bonne nuit" || t === "bonne soirée" || t === "bonne soiree" || t === "à demain" || t === "a demain") {
@@ -852,60 +885,98 @@ MODE ÉCHANGE NORMAL :
 `;
 }
 
-function choisirOuvertureContextuelle(reponse = "", user = {}) {
-    const t = String(reponse || "").toLowerCase();
+function choisirOuvertureContextuelle(reponse = "", user = {}, question = "") {
+    const corps = String(reponse || "").toLowerCase();
+    const q = String(question || "").toLowerCase().trim();
 
-    if (t.includes("bonne nuit") || t.includes("bonne soirée") || t.includes("bonne soiree") || t.includes("repose-toi")) {
+    if (estMessageRelationnelSimple(q)) {
+        if (q.includes("merci")) {
+            return "👉 Reviens quand tu veux ; je t’accueillerai toujours avec plaisir.";
+        }
+
+        if (
+            q.includes("bonne nuit") ||
+            q.includes("bonne soirée") ||
+            q.includes("bonne soiree") ||
+            q.includes("à demain") ||
+            q.includes("a demain")
+        ) {
+            return "👉 Repose-toi bien, et nous reprendrons ensemble quand tu reviendras.";
+        }
+
+        return "👉 Je reste disponible pour toi, dès que tu veux continuer.";
+    }
+
+    if (corps.includes("bonne nuit") || corps.includes("bonne soirée") || corps.includes("bonne soiree") || corps.includes("repose-toi")) {
         return "👉 Je reste disponible dès que tu voudras reprendre.";
     }
 
-    if (t.includes("merci") || t.includes("je t’en prie") || t.includes("je reste disponible")) {
+    if (corps.includes("merci") || corps.includes("je t’en prie") || corps.includes("je reste disponible")) {
         return "👉 Reviens quand tu veux ; je serai toujours heureux de t’aider.";
     }
 
-    if (estQuestionTechnique(t)) {
+    if (estQuestionTechnique(q)) {
         return "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse pour que je la vérifie avec toi.";
     }
 
-    if (t.includes("bravo") || t.includes("bonne réponse") || t.includes("bonne reponse") || t.includes("félicit") || t.includes("felicit")) {
+    if (corps.includes("bravo") || corps.includes("bonne réponse") || corps.includes("bonne reponse") || corps.includes("félicit") || corps.includes("felicit")) {
         return "👉 Tu avances bien. On peut continuer ensemble avec la suite.";
     }
 
-    if (t.includes("chine") || t.includes("népal") || t.includes("nepal") || t.includes("géographie") || t.includes("geographie") || t.includes("pays")) {
-        return "👉 Si tu veux, on peut continuer avec une autre petite question de géographie.";
+    if (corps.includes("chine") || corps.includes("népal") || corps.includes("nepal") || corps.includes("géographie") || corps.includes("geographie") || corps.includes("pays")) {
+        return "👉 Nous pouvons continuer avec une autre petite question de géographie.";
     }
 
-    if (t.includes("histoire") || t.includes("date") || t.includes("événement") || t.includes("evenement")) {
+    if (corps.includes("histoire") || corps.includes("date") || corps.includes("événement") || corps.includes("evenement")) {
         return "👉 Nous pouvons continuer doucement avec une autre question du même thème.";
     }
 
     return pick(OUVERTURES);
 }
 
-function choisirEncouragementContextuel(reponse = "", user = {}) {
-    const t = String(reponse || "").toLowerCase();
+function choisirEncouragementContextuel(reponse = "", user = {}, question = "") {
+    const corps = String(reponse || "").toLowerCase();
+    const q = String(question || "").toLowerCase().trim();
 
-    if (t.includes("bonne nuit") || t.includes("bonne soirée") || t.includes("bonne soiree") || t.includes("repose-toi")) {
+    if (estMessageRelationnelSimple(q)) {
+        if (q.includes("merci")) {
+            return "🌟 Mot d'encouragement : Garde cette belle habitude d’échanger avec confiance et respect.";
+        }
+
+        if (
+            q.includes("bonne nuit") ||
+            q.includes("bonne soirée") ||
+            q.includes("bonne soiree") ||
+            q.includes("à demain") ||
+            q.includes("a demain")
+        ) {
+            return "🌟 Mot d'encouragement : Le repos fait aussi partie d’un apprentissage équilibré et solide.";
+        }
+
+        return "🌟 Mot d'encouragement : Une relation simple, respectueuse et confiante aide aussi à bien apprendre.";
+    }
+
+    if (corps.includes("bonne nuit") || corps.includes("bonne soirée") || corps.includes("bonne soiree") || corps.includes("repose-toi")) {
         return "🌟 Mot d'encouragement : Un esprit reposé revient souvent plus fort et plus clair.";
     }
 
-    if (t.includes("merci") || t.includes("je t’en prie") || t.includes("je reste disponible")) {
+    if (corps.includes("merci") || corps.includes("je t’en prie") || corps.includes("je reste disponible")) {
         return "🌟 Mot d'encouragement : Garde cette belle habitude de demander quand quelque chose n’est pas encore clair.";
     }
 
-    if (estQuestionTechnique(t)) {
+    if (estQuestionTechnique(q)) {
         return "🌟 Mot d'encouragement : Continue avec méthode ; en travaillant étape par étape, tu peux trouver toi-même la bonne réponse.";
     }
 
-    if (t.includes("bonne réponse") || t.includes("bonne reponse") || t.includes("bravo") || t.includes("félicit") || t.includes("felicit")) {
+    if (corps.includes("bonne réponse") || corps.includes("bonne reponse") || corps.includes("bravo") || corps.includes("félicit") || corps.includes("felicit")) {
         return "🌟 Mot d'encouragement : Bravo pour ton effort ; tu avances réellement, et cela fait plaisir à voir.";
     }
 
-    if (t.includes("c'est normal") || t.includes("je suis là pour t'aider") || t.includes("pas de souci")) {
+    if (corps.includes("c'est normal") || corps.includes("je suis là pour t'aider") || corps.includes("pas de souci")) {
         return "🌟 Mot d'encouragement : Ne crains pas de ne pas savoir au départ ; c’est justement en apprenant qu’on devient plus fort.";
     }
 
-    if (t.includes("géographie") || t.includes("geographie") || t.includes("pays") || t.includes("frontière") || t.includes("frontiere")) {
+    if (corps.includes("géographie") || corps.includes("geographie") || corps.includes("pays") || corps.includes("frontière") || corps.includes("frontiere")) {
         return "🌟 Mot d'encouragement : Ta curiosité est une belle force ; elle t’ouvre peu à peu l’intelligence du monde.";
     }
 
@@ -1282,22 +1353,31 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
     const system = construireSystemPrompt(user);
     const consignePedagogique = construireConsignePedagogique("", "image");
 
-    return appelerChatCompletion([
-        { role: "system", content: system },
-        { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
-        { role: "system", content: consignePedagogique },
-        ...historique.slice(-4),
-        {
-            role: "user",
-            content: [
-                {
-                    type: "text",
-                    text: "Analyse cette image d'exercice ou de leçon. Explique pas à pas, aide l'élève à comprendre, mais ne fais pas tout l'exercice complet à sa place. Invite-le ensuite à essayer lui-même puis à t'envoyer sa réponse."
-                },
-                { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
-            ]
-        }
-    ]);
+    const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+            { role: "system", content: system },
+            { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
+            { role: "system", content: consignePedagogique },
+            ...historique.slice(-4),
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "Analyse cette image d'exercice ou de leçon. Explique pas à pas, aide l'élève à comprendre, mais ne fais pas tout l'exercice complet à sa place. Invite-le ensuite à essayer lui-même puis à t'envoyer sa réponse."
+                    },
+                    {
+                        type: "image_url",
+                        image_url: { url: `data:${mimeType};base64,${base64Image}` }
+                    }
+                ]
+            }
+        ]
+    });
+
+    return completion.choices?.[0]?.message?.content?.trim() || "";
 }
 
 function construireMessageFinal(user, reponseBrute, historique = [], question = "") {
@@ -1306,8 +1386,12 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
     const corpsAvecStructure = verifierStructureMwalimu(reponseHumanisee, user, historique, question);
     const corps = adapterTexteGenre(corpsAvecStructure, user.nom);
 
-    const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corps, user), user.nom);
-    const encouragement = choisirEncouragementContextuel(corps, user);
+    const ouverture = adapterTexteGenre(
+        choisirOuvertureContextuelle(corps, user, question),
+        user.nom
+    );
+
+    const encouragement = choisirEncouragementContextuel(corps, user, question);
     const citation = choisirCitationContextuelle(corps, question, user);
 
     return `${HEADER_MWALIMU}
