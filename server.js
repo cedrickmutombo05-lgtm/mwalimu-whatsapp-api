@@ -7,8 +7,8 @@ require("dotenv").config();
 const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const { initDB } = require("./config/db");
-const webhookRoutes = require("./routes/webhook");
+const { initDB } = require("./db");
+const webhookRoutes = require("./app");
 
 const app = express();
 app.set("trust proxy", 1);
