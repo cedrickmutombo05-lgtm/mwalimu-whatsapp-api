@@ -1,19 +1,19 @@
 
 {
-"name": "mwalimu-edthec",
-"version": "1.0.0",
-"description": "Assistant éducatif RDC",
-"main": "app.js",
-"scripts": {
-"start": "node app.js"
-},
-"dependencies": {
-"express": "^4.18.2",
-"axios": "^1.6.2",
-"openai": "^4.20.1",
-"node-cron": "^3.0.3",
-"pg": "^8.11.3",
-"dotenv": "^16.3.1",
-"express-rate-limit": "^8.1.0"
-}
+  "name": "mwalimu-edthec",
+  "version": "1.0.0",
+  "description": "Assistant éducatif RDC - Ton mentor pour l'excellence",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "node-cron": "^3.0.3",
+    "pg": "^8.11.3",
+    "dotenv": "^1.6.1",
+    "express-rate-limit": "^7.1.0"
+  }
 }
