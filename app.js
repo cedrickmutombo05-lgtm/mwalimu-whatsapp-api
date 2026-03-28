@@ -2146,4 +2146,114 @@ Exemple : avocat, médecin, ingénieur, pilote.`
             await appendHistorique(from, "user", texteUtilisateur);
 
             const userFresh = await getUser(from);
-            historique = Ar
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique,[]);
+        }
+
+        let reponseBrute = "";
+        let ficheContexte = null;
+
+        if (msgType === "text") {
+            const resultat = await traiterTexte(user, texteUtilisateur, historique);
+            reponseBrute = resultat?.reponse || "";
+            ficheContexte = resultat?.fiche || null;
+        } else if (msgType === "audio") {
+            const resultat = await traiterAudio(user, msg, historique);
+            reponseBrute = resultat?.reponse || "";
+            ficheContexte = resultat?.fiche || null;
+
+            contenuUtilisateurPourMemoire = "[audio envoyé]";
+            await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+
+            const userFresh = await getUser(from);
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique,[]);
+        } else if (msgType === "image") {
+            const resultat = await traiterImage(user, msg, historique);
+            reponseBrute = resultat?.reponse || "";
+            ficheContexte = resultat?.fiche || null;
+
+            contenuUtilisateurPourMemoire = "[image envoyée]";
+            await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+
+            const userFresh = await getUser(from);
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique,[]);
+        } else {
+            reponseBrute = `🔵 [VÉCU] :
+J'ai bien reçu ton message.
+
+🟡 [SAVOIR] :
+Pour l'instant, je traite surtout les textes, les audios et les images.
+
+🔴 [INSPIRATION] :
+Nous pouvons déjà avancer correctement avec ces formats.
+
+❓ [CONSOLIDATION] :
+Envoie-moi ta question par écrit, par audio ou avec une image nette de l'exercice.`;
+        }
+
+        if (!reponseBrute || !String(reponseBrute).trim()) {
+            reponseBrute = `🔵[VÉCU] :
+J'ai bien reçu ta demande.
+
+🟡 [SAVOIR] :
+Je n'ai pas encore pu produire une réponse claire.
+
+🔴 [INSPIRATION] :
+Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+
+❓ [CONSOLIDATION] :
+Reformule ta question en une seule phrase, et je t'aiderai pas à pas.`;
+        }
+
+        const messageFinal = construireMessageFinal(
+            user,
+            reponseBrute,
+            historique,
+            texteUtilisateur || contenuUtilisateurPourMemoire,
+            ficheContexte
+        );
+
+        await envoyerWhatsApp(from, messageFinal);
+        await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
+
+    } catch (e) {
+        console.error("Erreur générale:", e.response?.data || e.message);
+
+        try {
+            let user = await getUser(from);
+            if (!user) {
+                user = { nom: "élève" };
+            }
+            await envoyerWhatsApp(from, messageSecours(user));
+        } catch (e2) {
+            console.error("Erreur secours:", e2.message);
+        }
+    }
+});
+
+/* =========================================================
+   11) WEBHOOK VERIFY
+========================================================= */
+
+app.get("/webhook", (req, res) => {
+    if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
+        return res.send(req.query["hub.challenge"]);
+    }
+    return res.sendStatus(403);
+});
+
+/* =========================================================
+   12) DÉMARRAGE
+========================================================= */
+
+(async () => {
+    await initDB();
+    app.listen(PORT, () => {
+        console.log(`✅ Mwalimu en marche sur le port ${PORT}`);
+    });
+})();
