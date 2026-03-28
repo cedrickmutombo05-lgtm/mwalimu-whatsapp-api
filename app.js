@@ -3,7 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const { Pool } = require("pg");
-const { GoogleGenAI } = require("@google/generative-ai"); // Remplacement de OpenAI par Google Gemini
+const { GoogleGenerativeAI } = require("@google/generative-ai"); // Le bon SDK officiel
 const cron = require("node-cron");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
@@ -23,15 +23,15 @@ function requireEnv(name) {
 }
 
 const PORT = process.env.PORT || 10000;
-const GEMINI_API_KEY = requireEnv("GEMINI_API_KEY"); // Nouvelle clé API Google
+const GEMINI_API_KEY = requireEnv("GEMINI_API_KEY");
 const DATABASE_URL = requireEnv("DATABASE_URL");
 const TOKEN = requireEnv("TOKEN");
 const PHONE_NUMBER_ID = requireEnv("PHONE_NUMBER_ID");
 const VERIFY_TOKEN = requireEnv("VERIFY_TOKEN");
 const APP_SECRET = requireEnv("APP_SECRET");
 
-// Initialisation du client Google Gemini
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+// Initialisation du client officiel Google
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const pool = new Pool({
     connectionString: DATABASE_URL,
@@ -235,10 +235,10 @@ STYLE OBLIGATOIRE :
 - Garde cependant la structure générale de Mwalimu
 
 STRUCTURE SOUHAITÉE :
-🔵 [VÉCU]
+🔵[VÉCU]
 🟡 [SAVOIR]
 🔴 [INSPIRATION]
-❓ [CONSOLIDATION]
+❓[CONSOLIDATION]
 
 ${REGLE_CALCUL_INTELLIGENT}
 ${REGLE_FORMAT_MATH}
@@ -341,7 +341,7 @@ RÈGLES DE TUTORAT STRICTES :
    3) OUTILS SIMPLES
 ========================================================= */
 
-function pick(arr = []) {
+function pick(arr =[]) {
     if (!arr.length) return "";
     return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -975,7 +975,7 @@ function verifierStructureMwalimu(corps = "", user = {}, historique =[], questio
 
     const vecu = aVecu
         ? ""
-        : (phraseRetour || `🔵 [VÉCU] :
+        : (phraseRetour || `🔵[VÉCU] :
 Je suis heureux de continuer cet échange avec toi, ${prenom}. Prenons le temps de bien comprendre ensemble.`);
 
     const savoir = aSavoir
@@ -990,7 +990,7 @@ Chaque notion bien comprise renforce ton intelligence et ta confiance.`;
 
     const consolidation = aConsolidation
         ? ""
-        : `❓ [CONSOLIDATION] :
+        : `❓[CONSOLIDATION] :
 Veux-tu maintenant essayer de reformuler cela avec tes propres mots, ou répondre à une petite question sur ce point ?`;
 
     const morceaux =[];
@@ -1121,13 +1121,13 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     const t = String(texte || "").toLowerCase().trim();
 
     const reponsesSalut = [
-        `🔵 [VÉCU] :
+        `🔵[VÉCU] :
 Bonjour ${appel}. Je suis vraiment heureux de te retrouver.
 
 🟡 [SAVOIR] :
 Je suis bien là, disponible pour t’accompagner tranquillement aujourd’hui.
 
-🔴 [INSPIRATION] :
+🔴[INSPIRATION] :
 Chaque échange compte, même un simple bonjour, parce qu’il ouvre la porte à de belles choses.
 
 ❓ [CONSOLIDATION] :
@@ -1154,7 +1154,7 @@ Je suis prêt à t’écouter et à t’aider avec simplicité.
 🔴 [INSPIRATION] :
 Quand on garde l’habitude d’échanger avec confiance, on apprend aussi avec plus d’assurance.
 
-❓ [CONSOLIDATION] :
+❓[CONSOLIDATION] :
 Dis-moi ce que tu veux travailler, ou comment se passe ta journée.`
     ];
 
@@ -1165,7 +1165,7 @@ Avec plaisir, ${appel}. Cela me fait vraiment plaisir de pouvoir t’aider.
 🟡 [SAVOIR] :
 Je reste disponible chaque fois que tu as besoin d’une explication ou d’un accompagnement.
 
-🔴 [INSPIRATION] :
+🔴[INSPIRATION] :
 La gratitude et la constance sont de belles forces dans le chemin de l’apprentissage.
 
 ❓ [CONSOLIDATION] :
@@ -1185,13 +1185,13 @@ Y a-t-il encore un point que tu veux revoir avec moi ?`
     ];
 
     const reponsesBonneNuit = [
-        `🔵[VÉCU] :
+        `🔵 [VÉCU] :
 Bonne nuit ${appel}. Merci pour ce moment partagé.
 
-🟡[SAVOIR] :
+🟡 [SAVOIR] :
 Le repos aide aussi l’esprit à mieux retenir et à revenir plus fort.
 
-🔴[INSPIRATION] :
+🔴 [INSPIRATION] :
 Un élève qui sait aussi se reposer construit un apprentissage plus solide.
 
 ❓ [CONSOLIDATION] :
@@ -1203,10 +1203,10 @@ Bonne soirée ${appel}. Je suis content d’avoir échangé avec toi.
 🟡 [SAVOIR] :
 Tu peux maintenant te reposer tranquillement.
 
-🔴[INSPIRATION] :
+🔴 [INSPIRATION] :
 Demain sera encore une belle occasion d’apprendre avec confiance.
 
-❓[CONSOLIDATION] :
+❓ [CONSOLIDATION] :
 Je resterai disponible quand tu voudras reprendre.`
     ];
 
@@ -1214,13 +1214,13 @@ Je resterai disponible quand tu voudras reprendre.`
         `🔵 [VÉCU] :
 Très bien ${appel}.
 
-🟡[SAVOIR] :
+🟡 [SAVOIR] :
 Je te suis et je reste disponible pour la suite.
 
-🔴 [INSPIRATION] :
-Même les petits exchanges entretiennent la confiance et la progression.
+🔴[INSPIRATION] :
+Même les petits échanges entretiennent la confiance et la progression.
 
-❓ [CONSOLIDATION] :
+❓[CONSOLIDATION] :
 Que veux-tu faire maintenant ?`,
 
         `🔵 [VÉCU] :
@@ -1619,30 +1619,25 @@ async function consulterBibliotheque(question = "", classe = "") {
     }
 }
 
-// Remplacement OpenAI Whisper par Gemini Audio
+// L'Audio avec Gemini
 async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
     try {
         const base64Audio = audioBuffer.toString("base64");
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
        
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: [{
-                role: "user",
-                parts:[
-                    { text: "Transcris exactement ce message vocal en français de la RDC. Ne réponds pas à la question posée, écris juste le texte exact de ce qui est dit." },
-                    { inlineData: { mimeType: mimeType, data: base64Audio } }
-                ]
-            }]
-        });
+        const result = await model.generateContent([
+            "Transcris exactement ce message vocal en français de la RDC. Ne réponds pas à la question posée, écris juste le texte exact de ce qui est dit.",
+            { inlineData: { mimeType: mimeType, data: base64Audio } }
+        ]);
 
-        return String(response.text || "").trim();
+        return String(result.response.text() || "").trim();
     } catch (e) {
         console.error("Erreur Gemini Audio:", e);
         return "";
     }
 }
 
-// Remplacement OpenAI Chat par Gemini + Google Search
+// Le Texte et la Recherche Web avec Gemini
 async function appelerChatCompletion(messages) {
     try {
         const systemMessages = messages
@@ -1657,17 +1652,18 @@ async function appelerChatCompletion(messages) {
                 parts: [{ text: String(m.content) }]
             }));
 
-        const response = await ai.models.generateContent({
+        const model = genAI.getGenerativeModel({
             model: "gemini-2.5-flash",
-            contents: contents,
-            config: {
-                systemInstruction: systemMessages,
-                temperature: 0.2,
-                tools: [{ googleSearch: {} }] // ACTIVATION DE LA RECHERCHE WEB GOOGLE
-            }
+            systemInstruction: systemMessages,
+            tools: [{ googleSearch: {} }]
         });
 
-        return response.text;
+        const result = await model.generateContent({
+            contents: contents,
+            generationConfig: { temperature: 0.2 }
+        });
+
+        return result.response.text();
     } catch (e) {
         console.error("Erreur Gemini Texte:", e);
         return "";
@@ -1742,7 +1738,7 @@ async function repondreSansFiche(user, texte, historique =[], consignePedagogiqu
     ]);
 }
 
-// Remplacement OpenAI Vision par Gemini Vision
+// L'Image (Vision) avec Gemini
 async function expliquerImageAvecIA(user, base64Image, mimeType, historique =[]) {
     try {
         const system = construireSystemPrompt(user);
@@ -1766,17 +1762,18 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique =[])
             }
         ];
 
-        const response = await ai.models.generateContent({
+        const model = genAI.getGenerativeModel({
             model: "gemini-2.5-flash",
-            contents: contents,
-            config: {
-                systemInstruction: instructionComplete,
-                temperature: 0.2,
-                tools: [{ googleSearch: {} }] // Recherche activée même pour les images !
-            }
+            systemInstruction: instructionComplete,
+            tools: [{ googleSearch: {} }]
         });
 
-        return response.text;
+        const result = await model.generateContent({
+            contents: contents,
+            generationConfig: { temperature: 0.2 }
+        });
+
+        return result.response.text();
     } catch (e) {
         console.error("Erreur Gemini Vision:", e);
         return "";
@@ -1872,7 +1869,7 @@ async function traiterAudio(user, msg, historique) {
             reponse: `🔵 [VÉCU] :
 J'ai bien reçu ton audio.
 
-🟡 [SAVOIR] :
+🟡[SAVOIR] :
 Mais je n'arrive pas à l'ouvrir correctement.
 
 🔴 [INSPIRATION] :
@@ -1895,7 +1892,7 @@ J’ai bien reçu ton audio.
 🟡 [SAVOIR] :
 Je n'arrive pas encore à le traiter correctement.
 
-🔴[INSPIRATION] :
+🔴 [INSPIRATION] :
 Ce n’est pas grave, nous pouvons réessayer calmement.
 
 ❓ [CONSOLIDATION] :
@@ -1935,7 +1932,7 @@ async function traiterImage(user, msg, historique) {
             reponse: `🔵 [VÉCU] :
 J'ai bien reçu ton image.
 
-🟡 [SAVOIR] :
+🟡[SAVOIR] :
 Mais je n'arrive pas à l'ouvrir correctement.
 
 🔴 [INSPIRATION] :
@@ -1986,10 +1983,10 @@ Bonjour ${appel}. J’espère que tu as bien commencé ta journée.
 🟡 [SAVOIR] :
 Petit rappel du matin : avance aujourd’hui avec calme, sérieux et confiance. Même un petit effort bien fait peut te rapprocher de ton rêve.
 
-🔴[INSPIRATION] :
+🔴 [INSPIRATION] :
 Ton objectif n’est pas d’aller vite, mais de bien comprendre. C’est ainsi qu’on bâtit un avenir solide.
 
-❓ [CONSOLIDATION] :
+❓[CONSOLIDATION] :
 Dis-moi plus tard : quelle matière veux-tu travailler aujourd’hui ?
 
 👉 Je reste à tes côtés pour t’accompagner pas à pas.
@@ -2038,8 +2035,7 @@ app.post("/webhook", async (req, res) => {
 
     try {
         const check = await pool.query(
-            "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
-            [msgId]
+            "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",[msgId]
         );
         if (check.rowCount === 0) return;
 
@@ -2142,7 +2138,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`
 
         let historique = Array.isArray(user.historique)
             ? user.historique
-            : safeJsonParse(user.historique, []);
+            : safeJsonParse(user.historique,[]);
 
         let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
@@ -2150,114 +2146,4 @@ Exemple : avocat, médecin, ingénieur, pilote.`
             await appendHistorique(from, "user", texteUtilisateur);
 
             const userFresh = await getUser(from);
-            historique = Array.isArray(userFresh?.historique)
-                ? userFresh.historique
-                : safeJsonParse(userFresh?.historique,[]);
-        }
-
-        let reponseBrute = "";
-        let ficheContexte = null;
-
-        if (msgType === "text") {
-            const resultat = await traiterTexte(user, texteUtilisateur, historique);
-            reponseBrute = resultat?.reponse || "";
-            ficheContexte = resultat?.fiche || null;
-        } else if (msgType === "audio") {
-            const resultat = await traiterAudio(user, msg, historique);
-            reponseBrute = resultat?.reponse || "";
-            ficheContexte = resultat?.fiche || null;
-
-            contenuUtilisateurPourMemoire = "[audio envoyé]";
-            await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
-
-            const userFresh = await getUser(from);
-            historique = Array.isArray(userFresh?.historique)
-                ? userFresh.historique
-                : safeJsonParse(userFresh?.historique,[]);
-        } else if (msgType === "image") {
-            const resultat = await traiterImage(user, msg, historique);
-            reponseBrute = resultat?.reponse || "";
-            ficheContexte = resultat?.fiche || null;
-
-            contenuUtilisateurPourMemoire = "[image envoyée]";
-            await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
-
-            const userFresh = await getUser(from);
-            historique = Array.isArray(userFresh?.historique)
-                ? userFresh.historique
-                : safeJsonParse(userFresh?.historique,[]);
-        } else {
-            reponseBrute = `🔵 [VÉCU] :
-J'ai bien reçu ton message.
-
-🟡 [SAVOIR] :
-Pour l'instant, je traite surtout les textes, les audios et les images.
-
-🔴 [INSPIRATION] :
-Nous pouvons déjà avancer correctement avec ces formats.
-
-❓[CONSOLIDATION] :
-Envoie-moi ta question par écrit, par audio ou avec une image nette de l'exercice.`;
-        }
-
-        if (!reponseBrute || !String(reponseBrute).trim()) {
-            reponseBrute = `🔵 [VÉCU] :
-J'ai bien reçu ta demande.
-
-🟡 [SAVOIR] :
-Je n'ai pas encore pu produire une réponse claire.
-
-🔴 [INSPIRATION] :
-Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
-
-❓ [CONSOLIDATION] :
-Reformule ta question en une seule phrase, et je t'aiderai pas à pas.`;
-        }
-
-        const messageFinal = construireMessageFinal(
-            user,
-            reponseBrute,
-            historique,
-            texteUtilisateur || contenuUtilisateurPourMemoire,
-            ficheContexte
-        );
-
-        await envoyerWhatsApp(from, messageFinal);
-        await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
-
-    } catch (e) {
-        console.error("Erreur générale:", e.response?.data || e.message);
-
-        try {
-            let user = await getUser(from);
-            if (!user) {
-                user = { nom: "élève" };
-            }
-            await envoyerWhatsApp(from, messageSecours(user));
-        } catch (e2) {
-            console.error("Erreur secours:", e2.message);
-        }
-    }
-});
-
-/* =========================================================
-   11) WEBHOOK VERIFY
-========================================================= */
-
-app.get("/webhook", (req, res) => {
-    if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
-        return res.send(req.query["hub.challenge"]);
-    }
-    return res.sendStatus(403);
-});
-
-/* =========================================================
-   12) DÉMARRAGE
-========================================================= */
-
-(async () => {
-    await initDB();
-    app.listen(PORT, () => {
-        console.log(`✅ Mwalimu en marche sur le port ${PORT}`);
-    });
-})();
+            historique = Ar
