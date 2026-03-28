@@ -3,7 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const { Pool } = require("pg");
-const { GoogleGenAI } = require("@google/genai"); // Remplacement de OpenAI par Google Gemini
+const { GoogleGenAI } = require("@google/generative-ai"); // Remplacement de OpenAI par Google Gemini
 const cron = require("node-cron");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
