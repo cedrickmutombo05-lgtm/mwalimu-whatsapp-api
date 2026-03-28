@@ -223,10 +223,10 @@ STYLE OBLIGATOIRE :
 - Après une réponse théorique, proposer une petite question de retour naturelle
 - Cette question de retour doit être simple, utile et liée au sujet
 - La CONSOLIDATION ne doit pas seulement rester ouverte
-- Dans la CONSOLIDATION, pose aussi au moins une question de réflexion liée au sujet
-- Quand c'est pertinent, ajoute ensuite une ou deux petites questions à choix multiple
-- Les questions à choix multiple doivent être simples, courtes et pédagogiques
-- Elles doivent aider l'élève à vérifier sa compréhension, sans le piéger
+- Dans la CONSOLIDATION, pose aussi une question de réflexion liée au sujet
+- Quand c'est pertinent, ajoute une seule question à choix multiple
+- La question à choix multiple doit être simple, courte et pédagogique
+- Elle doit aider l'élève à vérifier sa compréhension, sans le piéger
 - La structure de réponse doit toujours être respectée dans cet ordre : VÉCU, SAVOIR, INSPIRATION, CONSOLIDATION
 - Après cette structure seulement, on peut ajouter une ouverture, puis un encouragement, puis une citation finale
 - Ne change jamais cet ordre
@@ -727,30 +727,17 @@ function detecterMatiereScientifique(question = "", reponse = "", fiche = null) 
     return MATIERE_GENERAL;
 }
 
-function preparerSortieScientifique(reponse = "", question = "", fiche = null) {
-    const matiere = detecterMatiereScientifique(question, reponse, fiche);
-    let t = String(reponse || "");
-
-    t = simplifierNotationMath(t);
-    t = simplifierPresentationScientifique(t);
-    t = nettoyerSelonMatiere(t, matiere);
-    t = reformaterFinalSelonMatiere(t, matiere);
-
-    return { matiere, texte: t };
-}
-
 function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = null) {
     const matiere = detecterMatiereScientifique(question, reponse, fiche);
     let texte = String(reponse || "");
 
-    const etape1 = matiere;
     texte = simplifierNotationMath(texte);
     texte = simplifierPresentationScientifique(texte);
     texte = nettoyerSelonMatiere(texte, matiere);
     texte = reformaterFinalSelonMatiere(texte, matiere);
 
     return {
-        etape1_matiere: etape1,
+        etape1_matiere: matiere,
         etape2_nettoyage_general: true,
         etape3_nettoyage_specialise: true,
         etape4_reformatage_final: true,
@@ -847,7 +834,6 @@ function construirePhraseRetourMemoire(historique = [], texteActuel = "", user =
 
     const sujet = retrouverSujetProche(historique, texteActuel);
     const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
-
     if (!sujet) return "";
 
     const mapEtiquettes = {
@@ -939,7 +925,7 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
         : `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ton intelligence et ta confiance.`;
     const consolidation = aConsolidation
         ? ""
-        : `❓ [CONSOLIDATION] : Je veux aussi vérifier ta compréhension. Réponds d’abord avec tes propres mots, puis essaie les petites questions que je vais te poser.`;
+        : `❓ [CONSOLIDATION] : Je veux aussi vérifier ta compréhension. Réponds d’abord avec tes propres mots, puis essaie la petite vérification que je vais te poser.`;
 
     const morceaux = [];
     if (!aVecu) morceaux.push(vecu);
@@ -1171,7 +1157,7 @@ function construireConsignePedagogique(texte = "", type = "text") {
 - Tu aides l'élève à comprendre ce qu'il doit faire
 - Tu ne résous pas tout jusqu'à la réponse finale
 - Dans la CONSOLIDATION, pose une question de réflexion liée au sujet
-- Ajoute aussi, quand c'est pertinent, une ou deux petites questions à choix multiple simples
+- Ajoute aussi, quand c'est pertinent, une seule question à choix multiple simple
 - Tu termines en demandant à l'élève d'essayer lui-même puis de t'envoyer sa réponse`;
     }
 
@@ -1183,7 +1169,7 @@ function construireConsignePedagogique(texte = "", type = "text") {
 - Tu corriges avec douceur si nécessaire
 - Tu expliques précisément l'erreur
 - Dans la CONSOLIDATION, pose une question de réflexion liée au sujet
-- Ajoute aussi, quand c'est pertinent, une ou deux petites questions à choix multiple simples
+- Ajoute aussi, quand c'est pertinent, une seule question à choix multiple simple
 - Tu encourages l'élève avec chaleur`;
     }
 
@@ -1194,7 +1180,7 @@ function construireConsignePedagogique(texte = "", type = "text") {
 - Tu montres le démarrage utile
 - Tu ne donnes pas la réponse finale complète à la place de l'élève
 - Dans la CONSOLIDATION, pose une question de réflexion liée au sujet
-- Ajoute aussi, quand c'est pertinent, une ou deux petites questions à choix multiple simples
+- Ajoute aussi, quand c'est pertinent, une seule question à choix multiple simple
 - Tu invites l'élève à continuer
 - Tu lui demandes ensuite de t'envoyer sa réponse pour vérification`;
     }
@@ -1203,7 +1189,7 @@ function construireConsignePedagogique(texte = "", type = "text") {
 - Réponds naturellement
 - Sois humain, chaleureux et utile
 - Dans la CONSOLIDATION, pose une question de réflexion liée au sujet
-- Ajoute aussi, quand c'est pertinent, une ou deux petites questions à choix multiple simples`;
+- Ajoute aussi, quand c'est pertinent, une seule question à choix multiple simple`;
 }
 
 function detecterThemeConsolidation(question = "", corps = "") {
@@ -1248,30 +1234,20 @@ function construireQuestionsConsolidation(question = "", corps = "") {
     const theme = detecterThemeConsolidation(question, corps);
 
     if (theme === "geographie") {
-        return `1) Question de réflexion : pourquoi est-il utile de connaître les territoires, les villes et les provinces de la RDC ?
+        return `1) Question de réflexion : pourquoi est-il utile de connaître les territoires et les provinces de la RDC ?
 
 2) Petite vérification rapide :
 A. Un territoire fait partie d’une province
 B. Une province fait partie d’un territoire
-👉 Choisis la bonne réponse.
-
-3) Deuxième petite question :
-A. Le chef-lieu est toujours un pays
-B. Le chef-lieu est le centre administratif principal d’une province ou d’une entité
 👉 Choisis la bonne réponse.`;
     }
 
     if (theme === "droit") {
-        return `1) Question de réflexion : pourquoi est-il important de distinguer la loi, le code et l’article avant de répondre à une question juridique ?
+        return `1) Question de réflexion : pourquoi faut-il vérifier la source avant de citer une règle de droit ?
 
 2) Petite vérification rapide :
-A. On peut citer un article de loi sans vérifier sa source
+A. On peut citer un article sans vérification
 B. Il faut vérifier le texte exact avant de citer un article
-👉 Choisis la bonne réponse.
-
-3) Deuxième petite question :
-A. Le droit OHADA remplace automatiquement toutes les lois internes congolaises
-B. Il faut distinguer le droit OHADA et le droit interne congolais selon la matière
 👉 Choisis la bonne réponse.`;
     }
 
@@ -1279,54 +1255,34 @@ B. Il faut distinguer le droit OHADA et le droit interne congolais selon la mati
         return `1) Question de réflexion : pourquoi faut-il suivre les étapes du calcul au lieu de chercher seulement la réponse finale ?
 
 2) Petite vérification rapide :
-A. En mathématiques, la méthode compte aussi
+A. La méthode compte aussi
 B. Seule la réponse finale compte
-👉 Choisis la bonne réponse.
-
-3) Deuxième petite question :
-A. Une erreur de signe peut changer tout le résultat
-B. Une erreur de signe n’a pas d’importance
 👉 Choisis la bonne réponse.`;
     }
 
     if (theme === "physique") {
-        return `1) Question de réflexion : pourquoi faut-il faire attention aux unités en physique ?
+        return `1) Question de réflexion : pourquoi les unités sont-elles importantes en physique ?
 
 2) Petite vérification rapide :
-A. Les unités aident à vérifier si le raisonnement est cohérent
+A. Les unités aident à vérifier le raisonnement
 B. Les unités ne servent presque à rien
-👉 Choisis la bonne réponse.
-
-3) Deuxième petite question :
-A. Une formule doit être appliquée sans regarder les données
-B. Il faut d’abord identifier les données et la formule utile
 👉 Choisis la bonne réponse.`;
     }
 
     if (theme === "chimie") {
-        return `1) Question de réflexion : pourquoi faut-il bien distinguer les symboles, les molécules et les quantités en chimie ?
+        return `1) Question de réflexion : pourquoi faut-il bien écrire les symboles et les molécules en chimie ?
 
 2) Petite vérification rapide :
-A. H₂O et CO₂ représentent la même chose
-B. H₂O et CO₂ représentent deux substances différentes
-👉 Choisis la bonne réponse.
-
-3) Deuxième petite question :
-A. En chimie, une écriture propre évite beaucoup d’erreurs
-B. L’écriture n’a aucune importance
+A. H₂O et CO₂ représentent deux substances différentes
+B. H₂O et CO₂ représentent la même chose
 👉 Choisis la bonne réponse.`;
     }
 
-    return `1) Question de réflexion : qu’est-ce que tu retiens comme idée la plus importante dans cette réponse ?
+    return `1) Question de réflexion : quelle idée importante retiens-tu de cette réponse ?
 
 2) Petite vérification rapide :
 A. Comprendre vaut mieux que mémoriser sans réfléchir
 B. Mémoriser sans comprendre suffit toujours
-👉 Choisis la bonne réponse.
-
-3) Deuxième petite question :
-A. Poser des questions aide à progresser
-B. Poser des questions est inutile
 👉 Choisis la bonne réponse.`;
 }
 
