@@ -1331,18 +1331,23 @@ function choisirOuvertureContextuelle(reponse = "", user = {}, question = "") {
     if (corps.includes("bonne nuit") || corps.includes("bonne soirée") || corps.includes("bonne soiree") || corps.includes("repose-toi")) {
         return "👉 Je reste disponible dès que tu voudras reprendre.";
     }
+
     if (corps.includes("merci") || corps.includes("je t’en prie") || corps.includes("je reste disponible")) {
         return "👉 Reviens quand tu veux ; je serai toujours heureux de t’aider.";
     }
+
     if (estQuestionTechnique(q)) {
         return "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse pour que je la vérifie avec toi.";
     }
+
     if (corps.includes("bravo") || corps.includes("bonne réponse") || corps.includes("bonne reponse") || corps.includes("félicit") || corps.includes("felicit")) {
         return "👉 Tu avances bien. On peut continuer ensemble avec la suite.";
     }
+
     if (corps.includes("chine") || corps.includes("népal") || corps.includes("nepal") || corps.includes("géographie") || corps.includes("geographie") || corps.includes("pays")) {
         return "👉 Nous pouvons continuer avec une autre petite question de géographie.";
     }
+
     if (corps.includes("histoire") || corps.includes("date") || corps.includes("événement") || corps.includes("evenement")) {
         return "👉 Nous pouvons continuer doucement avec une autre question du même thème.";
     }
@@ -1352,38 +1357,59 @@ function choisirOuvertureContextuelle(reponse = "", user = {}, question = "") {
 
 function choisirEncouragementContextuel(reponse = "", user = {}, question = "") {
     const corps = String(reponse || "").toLowerCase();
-    const q = String(question || "").toLowerCase().trim();
 
-    if (estMessageRelationnelSimple(q)) {
-        if (q.includes("merci")) {
-            return "🌟 Mot d'encouragement : Garde cette belle habitude d’échanger avec confiance et respect.";
-        }
-        if (q.includes("bonne nuit") || q.includes("bonne soirée") || q.includes("bonne soiree") || q.includes("à demain") || q.includes("a demain")) {
-            return "🌟 Mot d'encouragement : Le repos fait aussi partie d’un apprentissage équilibré et solide.";
-        }
-        return "🌟 Mot d'encouragement : Une relation simple, respectueuse et confiante aide aussi à bien apprendre.";
+    if (
+        corps.includes("je n'arrive pas encore à le traiter correctement") ||
+        corps.includes("je n'arrive pas à l'ouvrir correctement") ||
+        corps.includes("je rencontre un petit souci technique") ||
+        corps.includes("je n'ai pas encore pu produire une réponse claire") ||
+        corps.includes("réessaie") ||
+        corps.includes("reessaie") ||
+        corps.includes("reformule ta question") ||
+        corps.includes("message vocal plus clair") ||
+        corps.includes("image plus nette")
+    ) {
+        return "🌟 Mot d'encouragement : Ne te décourage pas ; même quand cela bloque un peu, nous pouvons reprendre calmement ensemble.";
     }
 
-    if (corps.includes("bonne nuit") || corps.includes("bonne soirée") || corps.includes("bonne soiree") || corps.includes("repose-toi")) {
-        return "🌟 Mot d'encouragement : Un esprit reposé revient souvent plus fort et plus clair.";
-    }
-    if (corps.includes("merci") || corps.includes("je t’en prie") || corps.includes("je reste disponible")) {
-        return "🌟 Mot d'encouragement : Garde cette belle habitude de demander quand quelque chose n’est pas encore clair.";
-    }
-    if (estQuestionTechnique(q)) {
-        return "🌟 Mot d'encouragement : Continue avec méthode ; en travaillant étape par étape, tu peux trouver toi-même la bonne réponse.";
-    }
-    if (corps.includes("bonne réponse") || corps.includes("bonne reponse") || corps.includes("bravo") || corps.includes("félicit") || corps.includes("felicit")) {
+    if (
+        corps.includes("bonne réponse") ||
+        corps.includes("bonne reponse") ||
+        corps.includes("bravo") ||
+        corps.includes("félicit") ||
+        corps.includes("felicit")
+    ) {
         return "🌟 Mot d'encouragement : Bravo pour ton effort ; tu avances réellement, et cela fait plaisir à voir.";
     }
-    if (corps.includes("c'est normal") || corps.includes("je suis là pour t'aider") || corps.includes("pas de souci")) {
-        return "🌟 Mot d'encouragement : Ne crains pas de ne pas savoir au départ ; c’est justement en apprenant qu’on devient plus fort.";
-    }
-    if (corps.includes("géographie") || corps.includes("geographie") || corps.includes("pays") || corps.includes("frontière") || corps.includes("frontiere")) {
-        return "🌟 Mot d'encouragement : Ta curiosité est une belle force ; elle t’ouvre peu à peu l’intelligence du monde.";
+
+    if (
+        corps.includes("essaie maintenant de continuer") ||
+        corps.includes("envoie-moi ta réponse pour que je la vérifie") ||
+        corps.includes("tu peux trouver toi-même") ||
+        corps.includes("continue avec la méthode")
+    ) {
+        return "🌟 Mot d'encouragement : Continue avec calme ; tu es capable d’avancer toi-même pas à pas.";
     }
 
-    return pick(MOTS_ENCOURAGEMENT);
+    if (
+        corps.includes("voici l’idée essentielle") ||
+        corps.includes("voici l'idée essentielle") ||
+        corps.includes("à retenir") ||
+        corps.includes("a retenir") ||
+        corps.includes("explication")
+    ) {
+        return "🌟 Mot d'encouragement : Prends le temps de relire doucement ; une idée bien comprise reste plus solidement dans l’esprit.";
+    }
+
+    if (
+        corps.includes("merci") ||
+        corps.includes("je reste disponible") ||
+        corps.includes("reviens quand tu veux")
+    ) {
+        return "🌟 Mot d'encouragement : Garde confiance ; je resterai disponible chaque fois que tu auras besoin d’aide.";
+    }
+
+    return "🌟 Mot d'encouragement : Avance pas à pas ; comprendre calmement vaut mieux que se précipiter.";
 }
 
 /* =========================================================
