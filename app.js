@@ -3,7 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 
-const { initDB, getUser, createUser, updateUserField, appendHistorique, consulterBibliotheque } = require("./config/db");
+const { initdb, getUser, createUser, updateUserField, appendHistorique, consulterBibliotheque } = require("./config/db");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cron = require("node-cron");
 const crypto = require("crypto");
