@@ -2340,4 +2340,4 @@ const SYSTEM_HUMAIN = `HUMANISATION FORTE :
 
 const SYSTEM_TUTORAT = `RÈGLES DE TUTORAT STRICTES :
 - Tu es un précepteur, pas un solveur automatique
-- Tu n'as pas le droit de fair…
+- Tu n'as pas le droit de fair…;
