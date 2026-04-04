@@ -1,5 +1,12 @@
 
-const { Pool } = require("pg");
+
+const { initDB,
+    getUser,
+    createUser,
+    updateUserField,
+    appendHistorique,
+    consulterBibliotheque
+} = require("./config/db");
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -138,9 +145,7 @@ async function consulterBibliotheque(question = "", classe = "") {
     }
 }
 
-module.exports = {
-    pool,
-    initDB,
+module.exports = { initDB,
     getUser,
     createUser,
     updateUserField,
