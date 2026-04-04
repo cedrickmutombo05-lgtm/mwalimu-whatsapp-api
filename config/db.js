@@ -1,7 +1,5 @@
 
 
-const { initDB, getUser, createUser, updateUserField, appendHistorique, consulterBibliotheque } = require("./config/db");
-
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
