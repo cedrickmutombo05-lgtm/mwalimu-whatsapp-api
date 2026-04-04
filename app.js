@@ -2042,4 +2042,4 @@ Exemple : avocat, médecin, ingénieur, pilote.`
             contenuUtilisateurPourMemoire = "[audio envoyé]";
             await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
 
-            const userFresh = await getUser(from);<
+            const userFresh = await getUser(from);
