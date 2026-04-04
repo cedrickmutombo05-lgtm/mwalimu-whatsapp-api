@@ -1527,32 +1527,7 @@ async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
    7) IA : BIBLIOTHÈQUE / AUDIO / IMAGE / TEXTE AVEC GEMINI
 ========================================================= */
 
-async function consulterBibliotheque(question = "", classe = "") {
-    try {
-        const q = `
-            SELECT id, titre, matiere, classe, contenu
-            FROM bibliotheque
-            WHERE (
-                unaccent(lower(coalesce(titre, ''))) LIKE unaccent(lower($1))
-                OR unaccent(lower(coalesce(matiere, ''))) LIKE unaccent(lower($1))
-                OR unaccent(lower(coalesce(mots_cles, ''))) LIKE unaccent(lower($1))
-                OR unaccent(lower(coalesce(contenu, ''))) LIKE unaccent(lower($1))
-            )
-            AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
-            ORDER BY id DESC
-            LIMIT 1
-        `;
 
-        const motifQuestion = `%${question}%`;
-        const motifClasse = `%${classe}%`;
-
-        const { rows } = await pool.query(q, [motifQuestion, classe || "", motifClasse]);
-        return rows[0] || null;
-    } catch (e) {
-        console.error("Erreur consulterBibliotheque:", e.message);
-        return null;
-    }
-}
 
 async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
     try {
