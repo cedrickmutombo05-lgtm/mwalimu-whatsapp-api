@@ -3,15 +3,7 @@
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
-
-const {
-    initDB,
-    getUser,
-    createUser,
-    updateUserField,
-    appendHistorique,
-    consulterBibliotheque
-} = require("./config/db");
+const { Pool } = require("pg");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cron = require("node-cron");
 const crypto = require("crypto");
@@ -137,8 +129,7 @@ const MATIERE_PHYSIQUE = "physique";
 const MATIERE_CHIMIE = "chimie";
 const MATIERE_GENERAL = "general";
 
-const REGLE_FORMAT_MATH = `
-FORMAT OBLIGATOIRE D'ÉCRITURE SCIENTIFIQUE (WhatsApp) :
+const REGLE_FORMAT_MATH = `FORMAT OBLIGATOIRE D'ÉCRITURE SCIENTIFIQUE (WhatsApp) :
 - Écris les calculs, formules et expressions de manière simple, scolaire, propre et lisible sur WhatsApp
 - Interdiction totale de LaTeX et pseudo-LaTeX
 - N'utilise jamais : \\( \\) \\[ \\] \\frac \\sqrt ^{} \\left \\right \\times \\div
@@ -164,11 +155,9 @@ FORMAT OBLIGATOIRE D'ÉCRITURE SCIENTIFIQUE (WhatsApp) :
 - Les formules de chimie doivent rester simples et lisibles
 - Les molécules doivent être écrites proprement : H₂O, CO₂, O₂, H₂SO₄, NaCl
 - Les unités doivent être propres : cm², cm³, m/s, g/L, mol/L, kg/m³
-- Le calcul doit ressembler à ce qu'un élève écrit proprement dans son cahier
-`;
+- Le calcul doit ressembler à ce qu'un élève écrit proprement dans son cahier`;
 
-const REGLE_CALCUL_INTELLIGENT = `
-RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES SCIENTIFIQUES :
+const REGLE_CALCUL_INTELLIGENT = `RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES SCIENTIFIQUES :
 - Tu dois être extrêmement rigoureux dans les calculs
 - Tu vérifies chaque étape avant de l'écrire
 - Tu avances ligne par ligne, sans sauter d'étape importante
@@ -192,12 +181,9 @@ RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES SCIENTIFIQUES :
 - Si une écriture contient trop de symboles, simplifie-la immédiatement
 - Respecte les unités du début à la fin
 - En physique, garde les grandeurs et unités bien séparées
-- En chimie, garde les molécules, équations et unités propres et lisibles
-`;
+- En chimie, garde les molécules, équations et unités propres et lisibles`;
 
-const SYSTEM_BASE = `
-Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
-
+const SYSTEM_BASE = `Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
 MISSION :
 - Aider l'élève à comprendre
 - Guider sans faire le travail à sa place
@@ -253,11 +239,10 @@ STRUCTURE SOUHAITÉE :
 ❓ [CONSOLIDATION]
 
 ${REGLE_CALCUL_INTELLIGENT}
-${REGLE_FORMAT_MATH}
-`;
 
-const SYSTEM_HUMAIN = `
-HUMANISATION FORTE :
+${REGLE_FORMAT_MATH}`;
+
+const SYSTEM_HUMAIN = `HUMANISATION FORTE :
 - Parle comme un vrai précepteur humain, proche, calme et chaleureux
 - Commence naturellement, sans ton mécanique
 - Ne répète jamais le header "Mwalimu EdTech"
@@ -309,11 +294,9 @@ HUMANISATION FORTE :
 - En physique, garde les formules et unités dans une écriture scolaire simple
 - En chimie, garde les molécules, symboles et concentrations dans une écriture lisible
 - Ne transforme jamais une formule simple en écriture compliquée
-- Quand une unité ou une formule peut être simplifiée visuellement, simplifie-la
-`;
+- Quand une unité ou une formule peut être simplifiée visuellement, simplifie-la`;
 
-const SYSTEM_TUTORAT = `
-RÈGLES DE TUTORAT STRICTES :
+const SYSTEM_TUTORAT = `RÈGLES DE TUTORAT STRICTES :
 - Tu es un précepteur, pas un solveur automatique
 - Tu n'as pas le droit de faire tout l'exercice à la place de l'élève
 - Pour un exercice, tu dois :
@@ -344,19 +327,16 @@ RÈGLES DE TUTORAT STRICTES :
   2. nettoyer et simplifier l'écriture scientifique selon la matière
   3. reformater la présentation finale selon la matière
   4. guider l'élève pas à pas sans faire tout l'exercice à sa place
-- Ces 4 étapes doivent être respectées avant toute réponse finale
-`;
+- Ces 4 étapes doivent être respectées avant toute réponse finale`;
 
-const SYSTEM_JURIDIQUE_WEB = `
-RÈGLES JURIDIQUES ET RECHERCHE WEB :
+const SYSTEM_JURIDIQUE_WEB = `RÈGLES JURIDIQUES ET RECHERCHE WEB :
 - Pour les questions de droit, de lois, de codes, de fiscalité, de procédure, de Constitution, de travail, de commerce ou d’OHADA, utilise la recherche web Google si nécessaire
 - Réfère-toi en priorité aux textes juridiques applicables en RDC et au droit OHADA
 - N’invente jamais un article de loi, un numéro d’article ou une source
 - Si tu cites une règle juridique, précise honnêtement si tu es certain ou non
 - Si plusieurs règles existent, distingue clairement le droit congolais et le droit OHADA
 - En matière juridique, reste pédagogique, clair et prudent
-- Tu expliques simplement, sans jargon inutile, comme un bon répétiteur de droit
-`;
+- Tu expliques simplement, sans jargon inutile, comme un bon répétiteur de droit`;
 
 /* =========================================================
    3) OUTILS SIMPLES
@@ -414,7 +394,6 @@ function nettoyerReponseIA(texte = "") {
 
     t = supprimerDoublonsLignes(t);
     t = t.replace(/\n{3,}/g, "\n\n").trim();
-
     return t;
 }
 
@@ -632,11 +611,9 @@ function nettoyerSpecifiqueChimie(texte = "") {
 
 function nettoyerSelonMatiere(texte = "", matiere = MATIERE_GENERAL) {
     const base = normaliserBaseScientifique(texte);
-
     if (matiere === MATIERE_MATH) return nettoyerSpecifiqueMath(base);
     if (matiere === MATIERE_PHYSIQUE) return nettoyerSpecifiquePhysique(base);
     if (matiere === MATIERE_CHIMIE) return nettoyerSpecifiqueChimie(base);
-
     return base;
 }
 
@@ -720,15 +697,18 @@ function detecterMatiereScientifique(question = "", reponse = "", fiche = null) 
     for (const mot of indicesMath) if (base.includes(mot)) score.math += 2;
 
     if (/\b(h2o|co2|o2|n2|hcl|naoh|h2so4|hno3|nh3|ch4|nacl)\b/i.test(base)) score.chimie += 4;
+
     if (/\b(m\/s|m\/s²|kg\/m³|g\/l|mol\/l|cm²|cm³)\b/i.test(base)) {
         score.physique += 2;
         score.chimie += 1;
     }
+
     if (/\b(x|y)\s*[²0-9+\-=/]/i.test(base) || /discriminant|trin[oô]me|fraction|racine/i.test(base)) {
         score.math += 3;
     }
 
     const maxScore = Math.max(score.math, score.physique, score.chimie);
+
     if (maxScore <= 0) return MATIERE_GENERAL;
     if (score.chimie === maxScore) return MATIERE_CHIMIE;
     if (score.physique === maxScore) return MATIERE_PHYSIQUE;
@@ -789,6 +769,7 @@ function estMessageSalutation(texte = "") {
 function extraireSujetMemoire(texte = "") {
     const brut = String(texte || "").trim();
     const t = normaliserTexteMemoire(brut);
+
     if (!t) return "";
     if (estMessageRelationnelSimple(brut)) return "";
 
@@ -843,6 +824,7 @@ function construirePhraseRetourMemoire(historique = [], texteActuel = "", user =
 
     const sujet = retrouverSujetProche(historique, texteActuel);
     const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
+
     if (!sujet) return "";
 
     const mapEtiquettes = {
@@ -948,17 +930,14 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
 
 function estSoumissionReponse(texte = "") {
     const t = String(texte || "").toLowerCase().trim();
-
     const indices = [
         "ma réponse", "ma reponse", "j'ai trouvé", "jai trouvé", "jai trouve",
         "j'ai trouvé que", "j'ai fait", "voici ma réponse", "voici ma reponse",
         "mon résultat", "mon resultat", "j'obtiens", "j’ai obtenu", "j'ai obtenu",
         "le résultat est", "le resultat est", "ça donne", "cela donne"
     ];
-
     if (indices.some((i) => t.includes(i))) return true;
     if (/^[0-9xXyYzZ\s=+\-÷/*().,]+$/.test(t) && t.length <= 80) return true;
-
     return false;
 }
 
@@ -1063,88 +1042,69 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
 
     const reponsesSalut = [
         `🔵 [VÉCU] : Bonjour ${appel}. Je suis vraiment heureux de te retrouver.
-
 🟡 [SAVOIR] : Je suis bien là, disponible pour t’accompagner tranquillement aujourd’hui.
-
 🔴 [INSPIRATION] : Chaque échange compte, même un simple bonjour, parce qu’il ouvre la porte à de belles choses.
-
 ❓ [CONSOLIDATION] : Comment vas-tu, et sur quoi veux-tu qu’on avance ensemble ?`,
+
         `🔵 [VÉCU] : Bonsoir ${appel}. Cela me fait plaisir de te lire.
-
 🟡 [SAVOIR] : Nous pouvons prendre ce moment calmement et avancer à ton rythme.
-
 🔴 [INSPIRATION] : On progresse souvent mieux quand on garde un cœur paisible et une pensée claire.
-
 ❓ [CONSOLIDATION] : Veux-tu simplement me saluer, ou bien as-tu une question à me confier ?`,
+
         `🔵 [VÉCU] : Salut ${appel}. Merci d’être revenu vers moi.
-
 🟡 [SAVOIR] : Je suis prêt à t’écouter et à t’aider avec simplicité.
-
 🔴 [INSPIRATION] : Quand on garde l’habitude d’échanger avec confiance, on apprend aussi avec plus d’assurance.
-
 ❓ [CONSOLIDATION] : Dis-moi ce que tu veux travailler, ou comment se passe ta journée.`
     ];
 
     const reponsesMerci = [
         `🔵 [VÉCU] : Avec plaisir, ${appel}. Cela me fait vraiment plaisir de pouvoir t’aider.
-
 🟡 [SAVOIR] : Je reste disponible chaque fois que tu as besoin d’une explication ou d’un accompagnement.
-
 🔴 [INSPIRATION] : La gratitude et la constance sont de belles forces dans le chemin de l’apprentissage.
-
 ❓ [CONSOLIDATION] : Veux-tu qu’on continue, ou préfères-tu reprendre plus tard ?`,
+
         `🔵 [VÉCU] : Je t’en prie, ${appel}. Merci aussi pour ta confiance.
-
 🟡 [SAVOIR] : Tu peux revenir sans hésiter chaque fois qu’un point n’est pas encore clair.
-
 🔴 [INSPIRATION] : Les élèves qui osent demander finissent souvent par comprendre plus solidement.
-
 ❓ [CONSOLIDATION] : Y a-t-il encore un point que tu veux revoir avec moi ?`
     ];
 
     const reponsesBonneNuit = [
         `🔵 [VÉCU] : Bonne nuit ${appel}. Merci pour ce moment partagé.
-
 🟡 [SAVOIR] : Le repos aide aussi l’esprit à mieux retenir et à revenir plus fort.
-
 🔴 [INSPIRATION] : Un élève qui sait aussi se reposer construit un apprentissage plus solide.
-
 ❓ [CONSOLIDATION] : Reviens quand tu voudras ; nous continuerons ensemble avec calme.`,
+
         `🔵 [VÉCU] : Bonne soirée ${appel}. Je suis content d’avoir échangé avec toi.
-
 🟡 [SAVOIR] : Tu peux maintenant te reposer tranquillement.
-
 🔴 [INSPIRATION] : Demain sera encore une belle occasion d’apprendre avec confiance.
-
 ❓ [CONSOLIDATION] : Je resterai disponible quand tu voudras reprendre.`
     ];
 
     const reponsesCourtes = [
         `🔵 [VÉCU] : Très bien ${appel}.
-
 🟡 [SAVOIR] : Je te suis et je reste disponible pour la suite.
-
 🔴 [INSPIRATION] : Même les petits échanges entretiennent la confiance et la progression.
-
 ❓ [CONSOLIDATION] : Que veux-tu faire maintenant ?`,
+
         `🔵 [VÉCU] : D’accord ${appel}, je suis avec toi.
-
 🟡 [SAVOIR] : Nous pouvons avancer simplement, sans nous presser.
-
 🔴 [INSPIRATION] : La régularité dans les petits pas produit souvent de grands résultats.
-
 ❓ [CONSOLIDATION] : Quelle est la suite pour toi ?`
     ];
 
     if (t === "bonne nuit" || t === "bonne soirée" || t === "bonne soiree" || t === "à demain" || t === "a demain") {
         return pick(reponsesBonneNuit);
     }
+
     if (estMessageRemerciement(t)) {
         return pick(reponsesMerci);
     }
+
     if (estMessageSalutation(t)) {
         return pick(reponsesSalut);
     }
+
     if (estMessageCourtHumain(t)) {
         return pick(reponsesCourtes);
     }
@@ -1248,6 +1208,7 @@ function construireQuestionsConsolidation(question = "", corps = "") {
 2) Petite vérification rapide :
 A. Un territoire fait partie d’une province
 B. Une province fait partie d’un territoire
+
 👉 Choisis la bonne réponse.`;
     }
 
@@ -1257,6 +1218,7 @@ B. Une province fait partie d’un territoire
 2) Petite vérification rapide :
 A. On peut citer un article sans vérification
 B. Il faut vérifier le texte exact avant de citer un article
+
 👉 Choisis la bonne réponse.`;
     }
 
@@ -1266,6 +1228,7 @@ B. Il faut vérifier le texte exact avant de citer un article
 2) Petite vérification rapide :
 A. La méthode compte aussi
 B. Seule la réponse finale compte
+
 👉 Choisis la bonne réponse.`;
     }
 
@@ -1275,6 +1238,7 @@ B. Seule la réponse finale compte
 2) Petite vérification rapide :
 A. Les unités aident à vérifier le raisonnement
 B. Les unités ne servent presque à rien
+
 👉 Choisis la bonne réponse.`;
     }
 
@@ -1284,6 +1248,7 @@ B. Les unités ne servent presque à rien
 2) Petite vérification rapide :
 A. H₂O et CO₂ représentent deux substances différentes
 B. H₂O et CO₂ représentent la même chose
+
 👉 Choisis la bonne réponse.`;
     }
 
@@ -1292,6 +1257,7 @@ B. H₂O et CO₂ représentent la même chose
 2) Petite vérification rapide :
 A. Comprendre vaut mieux que mémoriser sans réfléchir
 B. Mémoriser sans comprendre suffit toujours
+
 👉 Choisis la bonne réponse.`;
 }
 
@@ -1420,12 +1386,103 @@ function choisirEncouragementContextuel(reponse = "", user = {}, question = "") 
 
     return "🌟 Mot d'encouragement : Avance pas à pas ; comprendre calmement vaut mieux que se précipiter.";
 }
- 
 
-    
+/* =========================================================
+   4) DB
+========================================================= */
 
-    
+async function initDB() {
+    try {
+        await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS processed_messages (
+                msg_id TEXT PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
 
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS conversations (
+                phone TEXT PRIMARY KEY,
+                nom TEXT DEFAULT '',
+                classe TEXT DEFAULT '',
+                reve TEXT DEFAULT '',
+                historique JSONB DEFAULT '[]'::jsonb,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS nom TEXT DEFAULT '';`);
+        await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS classe TEXT DEFAULT '';`);
+        await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reve TEXT DEFAULT '';`);
+        await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS historique JSONB DEFAULT '[]'::jsonb;`);
+        await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
+        await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
+        await pool.query(`UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`);
+        await pool.query(`UPDATE conversations SET historique = '[]'::jsonb WHERE historique IS NULL;`);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS processed_topics (
+                id SERIAL PRIMARY KEY,
+                phone TEXT NOT NULL,
+                sujet TEXT NOT NULL,
+                question_originale TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS bibliotheque (
+                id SERIAL PRIMARY KEY,
+                titre TEXT,
+                matiere TEXT,
+                classe TEXT,
+                mots_cles TEXT,
+                contenu TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        console.log("✅ DB prête.");
+    } catch (e) {
+        console.error("Init DB Error:", e.message);
+        process.exit(1);
+    }
+}
+
+async function getUser(phone) {
+    const { rows } = await pool.query("SELECT * FROM conversations WHERE phone=$1", [phone]);
+    return rows[0] || null;
+}
+
+async function createUser(phone) {
+    await pool.query(
+        "INSERT INTO conversations (phone, nom, classe, reve, historique) VALUES ($1, '', '', '', '[]'::jsonb) ON CONFLICT (phone) DO NOTHING",
+        [phone]
+    );
+    return getUser(phone);
+}
+
+async function updateUserField(phone, field, value) {
+    const allowed = ["nom", "classe", "reve", "historique"];
+    if (!allowed.includes(field)) throw new Error("Champ non autorisé");
+    const query = `UPDATE conversations SET ${field}=$1, updated_at=NOW() WHERE phone=$2`;
+    await pool.query(query, [value, phone]);
+}
+
+async function appendHistorique(phone, role, content) {
+    const user = await getUser(phone);
+    const hist = Array.isArray(user?.historique) ? user.historique : safeJsonParse(user?.historique, []);
+    hist.push({
+        role,
+        content: tronquerTexte(content, 2500),
+        ts: new Date().toISOString()
+    });
+    const histCompact = hist.slice(-12);
+    await updateUserField(phone, "historique", JSON.stringify(histCompact));
+    return histCompact;
+}
 
 /* =========================================================
    5) SÉCURITÉ WEBHOOK
@@ -1527,7 +1584,31 @@ async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
    7) IA : BIBLIOTHÈQUE / AUDIO / IMAGE / TEXTE AVEC GEMINI
 ========================================================= */
 
+async function consulterBibliotheque(question = "", classe = "") {
+    try {
+        const q = `
+            SELECT id, titre, matiere, classe, contenu
+            FROM bibliotheque
+            WHERE (
+                unaccent(lower(coalesce(titre, ''))) LIKE unaccent(lower($1))
+                OR unaccent(lower(coalesce(matiere, ''))) LIKE unaccent(lower($1))
+                OR unaccent(lower(coalesce(mots_cles, ''))) LIKE unaccent(lower($1))
+                OR unaccent(lower(coalesce(contenu, ''))) LIKE unaccent(lower($1))
+            )
+            AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
+            ORDER BY id DESC
+            LIMIT 1
+        `;
 
+        const motifQuestion = `%${question}%`;
+        const motifClasse = `%${classe}%`;
+        const { rows } = await pool.query(q, [motifQuestion, classe || "", motifClasse]);
+        return rows[0] || null;
+    } catch (e) {
+        console.error("Erreur consulterBibliotheque:", e.message);
+        return null;
+    }
+}
 
 async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
     try {
@@ -1583,7 +1664,14 @@ function construireSystemPrompt(user) {
     const classe = user?.classe ? `Classe de l'élève : ${user.classe}` : "Classe non précisée";
     const reve = user?.reve ? `Rêve de l'élève : ${user.reve}` : "Rêve non précisé";
 
-    return `${SYSTEM_BASE}${SYSTEM_HUMAIN}${SYSTEM_TUTORAT}${SYSTEM_JURIDIQUE_WEB}
+    return `${SYSTEM_BASE}
+
+${SYSTEM_HUMAIN}
+
+${SYSTEM_TUTORAT}
+
+${SYSTEM_JURIDIQUE_WEB}
+
 PERSONNALISATION :
 - Adresse l'élève ainsi : ${appelEleve}
 - ${classe}
@@ -1641,7 +1729,6 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
     try {
         const system = construireSystemPrompt(user);
         const consignePedagogique = construireConsignePedagogique("", "image");
-
         const instructionComplete = `${system}
 
 Réponds comme un humain chaleureux, jamais comme une machine.
@@ -1688,10 +1775,8 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
     const reponseNettoyee = nettoyerReponseIA(reponseBrute);
     const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
     const reponseHumanisee = humaniserDebutReponse(sortieScientifique.texte, user);
-
     const corpsAvecStructure = verifierStructureMwalimu(reponseHumanisee, user, historique, question);
     const corpsRenforce = renforcerBlocConsolidation(corpsAvecStructure, question);
-
     const corps = adapterTexteGenre(corpsRenforce, user.nom);
     const ouverture = adapterTexteGenre(
         choisirOuvertureContextuelle(corps, user, question),
@@ -1717,17 +1802,11 @@ function messageSecours(user) {
     return `${HEADER_MWALIMU}
 
 🔵 [VÉCU] : J'ai bien reçu ton message, ${appel}.
-
 🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
-
 🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.
-
 ❓ [CONSOLIDATION] : Réessaie dans un instant, ou reformule ta question plus simplement. Tu peux aussi m'envoyer une seule question à la fois.
-
 👉 Je reste à tes côtés.
-
 🌟 Mot d'encouragement : Même quand cela bloque un peu, on continue avec calme et méthode.
-
 ${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -1761,11 +1840,8 @@ async function traiterAudio(user, msg, historique) {
     if (!audioId) {
         return {
             reponse: `🔵 [VÉCU] : J'ai bien reçu ton audio.
-
 🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
-
 🔴 [INSPIRATION] : Ne t'inquiète pas, cela peut arriver.
-
 ❓ [CONSOLIDATION] : Réessaie avec un autre message vocal plus clair.`,
             fiche: null
         };
@@ -1777,11 +1853,8 @@ async function traiterAudio(user, msg, historique) {
     if (!transcription) {
         return {
             reponse: `🔵 [VÉCU] : J’ai bien reçu ton audio.
-
 🟡 [SAVOIR] : Je n'arrive pas encore à le traiter correctement.
-
 🔴 [INSPIRATION] : Ce n’est pas grave, nous pouvons réessayer calmement.
-
 ❓ [CONSOLIDATION] : Envoie-moi un message vocal plus clair et sans bruit autour.`,
             fiche: null
         };
@@ -1811,11 +1884,8 @@ async function traiterImage(user, msg, historique) {
     if (!imageId) {
         return {
             reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-
 🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
-
 🔴 [INSPIRATION] : Nous allons y arriver en reprenant tranquillement.
-
 ❓ [CONSOLIDATION] : Réessaie en envoyant une image plus nette.`,
             fiche: null
         };
@@ -1852,17 +1922,11 @@ cron.schedule("0 7 * * *", async () => {
                 const messageRappel = `${HEADER_MWALIMU}
 
 🔵 [VÉCU] : Bonjour ${appel}. J’espère que tu as bien commencé ta journée.
-
 🟡 [SAVOIR] : Petit rappel du matin : avance aujourd’hui avec calme, sérieux et confiance. Même un petit effort bien fait peut te rapprocher de ton rêve.
-
 🔴 [INSPIRATION] : Ton objectif n’est pas d’aller vite, mais de bien comprendre. C’est ainsi qu’on bâtit un avenir solide.
-
 ❓ [CONSOLIDATION] : Dis-moi plus tard : quelle matière veux-tu travailler aujourd’hui ?
-
 👉 Je reste à tes côtés pour t’accompagner pas à pas.
-
 🌟 Mot d'encouragement : Un élève constant finit toujours par progresser.
-
 ${citation}`.replace(/\n{3,}/g, "\n\n").trim();
 
                 await envoyerWhatsApp(eleve.phone, messageRappel);
@@ -1916,13 +1980,11 @@ app.post("/webhook", async (req, res) => {
                 "UPDATE conversations SET nom='', classe='', reve='', historique='[]'::jsonb, updated_at=NOW() WHERE phone=$1",
                 [from]
             );
-
             return await envoyerWhatsApp(
                 from,
                 `${HEADER_MWALIMU}
 
 🔄 **Mise à jour de ton profil**
-
 🟡 Quel est ton **prénom** ?`
             );
         }
@@ -1936,14 +1998,12 @@ app.post("/webhook", async (req, res) => {
                 `${HEADER_MWALIMU}
 
 🔵 ${ACCUEILS[0]}
-
 🟡 Quel est ton **prénom** ?`
             );
         }
 
         if (!user.nom) {
             const nom = normaliserNom(nettoyer(texteUtilisateur));
-
             if (!nom) {
                 return await envoyerWhatsApp(
                     from,
@@ -1965,12 +2025,10 @@ app.post("/webhook", async (req, res) => {
 
         if (!user.classe) {
             const cl = normaliserNom(nettoyer(texteUtilisateur));
-
             if (!cl) {
                 return await envoyerWhatsApp(
                     from,
                     `🟡 Écris-moi ta **classe** simplement.
-
 Exemple : 6e, 8e, Terminale, 1ère secondaire.`
                 );
             }
@@ -1988,19 +2046,16 @@ Exemple : 6e, 8e, Terminale, 1ère secondaire.`
 
         if (!user.reve) {
             const rv = normaliserNom(nettoyer(texteUtilisateur));
-
             if (!rv) {
                 return await envoyerWhatsApp(
                     from,
                     `❓ Dis-moi simplement ton **rêve** professionnel.
-
 Exemple : avocat, médecin, ingénieur, pilote.`
                 );
             }
 
             await updateUserField(from, "reve", rv);
             user = await getUser(from);
-
             const appel = `${genreEleve(user.nom)} **${user.nom}**`;
 
             return await envoyerWhatsApp(
@@ -2041,5 +2096,361 @@ Exemple : avocat, médecin, ingénieur, pilote.`
             ficheContexte = resultat?.fiche || null;
             contenuUtilisateurPourMemoire = "[audio envoyé]";
             await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
-
             const userFresh = await getUser(from);
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique, []);
+        } else if (msgType === "image") {
+            const resultat = await traiterImage(user, msg, historique);
+            reponseBrute = resultat?.reponse || "";
+            ficheContexte = resultat?.fiche || null;
+            contenuUtilisateurPourMemoire = "[image envoyée]";
+            await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+            const userFresh = await getUser(from);
+            historique = Array.isArray(userFresh?.historique)
+                ? userFresh.historique
+                : safeJsonParse(userFresh?.historique, []);
+        } else {
+            reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton message.
+🟡 [SAVOIR] : Pour l'instant, je traite surtout les textes, les audios et les images.
+🔴 [INSPIRATION] : Nous pouvons déjà avancer correctement avec ces formats.
+❓ [CONSOLIDATION] : Envoie-moi ta question par écrit, par audio ou avec une image nette de l'exercice.`;
+        }
+
+        if (!reponseBrute || !String(reponseBrute).trim()) {
+            reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.
+🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
+🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+❓ [CONSOLIDATION] : Reformule ta question en une seule phrase, et je t'aiderai pas à pas.`;
+        }
+
+        const messageFinal = construireMessageFinal(
+            user,
+            reponseBrute,
+            historique,
+            texteUtilisateur || contenuUtilisateurPourMemoire,
+            ficheContexte
+        );
+
+        await envoyerWhatsApp(from, messageFinal);
+        await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
+    } catch (e) {
+        console.error("Erreur générale:", e.response?.data || e.message);
+
+        try {
+            let user = await getUser(from);
+            if (!user) user = { nom: "élève" };
+            await envoyerWhatsApp(from, messageSecours(user));
+        } catch (e2) {
+            console.error("Erreur secours:", e2.message);
+        }
+    }
+});
+
+/* =========================================================
+   11) WEBHOOK VERIFY
+========================================================= */
+
+app.get("/webhook", (req, res) => {
+    if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
+        return res.send(req.query["hub.challenge"]);
+    }
+    return res.sendStatus(403);require("dotenv").config();
+const express = require("express");
+const axios = require("axios");
+const { Pool } = require("pg");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const cron = require("node-cron");
+const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
+
+const app = express();
+app.set("trust proxy", 1);
+
+/* =========================================================
+   1) CONFIG & GARDE-FOUS
+========================================================= */
+
+function requireEnv(name) {
+    if (!process.env[name] || !String(process.env[name]).trim()) {
+        throw new Error(`Variable d'environnement manquante : ${name}`);
+    }
+    return process.env[name];
+}
+
+const PORT = process.env.PORT || 10000;
+const GEMINI_API_KEY = requireEnv("GEMINI_API_KEY");
+const DATABASE_URL = requireEnv("DATABASE_URL");
+const TOKEN = requireEnv("TOKEN");
+const PHONE_NUMBER_ID = requireEnv("PHONE_NUMBER_ID");
+const VERIFY_TOKEN = requireEnv("VERIFY_TOKEN");
+const APP_SECRET = requireEnv("APP_SECRET");
+
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
+app.use(express.json({
+    limit: "1mb",
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+
+const webhookLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: "Too many requests"
+});
+
+app.use("/webhook", webhookLimiter);
+
+/* =========================================================
+   2) CONSTANTES MWALIMU
+========================================================= */
+
+const HEADER_MWALIMU = "🔴🟡🔵 **Mwalimu EdTech : Ton Mentor pour l'Excellence** 🇨🇩";
+
+const CITATIONS = {
+    patriotisme: [
+        "***« Aimer sa patrie, c’est la servir avec intelligence, honnêteté et discipline. »***",
+        "***« Un bon élève d’aujourd’hui peut devenir un grand bâtisseur du Congo de demain. »***",
+        "***« Le vrai savoir ne sert pas seulement à réussir sa vie, mais aussi à relever sa nation. »***",
+        "***« Le Congo a besoin d’enfants instruits, responsables et fiers de leur pays. »***",
+        "***« Aimer le Congo, c’est apprendre, travailler avec droiture et contribuer au bien commun. »***",
+        "***« Payer l’impôt et la taxe avec honnêteté, c’est aussi participer au développement de la nation. »***"
+    ],
+    geographie: [
+        "***« Connaître les pays et les peuples aide à mieux comprendre le monde et à mieux servir sa patrie. »***",
+        "***« La géographie apprend à situer le monde, mais aussi à mieux situer son devoir envers la nation. »***"
+    ],
+    mathematiques: [
+        "***« La rigueur dans le calcul forme aussi la rigueur dans la vie et dans le service du pays. »***",
+        "***« Un esprit qui raisonne bien peut mieux construire l’avenir de sa nation. »***"
+    ],
+    histoire: [
+        "***« Comprendre l’histoire aide à aimer sa patrie avec plus de conscience et de responsabilité. »***",
+        "***« Un peuple qui connaît son histoire se prépare mieux à bâtir son avenir. »***"
+    ],
+    francais: [
+        "***« Bien parler et bien écrire, c’est aussi mieux servir sa communauté et sa patrie. »***",
+        "***« La maîtrise des mots donne de la force à la pensée et de la dignité au citoyen. »***"
+    ],
+    sciences: [
+        "***« La science bien apprise peut aider à résoudre les vrais problèmes du pays. »***",
+        "***« Étudier les sciences, c’est se préparer à être utile à sa nation. »***"
+    ],
+    civisme: [
+        "***« Respecter la loi, la taxe et l’impôt, c’est participer avec dignité à la vie de la nation. »***",
+        "***« Le civisme commence par de petits actes honnêtes qui fortifient la patrie. »***"
+    ],
+    relationnel: [
+        "***« La politesse, le respect et l’amour du prochain élèvent aussi la nation. »***",
+        "***« Un cœur reconnaissant et discipliné honore sa famille, son école et sa patrie. »***"
+    ],
+    general: [
+        "***« Apprendre avec sérieux aujourd’hui, c’est mieux servir le Congo demain. »***",
+        "***« Le savoir, la discipline et l’amour du pays font grandir la nation. »***"
+    ]
+};
+
+const OUVERTURES = [
+    "👉 Continue à me parler librement, je suis là pour t'aider.",
+    "👉 Nous avançons ensemble, pas à pas.",
+    "👉 Tu peux m'envoyer ta réponse, et je vais la vérifier avec toi.",
+    "👉 Garde confiance, nous allons comprendre cela ensemble."
+];
+
+const ACCUEILS = [
+    "Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.",
+    "Mbote ! Je suis Mwalimu EdTech, heureux de t'accompagner dans tes études.",
+    "Mbote ! Je suis Mwalimu EdTech, ton précepteur numérique bienveillant."
+];
+
+const MOTS_ENCOURAGEMENT = [
+    "🌟 Mot d'encouragement : Continue avec calme et confiance ; comprendre pas à pas est déjà une vraie victoire.",
+    "🌟 Mot d'encouragement : Tu avances bien quand tu prends le temps de réfléchir sérieusement.",
+    "🌟 Mot d'encouragement : Ne te décourage pas ; chaque bonne question t’aide à grandir.",
+    "🌟 Mot d'encouragement : Avec de la patience et de l’attention, tu peux aller très loin."
+];
+
+const MATIERE_MATH = "math";
+const MATIERE_PHYSIQUE = "physique";
+const MATIERE_CHIMIE = "chimie";
+const MATIERE_GENERAL = "general";
+
+const REGLE_FORMAT_MATH = `FORMAT OBLIGATOIRE D'ÉCRITURE SCIENTIFIQUE (WhatsApp) :
+- Écris les calculs, formules et expressions de manière simple, scolaire, propre et lisible sur WhatsApp
+- Interdiction totale de LaTeX et pseudo-LaTeX
+- N'utilise jamais : \\( \\) \\[ \\] \\frac \\sqrt ^{} \\left \\right \\times \\div
+- Puissance : x², x³, a², b², cm², cm³, m², m³
+- Multiplication : ×
+- Division : / seulement si c'est plus propre
+- Fraction simple : 2/5, 3/4, 7/10
+- Ne présente pas une fraction compliquée en empilement
+- Préfère une écriture horizontale simple
+- Exemple correct : 2/5 + 5/5
+- Exemple correct : 200 × 5 + 200 × 0,4
+- Exemple correct : D = b² - 4ac
+- Exemple correct : x = (-b ± √D) / 2a
+- Exemple correct : v = d / t
+- Exemple correct : F = m × a
+- Exemple correct : C = n / V
+- Exemple correct : m = n × M
+- Pour la racine, écris : √9 ou racine carrée de 9
+- Utilise les parenthèses seulement quand elles sont utiles
+- Évite l'excès de symboles décoratifs
+- N'alourdis jamais la présentation avec trop de signes
+- Les formules de physique doivent rester courtes, claires et propres
+- Les formules de chimie doivent rester simples et lisibles
+- Les molécules doivent être écrites proprement : H₂O, CO₂, O₂, H₂SO₄, NaCl
+- Les unités doivent être propres : cm², cm³, m/s, g/L, mol/L, kg/m³
+- Le calcul doit ressembler à ce qu'un élève écrit proprement dans son cahier`;
+
+const REGLE_CALCUL_INTELLIGENT = `RÈGLES SPÉCIALES POUR LES CALCULS ET EXERCICES SCIENTIFIQUES :
+- Tu dois être extrêmement rigoureux dans les calculs
+- Tu vérifies chaque étape avant de l'écrire
+- Tu avances ligne par ligne, sans sauter d'étape importante
+- Tu expliques la logique avant le résultat
+- Tu privilégies la méthode scolaire claire
+- Tu évites les raccourcis compliqués si une méthode simple existe
+- Tu n'inventes jamais un chiffre, une unité ou une formule
+- Tu distingues clairement : donnée, opération, méthode, résultat intermédiaire, conclusion
+- Si l'exercice demande une réponse finale mais que la règle impose de ne pas la donner, tu t'arrêtes juste avant la dernière étape
+- Si l'élève s'est trompé, tu corriges avec douceur et précision
+- Pour les maths, la physique et la chimie, écris toujours en format horizontal simple
+- Interdiction d'utiliser une présentation scientifique compliquée
+- Ne montre jamais une formule en style LaTeX
+- Préfère : 2/5 + 5/5 au lieu d'une fraction visuellement lourde
+- Préfère : 200 × 5 = 1000 puis 200 × 0,4 = 80
+- Préfère : x = (-3 ± √D) / 4
+- Préfère : v = d / t
+- Préfère : F = m × a
+- Préfère : C = n / V
+- Préfère : m = n × M
+- Si une écriture contient trop de symboles, simplifie-la immédiatement
+- Respecte les unités du début à la fin
+- En physique, garde les grandeurs et unités bien séparées
+- En chimie, garde les molécules, équations et unités propres et lisibles`;
+
+const SYSTEM_BASE = `Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
+MISSION :
+- Aider l'élève à comprendre
+- Guider sans faire le travail à sa place
+- Expliquer comme un vrai précepteur
+- Utiliser un ton humain, simple, motivant et respectueux
+- Adapter le niveau à la classe de l'élève
+- Te référer au contexte scolaire de la RDC lorsque c'est pertinent
+
+STYLE OBLIGATOIRE :
+- Réponse claire, structurée et chaleureuse
+- Phrases naturelles, pas robotiques
+- Toujours encourager l'élève
+- Ne jamais humilier l'élève
+- Si l'information n'est pas certaine, le dire honnêtement
+- Ne pas inventer de référence scolaire ou scientifique
+- Pour les maths et sciences, respecter strictement les règles de présentation
+- En mathématiques, physique et chimie, écris toujours avec une présentation propre pour WhatsApp
+- N'utilise jamais de notation LaTeX ou pseudo-LaTeX
+- N'utilise jamais les formes : \\( \\), \\[ \\], \\frac{}, \\sqrt{}, ^{}
+- Préfère toujours une écriture simple comme un élève au cahier
+- Exemple : 2/5 + 5/5
+- Exemple : x = (-b ± √D) / 2a
+- Exemple : 200 × 5 + 200 × 0,4
+- Exemple : v = d / t
+- Exemple : F = m × a
+- Exemple : C = n / V
+- Exemple : m = n × M
+- Les molécules doivent rester propres : H₂O, CO₂, O₂, HCl, NaOH
+- Les unités doivent rester propres : cm², cm³, m/s, g/L, mol/L, kg/m³
+- Répondre en français sauf si l'élève change de langue
+- Même pour une question théorique, rendre l'échange vivant
+- Après une réponse théorique, proposer une petite question de retour naturelle
+- Cette question de retour doit être simple, utile et liée au sujet
+- La CONSOLIDATION ne doit pas seulement rester ouverte
+- Dans la CONSOLIDATION, pose aussi une question de réflexion liée au sujet
+- Quand c'est pertinent, ajoute une seule question à choix multiple
+- La question à choix multiple doit être simple, courte et pédagogique
+- Elle doit aider l'élève à vérifier sa compréhension, sans le piéger
+- La structure de réponse doit toujours être respectée dans cet ordre : VÉCU, SAVOIR, INSPIRATION, CONSOLIDATION
+- Après cette structure seulement, on peut ajouter une ouverture, puis un encouragement, puis une citation finale
+- Ne change jamais cet ordre
+- La structure doit toujours garder les parties : VÉCU, SAVOIR, INSPIRATION, CONSOLIDATION
+- Ne supprime jamais cette succession
+- Le texte doit rester vivant et cohérent entre ces parties
+- Si l'élève dit seulement merci, bonjour, bonsoir, bonne nuit, à demain ou une formule simple, réponds humainement sans transformer cela en leçon
+- Varie les formulations pour que la réponse reste vivante
+- Garde cependant la structure générale de Mwalimu
+
+STRUCTURE SOUHAITÉE :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+
+${REGLE_CALCUL_INTELLIGENT}
+
+${REGLE_FORMAT_MATH}`;
+
+const SYSTEM_HUMAIN = `HUMANISATION FORTE :
+- Parle comme un vrai précepteur humain, proche, calme et chaleureux
+- Commence naturellement, sans ton mécanique
+- Ne répète jamais le header "Mwalimu EdTech"
+- N'ajoute jamais de citation finale
+- N'ajoute jamais toi-même de "mot d'encouragement final"
+- N'ajoute pas une deuxième ouverture finale
+- Évite le ton de robot, de moteur de recherche ou de fiche Wikipédia
+- Évite les phrases trop longues et trop abstraites
+- Utilise un français simple, vivant et naturel
+- Quand l'élève parle de sa journée, de la pluie, de sa fatigue, de sa vie, réponds d'abord humainement avant d'enseigner
+- Si la question n'est pas scolaire, réponds avec chaleur et intelligence, sans forcer un cours
+- Fais sentir que tu écoutes vraiment l'élève
+- Tu peux montrer une petite empathie naturelle
+- Tu peux faire référence au vécu congolais quand c'est utile et naturel
+- Évite les répétitions
+- Une seule structure suffit
+- Ne duplique jamais ACCUEIL, OUVERTURE, encouragement ou citation
+- Si la question est simple, réponds simplement
+- Si la question est émotionnelle ou quotidienne, sois d'abord humain, puis utile
+- N'utilise [ACCUEIL] que si c'est vraiment utile
+- Les sections doivent rester naturelles et légères, pas forcées
+- N'ajoute pas de phrase d'introduction automatique du type "Oui, c'est une bonne observation" si elle ne correspond pas exactement au message de l'élève
+- Va droit à une réponse naturelle, simple et juste
+- Le ton doit rester cohérent du début à la fin
+- Le mot d'encouragement doit être en harmonie avec le sujet traité
+- La structure VÉCU, SAVOIR, INSPIRATION et CONSOLIDATION doit toujours apparaître
+- Le corps du message doit rester humain du début à la fin
+- Si l'élève revient sur un sujet déjà abordé, fais-le sentir naturellement avec chaleur
+- Exemple : "Je suis content que tu reviennes sur ce point"
+- La citation finale doit rester en lien avec le sujet traité, tout en gardant un esprit patriotique, civique et congolais
+- Ne confonds jamais le corps de la réponse avec l'encouragement final
+- Ne confonds jamais l'encouragement final avec la citation finale
+- Le corps doit suivre strictement la logique : VÉCU, SAVOIR, INSPIRATION, CONSOLIDATION
+- L'encouragement vient après le corps
+- La citation vient en dernier, séparée du reste
+- Respecte cette succession à la lettre du début à la fin
+- Si l'élève envoie seulement un salut, une formule de politesse ou un merci, réponds comme un humain normal, chaleureux et vivant
+- Dans ce cas, ne force pas une mini-leçon scolaire
+- Reste bref, naturel, affectueux et disponible
+- Varie les formulations pour éviter les réponses répétitives
+- Si l'élève dit "merci", réponds avec douceur et disponibilité
+- Si l'élève salue seulement, salue-le avec chaleur et ouvre la porte à la suite
+- Si l'élève dit bonne nuit, bonne soirée ou à demain, réponds de manière humaine et bienveillante
+- La dernière note doit rester dans un esprit patriotique congolais, civique, responsable et éducatif
+- En mathématiques, supprime tout habillage inutile
+- N'utilise pas de symboles mathématiques compliqués si une écriture simple suffit
+- Une fraction doit rester simple, horizontale et lisible
+- Une formule doit être courte, propre et naturelle à lire sur téléphone
+- En physique, garde les formules et unités dans une écriture scolaire simple
+- En chimie, garde les molécules, symboles et concentrations dans une écriture lisible
+- Ne transforme jamais une formule simple en écriture compliquée
+- Quand une unité ou une formule peut être simplifiée visuellement, simplifie-la`;
+
+const SYSTEM_TUTORAT = `RÈGLES DE TUTORAT STRICTES :
+- Tu es un précepteur, pas un solveur automatique
+- Tu n'as pas le droit de fair…
