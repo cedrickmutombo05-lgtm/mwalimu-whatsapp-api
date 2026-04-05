@@ -35,7 +35,14 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    max: 20
+});
+
+pool.on("error", (err) => {
+    console.error("❌ Erreur inattendue PostgreSQL :", err.message);
 });
 
 app.use(express.json({
@@ -349,6 +356,54 @@ function safeJsonParse(v, fallback) {
     } catch {
         return fallback;
     }
+}
+
+function attendre(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function estErreurQuotaGemini(err) {
+    const msg = String(err?.message || "").toLowerCase();
+    const data = String(err?.response?.data ? JSON.stringify(err.response.data) : "").toLowerCase();
+
+    return (
+        msg.includes("429") ||
+        msg.includes("too many requests") ||
+        msg.includes("quota") ||
+        data.includes("429") ||
+        data.includes("too many requests") ||
+        data.includes("quota")
+    );
+}
+
+async function attendreAvecBackoff(tentative = 0) {
+    const base = 1800;
+    const extra = tentative * 1400;
+    await attendre(base + extra);
+}
+
+async function genererAvecRetry(model, payload, maxRetries = 2) {
+    let lastError = null;
+
+    for (let tentative = 0; tentative <= maxRetries; tentative++) {
+        try {
+            await attendreAvecBackoff(tentative);
+            const result = await model.generateContent(payload);
+            return result;
+        } catch (e) {
+            lastError = e;
+            console.error(`Erreur Gemini tentative ${tentative + 1}:`, e?.message || e);
+
+            if (estErreurQuotaGemini(e) && tentative < maxRetries) {
+                await attendre(4000 + tentative * 3000);
+                continue;
+            }
+
+            throw e;
+        }
+    }
+
+    throw lastError;
 }
 
 function supprimerDoublonsLignes(texte = "") {
@@ -1540,7 +1595,7 @@ async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
 }
 
 /* =========================================================
-   7) IA : BIBLIOTHÈQUE / AUDIO / IMAGE / TEXTE AVEC GEMINI
+   7) IA : DB -> GOOGLE SEARCH -> IA
 ========================================================= */
 
 async function consulterBibliotheque(question = "", classe = "") {
@@ -1581,22 +1636,60 @@ async function consulterBibliotheque(question = "", classe = "") {
     }
 }
 
-function questionNecessiteRechercheWeb(question = "", fiche = null) {
-    const q = String(question || "").toLowerCase();
+function estQuestionGeographieRDC(question = "", fiche = null) {
+    const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
 
-    if (!q) return false;
+    return (
+        t.includes("rdc") ||
+        t.includes("congo") ||
+        t.includes("république démocratique du congo") ||
+        t.includes("republique democratique du congo") ||
+        t.includes("province") ||
+        t.includes("provinces") ||
+        t.includes("territoire") ||
+        t.includes("territoires") ||
+        t.includes("géographie") ||
+        t.includes("geographie") ||
+        t.includes("ville") ||
+        t.includes("villes") ||
+        t.includes("capitale") ||
+        t.includes("fleuve") ||
+        t.includes("lac") ||
+        t.includes("frontière") ||
+        t.includes("frontiere")
+    );
+}
+
+function ficheEstFaible(fiche = null) {
+    if (!fiche) return true;
+
+    const contenu = String(fiche?.contenu || "").trim();
+    const commentaire = String(fiche?.commentaire_ai || "").trim();
+
+    if (!contenu && !commentaire) return true;
+    if (contenu.length < 80 && commentaire.length < 50) return true;
+
+    return false;
+}
+
+function fautChercherSurWeb(question = "", fiche = null) {
+    const q = String(question || "").toLowerCase();
 
     const motsWeb = [
         "actualité", "actualite", "récent", "recent", "dernière", "derniere",
-        "aujourd'hui", "aujourdhui", "maintenant", "actuel", "actuelle",
+        "aujourd'hui", "aujourdhui", "actuel", "actuelle", "maintenant",
         "loi", "code", "article", "constitution", "juridique", "droit",
         "ohada", "impôt", "impot", "taxe", "tribunal", "procédure", "procedure",
         "président", "president", "ministre", "gouvernement",
-        "combien", "prix", "date", "qui est", "où se trouve", "ou se trouve"
+        "combien", "prix", "date", "où", "ou", "qui est", "qui a",
+        "frontière", "frontiere", "superficie", "population", "territoire",
+        "province", "villes", "capitale", "géographie", "geographie"
     ];
 
-    if (motsWeb.some((m) => q.includes(m))) return true;
     if (!fiche) return true;
+    if (ficheEstFaible(fiche)) return true;
+    if (estQuestionGeographieRDC(question, fiche)) return true;
+    if (motsWeb.some((m) => q.includes(m))) return true;
 
     return false;
 }
@@ -1604,9 +1697,12 @@ function questionNecessiteRechercheWeb(question = "", fiche = null) {
 async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
     try {
         const base64Audio = audioBuffer.toString("base64");
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            tools: [{ googleSearch: {} }]
+        });
 
-        const result = await model.generateContent([
+        const result = await genererAvecRetry(model, [
             "Transcris exactement ce message vocal en français de la RDC. Ne réponds pas à la question posée, écris juste le texte exact de ce qui est dit.",
             { inlineData: { mimeType, data: base64Audio } }
         ]);
@@ -1638,7 +1734,7 @@ async function appelerChatCompletion(messages) {
             tools: [{ googleSearch: {} }]
         });
 
-        const result = await model.generateContent({
+        const result = await genererAvecRetry(model, {
             contents,
             generationConfig: { temperature: 0.2 }
         });
@@ -1687,7 +1783,7 @@ Règles :
 - 4 à 8 lignes maximum
 - pas de duplication brute de la fiche
 - mets en valeur l’essentiel
-- si le sujet semble juridique ou actuel, tu peux utiliser Google Search si nécessaire
+- si le sujet semble juridique, géographique ou actuel, tu peux utiliser Google Search si nécessaire
 - n’invente jamais une source
 - ne mets pas le header Mwalimu
 - ne mets pas la citation finale
@@ -1728,38 +1824,63 @@ async function sauvegarderCommentaireIAFiche(ficheId, commentaire = "") {
     }
 }
 
-async function expliquerFiche(user, fiche, questionEleve, historique = [], consignePedagogique = "") {
+async function chercherContexteWeb(question = "", user = {}, historique = []) {
+    try {
+        const system = construireSystemPrompt(user);
+
+        const reponse = await appelerChatCompletion([
+            { role: "system", content: system },
+            {
+                role: "system",
+                content: `MISSION WEB :
+- Utilise Google Search
+- Cherche des faits utiles et fiables pour répondre à la question
+- Ne rédige pas encore la réponse finale de Mwalimu
+- Donne seulement un CONTEXTE WEB BRUT, court, clair et factuel
+- Si une information n'est pas certaine, dis-le honnêtement
+- Si le sujet concerne la RDC, privilégie les informations les plus cohérentes et utiles pour la RDC
+- Pas de citation finale
+- Pas de mot d'encouragement
+- Pas de structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION`
+            },
+            ...historique.slice(-4),
+            {
+                role: "user",
+                content: `QUESTION :
+${question}
+
+Donne un contexte web brut et utile.`
+            }
+        ]);
+
+        return String(reponse || "").trim();
+    } catch (e) {
+        console.error("Erreur chercherContexteWeb:", e.message);
+        return "";
+    }
+}
+
+async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
     const system = construireSystemPrompt(user);
 
     let commentaireAI = fiche?.commentaire_ai || "";
 
-    if (!commentaireAI?.trim()) {
+    if (fiche && !commentaireAI.trim()) {
         commentaireAI = await genererCommentaireIAPourFiche(user, fiche, questionEleve);
         if (commentaireAI) {
             await sauvegarderCommentaireIAFiche(fiche.id, commentaireAI);
         }
     }
 
-    const blocWeb = questionNecessiteRechercheWeb(questionEleve, fiche)
-        ? `Tu peux utiliser Google Search si cela améliore l’exactitude ou l’actualité de la réponse.
-Si tu utilises le web, distingue bien :
-- ce qui vient de la fiche locale
-- ce qui vient du web
-- ce qui est certain et ce qui doit être vérifié`
-        : `Privilégie d’abord la fiche locale. Utilise Google Search seulement si nécessaire.`;
+    let contexteWeb = "";
+    const utiliserWeb = fautChercherSurWeb(questionEleve, fiche);
 
-    return appelerChatCompletion([
-        { role: "system", content: system },
-        { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
-        { role: "system", content: consignePedagogique || "Sois pédagogique et bienveillant." },
-        { role: "system", content: blocWeb },
-        ...historique.slice(-6),
-        {
-            role: "user",
-            content: `QUESTION DE L'ÉLÈVE :
-${questionEleve}
+    if (utiliserWeb) {
+        contexteWeb = await chercherContexteWeb(questionEleve, user, historique);
+    }
 
-FICHE DE BIBLIOTHÈQUE :
+    const blocDB = fiche
+        ? `CONTEXTE DB :
 Titre : ${fiche?.titre || "Sans titre"}
 Matière : ${fiche?.matiere || "Non précisée"}
 Classe : ${fiche?.classe || "Non précisée"}
@@ -1767,70 +1888,103 @@ Source type : ${fiche?.source_type || "db"}
 Source URL : ${fiche?.source_url || ""}
 Provenance : ${fiche?.provenance || ""}
 
-CONTENU PRINCIPAL :
+Contenu DB :
 ${fiche?.contenu || ""}
 
-COMMENTAIRE IA ENRICHI :
-${commentaireAI || "Aucun commentaire IA disponible pour l'instant."}`
+Commentaire IA de la fiche :
+${commentaireAI || "Aucun commentaire IA."}`
+        : `CONTEXTE DB :
+Aucune fiche locale fiable trouvée.`;
+
+    const blocWeb = contexteWeb
+        ? `CONTEXTE WEB :
+${contexteWeb}`
+        : `CONTEXTE WEB :
+Aucun complément web utile trouvé.`;
+
+    return appelerChatCompletion([
+        { role: "system", content: system },
+        {
+            role: "system",
+            content: `LOGIQUE OBLIGATOIRE :
+1. Utilise d'abord la DB locale si elle existe
+2. Utilise ensuite le CONTEXTE WEB pour vérifier, compléter ou actualiser
+3. Utilise enfin l'IA seulement pour expliquer clairement en style Mwalimu
+4. Ne présente jamais l'IA comme une source
+5. Si DB et web diffèrent, dis-le avec prudence
+6. Pour la géographie de la RDC, tu peux utiliser le web même si la DB existe
+7. Ne jamais inventer un fait`
+        },
+        { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
+        { role: "system", content: consignePedagogique || "Sois pédagogique et bienveillant." },
+        ...historique.slice(-6),
+        {
+            role: "user",
+            content: `QUESTION DE L'ÉLÈVE :
+${questionEleve}
+
+${blocDB}
+
+${blocWeb}
+
+Rédige maintenant la réponse finale de Mwalimu.`
         }
     ]);
 }
 
-async function repondreSansFiche(user, texte, historique = [], consignePedagogique = "") {
-    const system = construireSystemPrompt(user);
-    const activerWeb = questionNecessiteRechercheWeb(texte, null);
+async function expliquerFiche(user, fiche, questionEleve, historique = [], consignePedagogique = "") {
+    return construireReponseDbWebIa(
+        user,
+        questionEleve,
+        historique,
+        fiche,
+        consignePedagogique
+    );
+}
 
-    return appelerChatCompletion([
-        { role: "system", content: system },
-        { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
-        { role: "system", content: consignePedagogique || "Sois pédagogique et bienveillant." },
-        {
-            role: "system",
-            content: activerWeb
-                ? `Aucune fiche locale fiable n’a été trouvée.
-Utilise Google Search si nécessaire pour répondre avec plus de précision.
-N’invente jamais une source.
-Si l’information est incertaine, dis-le honnêtement.`
-                : `Réponds normalement. Utilise Google Search seulement si cela apporte une vraie valeur.`
-        },
-        ...historique.slice(-6),
-        { role: "user", content: texte }
-    ]);
+async function repondreSansFiche(user, texte, historique = [], consignePedagogique = "") {
+    return construireReponseDbWebIa(
+        user,
+        texte,
+        historique,
+        null,
+        consignePedagogique
+    );
 }
 
 async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
     try {
         const system = construireSystemPrompt(user);
-        const consignePedagogique = construireConsignePedagogique("", "image");
-        const instructionComplete = `${system}
-Réponds comme un humain chaleureux, jamais comme une machine.
-${consignePedagogique}`;
 
-        const formattedHistory = historique.slice(-4).map((m) => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: String(m.content) }]
-        }));
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            systemInstruction: `${system}
+LOGIQUE OBLIGATOIRE :
+- Lis d'abord l'image
+- Recopie clairement ce qui est visible
+- Utilise Google Search si cela aide à vérifier ou compléter
+- Puis explique avec pédagogie
+- Ne fais pas tout l'exercice à la place de l'élève`,
+            tools: [{ googleSearch: {} }]
+        });
 
         const contents = [
-            ...formattedHistory,
+            ...historique.slice(-4).map((m) => ({
+                role: m.role === "assistant" ? "model" : "user",
+                parts: [{ text: String(m.content) }]
+            })),
             {
                 role: "user",
                 parts: [
                     {
-                        text: "Analyse cette image d'exercice ou de leçon. Commence d'abord par recopier clairement ce qui est visible ou lisible dans l'image. S'il y a une partie floue ou illisible, dis-le honnêtement. Ensuite, explique pas à pas, aide l'élève à comprendre, mais ne fais pas tout l'exercice complet à sa place. Invite-le ensuite à essayer lui-même puis à t'envoyer sa réponse."
+                        text: "Analyse cette image d'exercice ou de leçon. Commence d'abord par recopier clairement ce qui est visible ou lisible dans l'image. S'il y a une partie floue ou illisible, dis-le honnêtement. Ensuite, explique pas à pas, aide l'élève à comprendre, et utilise Google Search si cela peut vérifier ou compléter utilement la réponse, surtout pour la RDC ou une donnée de géographie."
                     },
                     { inlineData: { mimeType, data: base64Image } }
                 ]
             }
         ];
 
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: instructionComplete,
-            tools: [{ googleSearch: {} }]
-        });
-
-        const result = await model.generateContent({
+        const result = await genererAvecRetry(model, {
             contents,
             generationConfig: { temperature: 0.2 }
         });
@@ -1895,11 +2049,24 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     const consignePedagogique = construireConsignePedagogique(texteUtilisateur, "text");
 
     if (fiche) {
-        const reponse = await expliquerFiche(user, fiche, texteUtilisateur, historique, consignePedagogique);
+        const reponse = await construireReponseDbWebIa(
+            user,
+            texteUtilisateur,
+            historique,
+            fiche,
+            consignePedagogique
+        );
         return { reponse, fiche };
     }
 
-    const reponse = await repondreSansFiche(user, texteUtilisateur, historique, consignePedagogique);
+    const reponse = await construireReponseDbWebIa(
+        user,
+        texteUtilisateur,
+        historique,
+        null,
+        consignePedagogique
+    );
+
     return { reponse, fiche: null };
 }
 
@@ -1926,19 +2093,15 @@ async function traiterAudio(user, msg, historique) {
     const fiche = await consulterBibliotheque(transcription, user.classe || "");
     const consignePedagogique = construireConsignePedagogique(transcription, "audio");
 
-    if (fiche) {
-        const reponse = await expliquerFiche(user, fiche, transcription, historique, consignePedagogique);
-        return { reponse, fiche };
-    }
-
-    const reponse = await repondreSansFiche(
+    const reponse = await construireReponseDbWebIa(
         user,
-        `L'élève a envoyé un message vocal. Voici la transcription : ${transcription}`,
+        transcription,
         historique,
+        fiche,
         consignePedagogique
     );
 
-    return { reponse, fiche: null };
+    return { reponse, fiche: fiche || null };
 }
 
 async function traiterImage(user, msg, historique) {
@@ -2192,6 +2355,19 @@ Exemple : avocat, médecin, ingénieur, pilote.`
         try {
             let user = await getUser(from);
             if (!user) user = { nom: "élève" };
+
+            if (estErreurQuotaGemini(e)) {
+                await envoyerWhatsApp(
+                    from,
+                    `${HEADER_MWALIMU}
+🔵 [VÉCU] : J'ai bien reçu ton message.
+🟡 [SAVOIR] : Je suis momentanément très sollicité et je dois ralentir un peu pour bien te répondre.
+🔴 [INSPIRATION] : Ce petit contretemps n’empêche pas notre progression.
+❓ [CONSOLIDATION] : Réessaie dans une minute avec la même question, et nous continuerons ensemble.`
+                );
+                return;
+            }
+
             await envoyerWhatsApp(from, messageSecours(user));
         } catch (e2) {
             console.error("Erreur secours:", e2.message);
