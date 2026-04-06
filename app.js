@@ -1,5 +1,4 @@
 
-
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
@@ -66,7 +65,7 @@ app.use("/webhook", webhookLimiter);
    2) CONSTANTES MWALIMU
 ========================================================= */
 
-const HEADER_MWALIMU = "🔴🟡🔵 **Mwalimu EdTech : Ton Mentor pour l'Excellence** 🇨🇩";
+const HEADER_MWALIMU = "🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excellence* 🇨🇩";
 
 const CITATIONS = {
     patriotisme: [
@@ -429,7 +428,7 @@ function nettoyerReponseIA(texte = "") {
     if (!texte) return "";
     let t = String(texte);
 
-    t = t.replace(/🔴🟡🔵\s*\*\*Mwalimu EdTech\s*:\s*Ton Mentor pour l'Excellence\*\*\s*🇨🇩/gi, "");
+    t = t.replace(/🔴🟡🔵\s*\*?Mwalimu EdTech\s*:\s*Ton Mentor pour l'Excellence\*?\s*🇨🇩/gi, "");
     t = t.replace(/\*\*\*«[^»]+»\*\*\*/g, "");
     t = t.replace(/^\s*🌟\s*\*?\*?\s*\[?MOT D['’]ENCOURAGEMENT\]?\s*\*?\*?\s*:\s*.*$/gim, "");
     t = t.replace(/^\s*🌟\s*Mot d['’]encouragement\s*:\s*.*$/gim, "");
@@ -441,7 +440,6 @@ function nettoyerReponseIA(texte = "") {
     t = t.replace(/^\s*👉\s*Essaie maintenant de continuer.*$/gim, "");
     t = t.replace(/^\s*👉\s*Garde confiance.*$/gim, "");
     t = t.replace(/^\s*🌟\s*Continue à poser des questions.*$/gim, "");
-    t = t.replace(/🔴🟡🔵\s*\*\*Mwalimu EdTech\s*:\s*Ton Mentor pour l'Excellence\*\*\s*🇨🇩/gi, "");
 
     t = supprimerDoublonsLignes(t);
     t = t.replace(/\n{3,}/g, "\n\n").trim();
@@ -921,7 +919,7 @@ function choisirCitationContextuelle(reponse = "", question = "", user = {}) {
     if (t.includes("impôt") || t.includes("impot") || t.includes("taxe") || t.includes("civisme") || t.includes("citoyen")) {
         return pick(CITATIONS.civisme);
     }
-    if (t.includes("géographie") || t.includes("geographie") || t.includes("pays") || t.includes("frontière") || t.includes("frontiere") || t.includes("népal") || t.includes("nepal") || t.includes("chine")) {
+    if (t.includes("géographie") || t.includes("geographie") || t.includes("pays") || t.includes("frontière") || t.includes("frontiere") || t.includes("népal") || t.includes("nepal") || t.includes("chine") || t.includes("rdc") || t.includes("province") || t.includes("territoire")) {
         return pick(CITATIONS.geographie);
     }
     if (t.includes("math") || t.includes("calcul") || t.includes("équation") || t.includes("equation") || t.includes("fraction") || t.includes("racine")) {
@@ -1102,24 +1100,51 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     const t = String(texte || "").toLowerCase().trim();
 
     const reponsesSalut = [
-        `🔵 [VÉCU] : Bonjour ${appel}. Je suis vraiment heureux de te retrouver.🟡 [SAVOIR] : Je suis bien là, disponible pour t’accompagner tranquillement aujourd’hui.🔴 [INSPIRATION] : Chaque échange compte, même un simple bonjour, parce qu’il ouvre la porte à de belles choses.❓ [CONSOLIDATION] : Comment vas-tu, et sur quoi veux-tu qu’on avance ensemble ?`,
-        `🔵 [VÉCU] : Bonsoir ${appel}. Cela me fait plaisir de te lire.🟡 [SAVOIR] : Nous pouvons prendre ce moment calmement et avancer à ton rythme.🔴 [INSPIRATION] : On progresse souvent mieux quand on garde un cœur paisible et une pensée claire.❓ [CONSOLIDATION] : Veux-tu simplement me saluer, ou bien as-tu une question à me confier ?`,
-        `🔵 [VÉCU] : Salut ${appel}. Merci d’être revenu vers moi.🟡 [SAVOIR] : Je suis prêt à t’écouter et à t’aider avec simplicité.🔴 [INSPIRATION] : Quand on garde l’habitude d’échanger avec confiance, on apprend aussi avec plus d’assurance.❓ [CONSOLIDATION] : Dis-moi ce que tu veux travailler, ou comment se passe ta journée.`
+        `🔵 [VÉCU] : Bonjour ${appel}. Je suis vraiment heureux de te retrouver.
+
+🟡 [SAVOIR] : Je suis bien là, disponible pour t’accompagner tranquillement aujourd’hui.
+
+🔴 [INSPIRATION] : Chaque échange compte, même un simple bonjour, parce qu’il ouvre la porte à de belles choses.
+
+❓ [CONSOLIDATION] : Comment vas-tu, et sur quoi veux-tu qu’on avance ensemble ?`,
+
+        `🔵 [VÉCU] : Bonsoir ${appel}. Cela me fait plaisir de te lire.
+
+🟡 [SAVOIR] : Nous pouvons prendre ce moment calmement et avancer à ton rythme.
+
+🔴 [INSPIRATION] : On progresse souvent mieux quand on garde un cœur paisible et une pensée claire.
+
+❓ [CONSOLIDATION] : Veux-tu simplement me saluer, ou bien as-tu une question à me confier ?`
     ];
 
     const reponsesMerci = [
-        `🔵 [VÉCU] : Avec plaisir, ${appel}. Cela me fait vraiment plaisir de pouvoir t’aider.🟡 [SAVOIR] : Je reste disponible chaque fois que tu as besoin d’une explication ou d’un accompagnement.🔴 [INSPIRATION] : La gratitude et la constance sont de belles forces dans le chemin de l’apprentissage.❓ [CONSOLIDATION] : Veux-tu qu’on continue, ou préfères-tu reprendre plus tard ?`,
-        `🔵 [VÉCU] : Je t’en prie, ${appel}. Merci aussi pour ta confiance.🟡 [SAVOIR] : Tu peux revenir sans hésiter chaque fois qu’un point n’est pas encore clair.🔴 [INSPIRATION] : Les élèves qui osent demander finissent souvent par comprendre plus solidement.❓ [CONSOLIDATION] : Y a-t-il encore un point que tu veux revoir avec moi ?`
+        `🔵 [VÉCU] : Avec plaisir, ${appel}. Cela me fait vraiment plaisir de pouvoir t’aider.
+
+🟡 [SAVOIR] : Je reste disponible chaque fois que tu as besoin d’une explication ou d’un accompagnement.
+
+🔴 [INSPIRATION] : La gratitude et la constance sont de belles forces dans le chemin de l’apprentissage.
+
+❓ [CONSOLIDATION] : Veux-tu qu’on continue, ou préfères-tu reprendre plus tard ?`
     ];
 
     const reponsesBonneNuit = [
-        `🔵 [VÉCU] : Bonne nuit ${appel}. Merci pour ce moment partagé.🟡 [SAVOIR] : Le repos aide aussi l’esprit à mieux retenir et à revenir plus fort.🔴 [INSPIRATION] : Un élève qui sait aussi se reposer construit un apprentissage plus solide.❓ [CONSOLIDATION] : Reviens quand tu voudras ; nous continuerons ensemble avec calme.`,
-        `🔵 [VÉCU] : Bonne soirée ${appel}. Je suis content d’avoir échangé avec toi.🟡 [SAVOIR] : Tu peux maintenant te reposer tranquillement.🔴 [INSPIRATION] : Demain sera encore une belle occasion d’apprendre avec confiance.❓ [CONSOLIDATION] : Je resterai disponible quand tu voudras reprendre.`
+        `🔵 [VÉCU] : Bonne nuit ${appel}. Merci pour ce moment partagé.
+
+🟡 [SAVOIR] : Le repos aide aussi l’esprit à mieux retenir et à revenir plus fort.
+
+🔴 [INSPIRATION] : Un élève qui sait aussi se reposer construit un apprentissage plus solide.
+
+❓ [CONSOLIDATION] : Reviens quand tu voudras ; nous continuerons ensemble avec calme.`
     ];
 
     const reponsesCourtes = [
-        `🔵 [VÉCU] : Très bien ${appel}.🟡 [SAVOIR] : Je te suis et je reste disponible pour la suite.🔴 [INSPIRATION] : Même les petits échanges entretiennent la confiance et la progression.❓ [CONSOLIDATION] : Que veux-tu faire maintenant ?`,
-        `🔵 [VÉCU] : D’accord ${appel}, je suis avec toi.🟡 [SAVOIR] : Nous pouvons avancer simplement, sans nous presser.🔴 [INSPIRATION] : La régularité dans les petits pas produit souvent de grands résultats.❓ [CONSOLIDATION] : Quelle est la suite pour toi ?`
+        `🔵 [VÉCU] : Très bien ${appel}.
+
+🟡 [SAVOIR] : Je te suis et je reste disponible pour la suite.
+
+🔴 [INSPIRATION] : Même les petits échanges entretiennent la confiance et la progression.
+
+❓ [CONSOLIDATION] : Que veux-tu faire maintenant ?`
     ];
 
     if (t === "bonne nuit" || t === "bonne soirée" || t === "bonne soiree" || t === "à demain" || t === "a demain") {
@@ -1150,13 +1175,37 @@ function construireConsignePedagogique(texte = "", type = "text") {
 
     if (type === "image") {
         return `MODE PÉDAGOGIQUE IMAGE :
-- Il s'agit probablement d'un exercice envoyé en image
+- Il s'agit probablement d'un exercice ou d'une leçon envoyé(e) en image
+- Tu peux lire :
+  1. exercice manuscrit
+  2. feuille de cahier
+  3. feuille d'examen
+  4. capture d'écran
+  5. tableau
+  6. carte
+  7. schéma
+  8. graphique
+  9. page de livre
+  10. page imprimée
+- Commence toujours par dire que tu as bien reçu l'image
+- Recopie d'abord ce qui est visible
+- Si une partie est floue, tu le dis honnêtement
 - Tu expliques la démarche
 - Tu aides l'élève à comprendre ce qu'il doit faire
 - Tu ne résous pas tout jusqu'à la réponse finale
 - Dans la CONSOLIDATION, pose une question de réflexion liée au sujet
 - Ajoute aussi, quand c'est pertinent, une seule question à choix multiple simple
 - Tu termines en demandant à l'élève d'essayer lui-même puis de t'envoyer sa réponse`;
+    }
+
+    if (type === "audio") {
+        return `MODE PÉDAGOGIQUE AUDIO :
+- Il s'agit d'un message vocal
+- Commence toujours par dire que tu as bien reçu l'audio
+- La transcription doit être traitée comme provenant de Gemini Audio
+- Tu réponds ensuite avec chaleur et pédagogie
+- Dans la CONSOLIDATION, pose une question de réflexion liée au sujet
+- Ajoute aussi, quand c'est pertinent, une seule question à choix multiple simple`;
     }
 
     if (estSoumissionReponse(t)) {
@@ -1232,26 +1281,62 @@ function construireQuestionsConsolidation(question = "", corps = "") {
     const theme = detecterThemeConsolidation(question, corps);
 
     if (theme === "geographie") {
-        return `1) Question de réflexion : pourquoi est-il utile de connaître les territoires et les provinces de la RDC ?2) Petite vérification rapide :A. Un territoire fait partie d’une provinceB. Une province fait partie d’un territoire👉 Choisis la bonne réponse.`;
+        return `1) Question de réflexion : pourquoi est-il utile de connaître les territoires et les provinces de la RDC ?
+
+2) Petite vérification rapide :
+A. Un territoire fait partie d’une province
+B. Une province fait partie d’un territoire
+
+👉 Choisis la bonne réponse.`;
     }
 
     if (theme === "droit") {
-        return `1) Question de réflexion : pourquoi faut-il vérifier la source avant de citer une règle de droit ?2) Petite vérification rapide :A. On peut citer un article sans vérificationB. Il faut vérifier le texte exact avant de citer un article👉 Choisis la bonne réponse.`;
+        return `1) Question de réflexion : pourquoi faut-il vérifier la source avant de citer une règle de droit ?
+
+2) Petite vérification rapide :
+A. On peut citer un article sans vérification
+B. Il faut vérifier le texte exact avant de citer un article
+
+👉 Choisis la bonne réponse.`;
     }
 
     if (theme === "math") {
-        return `1) Question de réflexion : pourquoi faut-il suivre les étapes du calcul au lieu de chercher seulement la réponse finale ?2) Petite vérification rapide :A. La méthode compte aussiB. Seule la réponse finale compte👉 Choisis la bonne réponse.`;
+        return `1) Question de réflexion : pourquoi faut-il suivre les étapes du calcul au lieu de chercher seulement la réponse finale ?
+
+2) Petite vérification rapide :
+A. La méthode compte aussi
+B. Seule la réponse finale compte
+
+👉 Choisis la bonne réponse.`;
     }
 
     if (theme === "physique") {
-        return `1) Question de réflexion : pourquoi les unités sont-elles importantes en physique ?2) Petite vérification rapide :A. Les unités aident à vérifier le raisonnementB. Les unités ne servent presque à rien👉 Choisis la bonne réponse.`;
+        return `1) Question de réflexion : pourquoi les unités sont-elles importantes en physique ?
+
+2) Petite vérification rapide :
+A. Les unités aident à vérifier le raisonnement
+B. Les unités ne servent presque à rien
+
+👉 Choisis la bonne réponse.`;
     }
 
     if (theme === "chimie") {
-        return `1) Question de réflexion : pourquoi faut-il bien écrire les symboles et les molécules en chimie ?2) Petite vérification rapide :A. H₂O et CO₂ représentent deux substances différentesB. H₂O et CO₂ représentent la même chose👉 Choisis la bonne réponse.`;
+        return `1) Question de réflexion : pourquoi faut-il bien écrire les symboles et les molécules en chimie ?
+
+2) Petite vérification rapide :
+A. H₂O et CO₂ représentent deux substances différentes
+B. H₂O et CO₂ représentent la même chose
+
+👉 Choisis la bonne réponse.`;
     }
 
-    return `1) Question de réflexion : quelle idée importante retiens-tu de cette réponse ?2) Petite vérification rapide :A. Comprendre vaut mieux que mémoriser sans réfléchirB. Mémoriser sans comprendre suffit toujours👉 Choisis la bonne réponse.`;
+    return `1) Question de réflexion : quelle idée importante retiens-tu de cette réponse ?
+
+2) Petite vérification rapide :
+A. Comprendre vaut mieux que mémoriser sans réfléchir
+B. Mémoriser sans comprendre suffit toujours
+
+👉 Choisis la bonne réponse.`;
 }
 
 function renforcerBlocConsolidation(corps = "", question = "") {
@@ -1276,7 +1361,11 @@ function renforcerBlocConsolidation(corps = "", question = "") {
         );
     }
 
-    return `${t}❓ [CONSOLIDATION] :${blocPlus}`;
+    return `${t}
+
+❓ [CONSOLIDATION] :
+
+${blocPlus}`;
 }
 
 function choisirOuvertureContextuelle(reponse = "", user = {}, question = "") {
@@ -1694,6 +1783,11 @@ function fautChercherSurWeb(question = "", fiche = null) {
     return false;
 }
 
+/* -------------------------
+   GEMINI AUDIO
+   -------------------------
+   La transcription des audios est faite par Gemini Audio.
+-------------------------- */
 async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
     try {
         const base64Audio = audioBuffer.toString("base64");
@@ -1703,7 +1797,11 @@ async function transcrireAudioAvecIA(audioBuffer, mimeType = "audio/ogg") {
         });
 
         const result = await genererAvecRetry(model, [
-            "Transcris exactement ce message vocal en français de la RDC. Ne réponds pas à la question posée, écris juste le texte exact de ce qui est dit.",
+            `Tu es Gemini Audio.
+Transcris exactement ce message vocal en français de la RDC.
+Ne réponds pas à la question posée.
+Écris seulement le texte exact entendu.
+Si un mot n'est pas clair, indique-le honnêtement.`,
             { inlineData: { mimeType, data: base64Audio } }
         ]);
 
@@ -1884,14 +1982,11 @@ async function construireReponseDbWebIa(user, questionEleve, historique = [], fi
 Titre : ${fiche?.titre || "Sans titre"}
 Matière : ${fiche?.matiere || "Non précisée"}
 Classe : ${fiche?.classe || "Non précisée"}
-Source type : ${fiche?.source_type || "db"}
-Source URL : ${fiche?.source_url || ""}
-Provenance : ${fiche?.provenance || ""}
 
 Contenu DB :
 ${fiche?.contenu || ""}
 
-Commentaire IA de la fiche :
+Commentaire IA :
 ${commentaireAI || "Aucun commentaire IA."}`
         : `CONTEXTE DB :
 Aucune fiche locale fiable trouvée.`;
@@ -1902,7 +1997,7 @@ ${contexteWeb}`
         : `CONTEXTE WEB :
 Aucun complément web utile trouvé.`;
 
-    return appelerChatCompletion([
+    const reponse = await appelerChatCompletion([
         { role: "system", content: system },
         {
             role: "system",
@@ -1910,10 +2005,8 @@ Aucun complément web utile trouvé.`;
 1. Utilise d'abord la DB locale si elle existe
 2. Utilise ensuite le CONTEXTE WEB pour vérifier, compléter ou actualiser
 3. Utilise enfin l'IA seulement pour expliquer clairement en style Mwalimu
-4. Ne présente jamais l'IA comme une source
-5. Si DB et web diffèrent, dis-le avec prudence
-6. Pour la géographie de la RDC, tu peux utiliser le web même si la DB existe
-7. Ne jamais inventer un fait`
+4. Si la question concerne la géographie de la RDC, le web peut être utilisé même si la DB existe
+5. Ne jamais inventer un fait`
         },
         { role: "system", content: "Réponds comme un humain chaleureux, jamais comme une machine." },
         { role: "system", content: consignePedagogique || "Sois pédagogique et bienveillant." },
@@ -1930,6 +2023,18 @@ ${blocWeb}
 Rédige maintenant la réponse finale de Mwalimu.`
         }
     ]);
+
+    if (!reponse || !String(reponse).trim()) {
+        return `🔵 [VÉCU] : J'ai bien reçu ta demande.
+
+🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
+
+🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+
+❓ [CONSOLIDATION] : Reformule ta question en une seule phrase, et je t'aiderai pas à pas.`;
+    }
+
+    return reponse;
 }
 
 async function expliquerFiche(user, fiche, questionEleve, historique = [], consignePedagogique = "") {
@@ -1952,6 +2057,20 @@ async function repondreSansFiche(user, texte, historique = [], consignePedagogiq
     );
 }
 
+/* -------------------------
+   GEMINI IMAGE
+   Mwalimu peut lire :
+   - exercice manuscrit
+   - feuille de cahier
+   - feuille d’examen
+   - capture d’écran
+   - tableau
+   - carte
+   - schéma
+   - graphique
+   - page de livre
+   - document imprimé
+-------------------------- */
 async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
     try {
         const system = construireSystemPrompt(user);
@@ -1960,8 +2079,10 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
             model: "gemini-2.5-flash",
             systemInstruction: `${system}
 LOGIQUE OBLIGATOIRE :
-- Lis d'abord l'image
+- Commence toujours par dire : "J'ai bien reçu ton image."
+- Tu peux lire : exercices manuscrits, feuilles d’examen, captures d’écran, tableaux, cartes, schémas, graphiques, pages de cahier, pages de livre, documents imprimés
 - Recopie clairement ce qui est visible
+- Si une partie est floue, dis-le honnêtement
 - Utilise Google Search si cela aide à vérifier ou compléter
 - Puis explique avec pédagogie
 - Ne fais pas tout l'exercice à la place de l'élève`,
@@ -1977,7 +2098,7 @@ LOGIQUE OBLIGATOIRE :
                 role: "user",
                 parts: [
                     {
-                        text: "Analyse cette image d'exercice ou de leçon. Commence d'abord par recopier clairement ce qui est visible ou lisible dans l'image. S'il y a une partie floue ou illisible, dis-le honnêtement. Ensuite, explique pas à pas, aide l'élève à comprendre, et utilise Google Search si cela peut vérifier ou compléter utilement la réponse, surtout pour la RDC ou une donnée de géographie."
+                        text: "Analyse cette image d'exercice ou de leçon. Commence obligatoirement par dire : J'ai bien reçu ton image. Ensuite, recopie clairement ce qui est visible ou lisible dans l'image. S'il y a une partie floue ou illisible, dis-le honnêtement. Puis explique pas à pas. Tu peux lire des exercices manuscrits, feuilles d’examen, captures d’écran, tableaux, cartes, schémas, graphiques, pages de cahier, pages de livre et documents imprimés."
                     },
                     { inlineData: { mimeType, data: base64Image } }
                 ]
@@ -2011,6 +2132,7 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
     const citation = choisirCitationContextuelle(corps, question, user);
 
     return `${HEADER_MWALIMU}
+
 ${corps}
 
 ${ouverture}
@@ -2024,12 +2146,19 @@ function messageSecours(user) {
     const appel = `${genreEleve(user?.nom || "élève")} **${normaliserNom(user?.nom || "élève").split(" ")[0]}**`;
 
     return `${HEADER_MWALIMU}
+
 🔵 [VÉCU] : J'ai bien reçu ton message, ${appel}.
+
 🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
+
 🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.
+
 ❓ [CONSOLIDATION] : Réessaie dans un instant, ou reformule ta question plus simplement. Tu peux aussi m'envoyer une seule question à la fois.
+
 👉 Je reste à tes côtés.
+
 🌟 Mot d'encouragement : Même quand cela bloque un peu, on continue avec calme et méthode.
+
 ${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -2075,7 +2204,13 @@ async function traiterAudio(user, msg, historique) {
 
     if (!audioId) {
         return {
-            reponse: `🔵 [VÉCU] : J'ai bien reçu ton audio.🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.🔴 [INSPIRATION] : Ne t'inquiète pas, cela peut arriver.❓ [CONSOLIDATION] : Réessaie avec un autre message vocal plus clair.`,
+            reponse: `🔵 [VÉCU] : J'ai bien reçu ton audio.
+
+🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
+
+🔴 [INSPIRATION] : Ne t'inquiète pas, cela peut arriver.
+
+❓ [CONSOLIDATION] : Réessaie avec un autre message vocal plus clair.`,
             fiche: null
         };
     }
@@ -2083,9 +2218,15 @@ async function traiterAudio(user, msg, historique) {
     const { buffer, mimeType } = await telechargerMedia(audioId, 8 * 1024 * 1024);
     const transcription = await transcrireAudioAvecIA(buffer, mimeType);
 
-    if (!transcription) {
+    if (!transcription || !String(transcription).trim()) {
         return {
-            reponse: `🔵 [VÉCU] : J’ai bien reçu ton audio.🟡 [SAVOIR] : Je n'arrive pas encore à le traiter correctement.🔴 [INSPIRATION] : Ce n’est pas grave, nous pouvons réessayer calmement.❓ [CONSOLIDATION] : Envoie-moi un message vocal plus clair et sans bruit autour.`,
+            reponse: `🔵 [VÉCU] : J'ai bien reçu ton audio.
+
+🟡 [SAVOIR] : Je n'arrive pas encore à le traiter correctement avec Gemini Audio.
+
+🔴 [INSPIRATION] : Ce n’est pas grave ; nous pouvons réessayer calmement.
+
+❓ [CONSOLIDATION] : Envoie-moi un message vocal plus clair et sans bruit autour.`,
             fiche: null
         };
     }
@@ -2095,11 +2236,24 @@ async function traiterAudio(user, msg, historique) {
 
     const reponse = await construireReponseDbWebIa(
         user,
-        transcription,
+        `L'élève a envoyé un audio. Transcription Gemini Audio : ${transcription}`,
         historique,
         fiche,
         consignePedagogique
     );
+
+    if (!reponse || !String(reponse).trim()) {
+        return {
+            reponse: `🔵 [VÉCU] : J'ai bien reçu ton audio.
+
+🟡 [SAVOIR] : J'ai pu récupérer ton message vocal, mais je n'ai pas encore produit une réponse claire.
+
+🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+
+❓ [CONSOLIDATION] : Réessaie avec le même audio ou reformule ta question en une seule phrase.`,
+            fiche: null
+        };
+    }
 
     return { reponse, fiche: fiche || null };
 }
@@ -2109,7 +2263,13 @@ async function traiterImage(user, msg, historique) {
 
     if (!imageId) {
         return {
-            reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.🔴 [INSPIRATION] : Nous allons y arriver en reprenant tranquillement.❓ [CONSOLIDATION] : Réessaie en envoyant une image plus nette.`,
+            reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
+
+🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
+
+🔴 [INSPIRATION] : Nous allons y arriver en reprenant tranquillement.
+
+❓ [CONSOLIDATION] : Réessaie en envoyant une image plus nette.`,
             fiche: null
         };
     }
@@ -2117,6 +2277,19 @@ async function traiterImage(user, msg, historique) {
     const { buffer, mimeType } = await telechargerMedia(imageId, 8 * 1024 * 1024);
     const base64Image = buffer.toString("base64");
     const reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
+
+    if (!reponse || !String(reponse).trim()) {
+        return {
+            reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
+
+🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.
+
+🔴 [INSPIRATION] : Ce n’est pas grave ; nous pouvons reprendre calmement.
+
+❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée. Mwalimu peut lire les exercices manuscrits, feuilles d’examen, captures d’écran, tableaux, cartes, schémas, graphiques, pages de cahier ou de livre.`,
+            fiche: null
+        };
+    }
 
     return { reponse, fiche: null };
 }
@@ -2143,12 +2316,19 @@ cron.schedule("0 7 * * *", async () => {
                 const citation = pick(CITATIONS.patriotisme);
 
                 const messageRappel = `${HEADER_MWALIMU}
+
 🔵 [VÉCU] : Bonjour ${appel}. J’espère que tu as bien commencé ta journée.
+
 🟡 [SAVOIR] : Petit rappel du matin : avance aujourd’hui avec calme, sérieux et confiance. Même un petit effort bien fait peut te rapprocher de ton rêve.
+
 🔴 [INSPIRATION] : Ton objectif n’est pas d’aller vite, mais de bien comprendre. C’est ainsi qu’on bâtit un avenir solide.
+
 ❓ [CONSOLIDATION] : Dis-moi plus tard : quelle matière veux-tu travailler aujourd’hui ?
+
 👉 Je reste à tes côtés pour t’accompagner pas à pas.
+
 🌟 Mot d'encouragement : Un élève constant finit toujours par progresser.
+
 ${citation}`.replace(/\n{3,}/g, "\n\n").trim();
 
                 await envoyerWhatsApp(eleve.phone, messageRappel);
@@ -2206,8 +2386,10 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(
                 from,
                 `${HEADER_MWALIMU}
-🔄 **Mise à jour de ton profil**
-🟡 Quel est ton **prénom** ?`
+
+🔄 *Mise à jour de ton profil*
+
+🟡 Quel est ton *prénom* ?`
             );
         }
 
@@ -2218,8 +2400,10 @@ app.post("/webhook", async (req, res) => {
             return await envoyerWhatsApp(
                 from,
                 `${HEADER_MWALIMU}
+
 🔵 ${ACCUEILS[0]}
-🟡 Quel est ton **prénom** ?`
+
+🟡 Quel est ton *prénom* ?`
             );
         }
 
@@ -2230,7 +2414,8 @@ app.post("/webhook", async (req, res) => {
                 return await envoyerWhatsApp(
                     from,
                     `${HEADER_MWALIMU}
-🟡 Donne-moi simplement ton **prénom**, s'il te plaît.`
+
+🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`
                 );
             }
 
@@ -2238,8 +2423,9 @@ app.post("/webhook", async (req, res) => {
 
             return await envoyerWhatsApp(
                 from,
-                `🤝 Enchanté **${nom}** !
-🟡 En quelle **classe** es-tu ?`
+                `🤝 Enchanté *${nom}* !
+
+🟡 En quelle *classe* es-tu ?`
             );
         }
 
@@ -2249,7 +2435,8 @@ app.post("/webhook", async (req, res) => {
             if (!cl) {
                 return await envoyerWhatsApp(
                     from,
-                    `🟡 Écris-moi ta **classe** simplement.
+                    `🟡 Écris-moi ta *classe* simplement.
+
 Exemple : 6e, 8e, Terminale, 1ère secondaire.`
                 );
             }
@@ -2259,8 +2446,9 @@ Exemple : 6e, 8e, Terminale, 1ère secondaire.`
 
             return await envoyerWhatsApp(
                 from,
-                `🟡 C'est bien noté, **${user.nom}**.
-❓ Quel est ton plus grand **rêve** professionnel ?`
+                `🟡 C'est bien noté, *${user.nom}*.
+
+❓ Quel est ton plus grand *rêve* professionnel ?`
             );
         }
 
@@ -2270,7 +2458,8 @@ Exemple : 6e, 8e, Terminale, 1ère secondaire.`
             if (!rv) {
                 return await envoyerWhatsApp(
                     from,
-                    `❓ Dis-moi simplement ton **rêve** professionnel.
+                    `❓ Dis-moi simplement ton *rêve* professionnel.
+
 Exemple : avocat, médecin, ingénieur, pilote.`
                 );
             }
@@ -2281,9 +2470,12 @@ Exemple : avocat, médecin, ingénieur, pilote.`
 
             return await envoyerWhatsApp(
                 from,
-                `✨ **Quelle ambition magnifique !**
-🔴 Devenir **${rv}** est un rêve noble, et je sais que tu en es capable, ${appel}.
-🔵 **Pour commencer notre parcours ensemble, dis-moi :**
+                `✨ *Quelle ambition magnifique !*
+
+🔴 Devenir *${rv}* est un rêve noble, et je sais que tu en es capable, ${appel}.
+
+🔵 *Pour commencer notre parcours ensemble, dis-moi :*
+
 👉 Quelle est la matière ou le chapitre qui te pose problème en ce moment ?`
             );
         }
@@ -2332,11 +2524,23 @@ Exemple : avocat, médecin, ingénieur, pilote.`
                 ? userFresh.historique
                 : safeJsonParse(userFresh?.historique, []);
         } else {
-            reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton message.🟡 [SAVOIR] : Pour l'instant, je traite surtout les textes, les audios et les images.🔴 [INSPIRATION] : Nous pouvons déjà avancer correctement avec ces formats.❓ [CONSOLIDATION] : Envoie-moi ta question par écrit, par audio ou avec une image nette de l'exercice.`;
+            reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton message.
+
+🟡 [SAVOIR] : Pour l'instant, je traite surtout les textes, les audios et les images.
+
+🔴 [INSPIRATION] : Nous pouvons déjà avancer correctement avec ces formats.
+
+❓ [CONSOLIDATION] : Envoie-moi ta question par écrit, par audio ou avec une image nette de l'exercice.`;
         }
 
         if (!reponseBrute || !String(reponseBrute).trim()) {
-            reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.❓ [CONSOLIDATION] : Reformule ta question en une seule phrase, et je t'aiderai pas à pas.`;
+            reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.
+
+🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
+
+🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+
+❓ [CONSOLIDATION] : Reformule ta question en une seule phrase, et je t'aiderai pas à pas.`;
         }
 
         const messageFinal = construireMessageFinal(
@@ -2360,9 +2564,13 @@ Exemple : avocat, médecin, ingénieur, pilote.`
                 await envoyerWhatsApp(
                     from,
                     `${HEADER_MWALIMU}
+
 🔵 [VÉCU] : J'ai bien reçu ton message.
+
 🟡 [SAVOIR] : Je suis momentanément très sollicité et je dois ralentir un peu pour bien te répondre.
+
 🔴 [INSPIRATION] : Ce petit contretemps n’empêche pas notre progression.
+
 ❓ [CONSOLIDATION] : Réessaie dans une minute avec la même question, et nous continuerons ensemble.`
                 );
                 return;
