@@ -699,6 +699,97 @@ function messageTypeLisible(msgType = "message") {
   return "ton message";
 }
 
+/* =========================================================
+   3B) FONCTIONS MANQUANTES CRITIQUES
+========================================================= */
+function estMimeImageSupporte(mimeType = "") {
+  const allowed = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+    "image/heic",
+    "image/heif"
+  ];
+  return allowed.includes(String(mimeType || "").toLowerCase());
+}
+
+function estMimeAudioSupporte(mimeType = "") {
+  const allowed = [
+    "audio/ogg",
+    "audio/opus",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/webm",
+    "audio/aac",
+    "audio/amr"
+  ];
+  return allowed.includes(String(mimeType || "").toLowerCase());
+}
+
+function ficheEstFaible(fiche = null) {
+  if (!fiche) return true;
+  const contenu = String(fiche?.contenu || "").trim();
+  const commentaire = String(fiche?.commentaire_ai || "").trim();
+  if (!contenu && !commentaire) return true;
+  if (contenu.length < 80 && commentaire.length < 50) return true;
+  return false;
+}
+
+function estQuestionGeographieRDC(question = "", fiche = null) {
+  const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
+  return (
+    t.includes("rdc") ||
+    t.includes("congo") ||
+    t.includes("province") ||
+    t.includes("territoire") ||
+    t.includes("territoires") ||
+    t.includes("commune") ||
+    t.includes("communes") ||
+    t.includes("ville") ||
+    t.includes("villes") ||
+    t.includes("haut-katanga") ||
+    t.includes("haut katanga") ||
+    t.includes("géographie") ||
+    t.includes("geographie")
+  );
+}
+
+function fautChercherSurWeb(question = "", fiche = null) {
+  const q = String(question || "").toLowerCase().trim();
+
+  if (!q) return false;
+  if (estMessageRelationnelSimple(q)) return false;
+  if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
+    return false;
+  }
+
+  const casWeb = [
+    "loi", "code", "article", "constitution", "juridique", "droit",
+    "ohada", "impôt", "impot", "taxe", "tribunal",
+    "géographie", "geographie", "rdc", "congo",
+    "province", "territoire", "territoires",
+    "commune", "communes", "ville", "villes",
+    "haut-katanga", "haut katanga",
+    "actualité", "actualite", "récent", "recent",
+    "aujourd'hui", "actuel",
+    "histoire", "date", "indépendance",
+    "qui", "quand", "où", "ou", "combien", "pourquoi", "comment"
+  ];
+
+  if (casWeb.some((m) => q.includes(m))) return true;
+  if (!fiche) return true;
+  if (ficheEstFaible(fiche)) return true;
+  if (estQuestionGeographieRDC(question, fiche)) return true;
+
+  return false;
+}
+
 async function attendreAvecBackoff(tentative = 0) {
   const base = 1800;
   const extra = tentative * 1400;
@@ -744,7 +835,7 @@ async function initDB() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS processed_messages (
         msg_id TEXT PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -1076,25 +1167,6 @@ async function consulterBibliotheque(question = "", classe = "") {
     console.error("Erreur consulterBibliotheque:", e.message);
     return null;
   }
-}
-
-function estQuestionGeographieRDC(question = "", fiche = null) {
-  const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
-  return (
-    t.includes("rdc") ||
-    t.includes("congo") ||
-    t.includes("province") ||
-    t.includes("territoire") ||
-    t.includes("territoires") ||
-    t.includes("commune") ||
-    t.includes("communes") ||
-    t.includes("ville") ||
-    t.includes("villes") ||
-    t.includes("haut-katanga") ||
-    t.includes("haut katanga") ||
-    t.includes("géographie") ||
-    t.includes("geographie")
-  );
 }
 
 function construireSystemPrompt(user) {
