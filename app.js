@@ -155,6 +155,7 @@ STYLE OBLIGATOIRE :
 - Ne sois jamais bavard
 - Ne félicite pas exagérément
 - N'écris pas "bravo" sauf si l'élève a réellement bien répondu, corrigé juste ou fourni une bonne démarche
+- Évite les compliments excessifs comme "future avocate" ou "œil de lynx" sauf si c'est vraiment utile
 - Si l'élève dit juste bonjour, bonsoir, merci, bonne nuit, réponds humainement et normalement, sans structure pédagogique
 - Quand il faut une vraie réponse pédagogique, la structure est :
 🔵 [VÉCU]
@@ -394,25 +395,6 @@ function supprimerDoublonsLignes(texte = "") {
   return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function dedupePhrasesUtiles(texte = "") {
-  let t = String(texte || "");
-  const patterns = [
-    /👉 Nous pouvons continuer avec une autre petite question de géographie\.\n?/gi,
-    /👉 Nous avançons ensemble, pas à pas\.\n?/gi,
-    /👉 Tu peux m'envoyer ta réponse, et je vais la vérifier avec toi\.\n?/gi
-  ];
-
-  for (const pattern of patterns) {
-    const matches = t.match(pattern);
-    if (matches && matches.length > 1) {
-      t = t.replace(pattern, "");
-      t += `\n${matches[0].trim()}`;
-    }
-  }
-
-  return supprimerDoublonsLignes(t);
-}
-
 function nettoyerReponseIA(texte = "") {
   if (!texte) return "";
   let t = String(texte);
@@ -420,9 +402,7 @@ function nettoyerReponseIA(texte = "") {
   t = t.replace(/^\s*🌟\s*Mot d['’]encouragement\s*:\s*.*$/gim, "");
   t = t.replace(/^\s*👉\s*Je reste disponible.*$/gim, "");
   t = t.replace(/^\s*👉\s*Continue à me parler.*$/gim, "");
-  t = supprimerDoublonsLignes(t);
-  t = dedupePhrasesUtiles(t);
-  return t.replace(/\n{3,}/g, "\n\n").trim();
+  return supprimerDoublonsLignes(t).replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function simplifierNotationMath(texte = "") {
@@ -497,12 +477,34 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
 
 function choisirCitationContextuelle(reponse = "", question = "") {
   const t = `${reponse} ${question}`.toLowerCase();
-  if (t.includes("merci") || t.includes("bonjour") || t.includes("bonsoir")) return pick(CITATIONS.relationnel);
-  if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("droit")) return pick(CITATIONS.civisme);
-  if (t.includes("géographie") || t.includes("geographie") || t.includes("territoire") || t.includes("province") || t.includes("commune") || t.includes("ville")) return pick(CITATIONS.geographie);
-  if (t.includes("math") || t.includes("calcul") || t.includes("équation") || t.includes("fraction")) return pick(CITATIONS.mathematiques);
-  if (t.includes("physique") || t.includes("chimie") || t.includes("science")) return pick(CITATIONS.sciences);
-  if (t.includes("histoire") || t.includes("date")) return pick(CITATIONS.histoire);
+
+  if (t.includes("merci") || t.includes("bonjour") || t.includes("bonsoir")) {
+    return pick(CITATIONS.relationnel);
+  }
+  if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("droit")) {
+    return pick(CITATIONS.civisme);
+  }
+  if (
+    t.includes("géographie") || t.includes("geographie") ||
+    t.includes("territoire") || t.includes("province") ||
+    t.includes("commune") || t.includes("ville")
+  ) {
+    return pick(CITATIONS.geographie);
+  }
+  if (
+    t.includes("math") || t.includes("calcul") ||
+    t.includes("équation") || t.includes("equation") ||
+    t.includes("fraction") || t.includes("chimie")
+  ) {
+    return pick(CITATIONS.mathematiques);
+  }
+  if (t.includes("physique") || t.includes("science")) {
+    return pick(CITATIONS.sciences);
+  }
+  if (t.includes("histoire") || t.includes("date")) {
+    return pick(CITATIONS.histoire);
+  }
+
   return pick(CITATIONS.general);
 }
 
@@ -700,7 +702,7 @@ function messageTypeLisible(msgType = "message") {
 }
 
 /* =========================================================
-   3B) FONCTIONS MANQUANTES CRITIQUES
+   3B) FONCTIONS CRITIQUES
 ========================================================= */
 function estMimeImageSupporte(mimeType = "") {
   const allowed = [
@@ -788,6 +790,39 @@ function fautChercherSurWeb(question = "", fiche = null) {
   if (estQuestionGeographieRDC(question, fiche)) return true;
 
   return false;
+}
+
+function dedupeBlocFinal(texte = "") {
+  let t = String(texte || "").trim();
+
+  const lignes = t.split("\n").map((l) => l.trimRight());
+  const resultat = [];
+  const deja = new Set();
+
+  for (const ligne of lignes) {
+    const normalisee = ligne.trim().toLowerCase();
+
+    if (!normalisee) {
+      if (resultat[resultat.length - 1] !== "") {
+        resultat.push("");
+      }
+      continue;
+    }
+
+    const ligneUnique =
+      normalisee.startsWith("👉 ") ||
+      normalisee.startsWith("🌟 mot d'encouragement") ||
+      normalisee.startsWith("***«");
+
+    if (ligneUnique) {
+      if (deja.has(normalisee)) continue;
+      deja.add(normalisee);
+    }
+
+    resultat.push(ligne);
+  }
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 async function attendreAvecBackoff(tentative = 0) {
@@ -1482,23 +1517,27 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
   const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
   const corpsAvecStructure = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
   const corpsRenforce = renforcerBlocConsolidation(corpsAvecStructure, question);
+
   let corps = adapterTexteGenre(corpsRenforce, user.nom);
   corps = nettoyerAppelsRepetitifs(corps, user.nom);
-  corps = dedupePhrasesUtiles(corps);
+  corps = supprimerDoublonsLignes(corps);
 
   const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corps, user, question), user.nom);
   const encouragement = choisirEncouragementContextuel(corps, question);
   const citation = choisirCitationContextuelle(corps, question);
 
-  const parties = [
+  const message = [
     HEADER_MWALIMU,
+    "",
     corps,
     ouverture,
     encouragement,
     citation
-  ].filter((x) => String(x || "").trim());
+  ]
+    .filter(v => v !== null && v !== undefined && String(v).trim() !== "")
+    .join("\n");
 
-  return supprimerDoublonsLignes(parties.join("\n")).replace(/\n{3,}/g, "\n\n").trim();
+  return dedupeBlocFinal(message);
 }
 
 function messageSecours(user, msgType = "message") {
