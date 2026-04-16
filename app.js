@@ -9,6 +9,8 @@ const cron = require("node-cron");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 
+axios.defaults.timeout = 15000;
+
 const app = express();
 app.set("trust proxy", 1);
 
@@ -235,6 +237,17 @@ const PROMPT_IMAGE_TYPES = `TYPES D’IMAGES ET PHOTOS À LIRE :
 /* =========================================================
    3) OUTILS SIMPLES
 ========================================================= */
+const cache = new Map();
+
+function getCache(key) {
+  return cache.get(key);
+}
+
+function setCache(key, value) {
+  cache.set(key, value);
+  setTimeout(() => cache.delete(key), 60000);
+}
+
 function pick(arr = []) {
   if (!arr.length) return "";
   return arr[Math.floor(Math.random() * arr.length)];
@@ -1384,6 +1397,7 @@ function fautChercherSurWeb(question = "", fiche = null) {
 
   if (!q) return false;
   if (estMessageRelationnelSimple(q)) return false;
+  if (fiche && !ficheEstFaible(fiche)) return false;
 
   const casWebFort = [
     "loi", "code", "article", "constitution", "juridique", "droit",
@@ -1802,7 +1816,16 @@ ${citation}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function messageSecours(user) {
-  const appel = `${genreEleve(user?.nom || "élève")} **${normaliserNom(user?.nom || "élève").split(" ")[0]}**`;
+  const prenom = normaliserNom(user?.nom || "élève").split(" ")[0] || "élève";
+  const appels = [
+    `**${prenom}**`,
+    `cher **${prenom}**`,
+    `bon **${prenom}**`,
+    `mon ami`,
+    `mon enfant`
+  ];
+  const appel = pick(appels);
+
   return `${HEADER_MWALIMU}
 🔵 [VÉCU] : J'ai bien reçu ton message, ${appel}.
 🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
@@ -1883,6 +1906,13 @@ function construireConsignePedagogique(texte = "", type = "text") {
    9) TRAITEMENT PAR TYPE DE MESSAGE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
+  const cacheKey = String(texteUtilisateur || "").toLowerCase();
+  const cached = getCache(cacheKey);
+  if (cached) {
+    console.log("⚡ Réponse depuis cache");
+    return { reponse: cached, fiche: null, bypassFormat: false };
+  }
+
   if (estMessageRelationnelSimple(texteUtilisateur)) {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
     if (reponseSimple) {
@@ -1958,6 +1988,10 @@ ${antiBoucle.consigne}`;
     fiche,
     consigneFinale
   );
+
+  if (reponse && String(reponse).trim()) {
+    setCache(cacheKey, reponse);
+  }
 
   if (!reponse || !String(reponse).trim()) {
     await logUnansweredQuestion(user, texteUtilisateur, "text", "traiterTexte_empty");
@@ -2188,6 +2222,7 @@ cron.schedule("0 3 * * *", async () => {
 ========================================================= */
 app.post("/webhook", async (req, res) => {
   if (!verifierSignatureMeta(req)) {
+    console.warn("⛔ Signature Meta invalide");
     return res.sendStatus(403);
   }
 
@@ -2200,6 +2235,8 @@ app.post("/webhook", async (req, res) => {
   const msgId = msg.id;
   const texteUtilisateur = msg.text?.body?.trim() || "";
   const msgType = typeMessage(msg);
+
+  console.log("📩 Message reçu :", msgType, "|", texteUtilisateur?.slice(0, 50));
 
   try {
     const check = await pool.query(
@@ -2362,7 +2399,11 @@ Exemple : avocat, médecin, ingénieur, pilote.`
     await envoyerWhatsApp(from, messageFinal);
     await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
   } catch (e) {
-    console.error("Erreur générale:", e.response?.data || e.message);
+    console.error("Erreur générale complète:", {
+      message: e?.message || null,
+      stack: e?.stack || null,
+      data: e?.response?.data || null
+    });
 
     try {
       let user = await getUser(from);
@@ -2382,7 +2423,11 @@ Exemple : avocat, médecin, ingénieur, pilote.`
 
       await envoyerWhatsApp(from, messageSecours(user));
     } catch (e2) {
-      console.error("Erreur secours:", e2.message);
+      console.error("Erreur secours complète:", {
+        message: e2?.message || null,
+        stack: e2?.stack || null,
+        data: e2?.response?.data || null
+      });
     }
   }
 });
