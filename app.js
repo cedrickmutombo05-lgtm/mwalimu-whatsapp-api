@@ -265,6 +265,14 @@ function construireAppel(user = {}) {
   return pick(styles);
 }
 
+function normaliserMessageCourt(texte = "") {
+  return String(texte || "")
+    .toLowerCase()
+    .replace(/[.,!?;:()"'`´’]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function adapterTexteGenre(texte = "", nom = "") {
   const appel = construireAppel({ nom });
   return String(texte || "")
@@ -283,33 +291,85 @@ function nettoyerAppelsRepetitifs(texte = "", nom = "") {
 }
 
 function estMessageSalutation(texte = "") {
-  const t = String(texte || "").toLowerCase().trim();
+  const t = normaliserMessageCourt(texte);
+
   const salutations = [
     "bonjour", "bonsoir", "salut", "cc", "coucou", "hello", "bjr",
-    "bonne nuit", "bonne soirée", "bonne soiree", "à demain", "a demain",
-    "bonjour mwalimu", "bonsoir mwalimu", "salut mwalimu", "mbote", "mbote mwalimu"
+    "bonne nuit", "bonne soiree", "a demain",
+    "bonjour mwalimu", "bonsoir mwalimu", "salut mwalimu",
+    "mbote", "mbote mwalimu"
   ];
+
   if (salutations.includes(t)) return true;
-  return /^(bonjour|bonsoir|salut|hello|coucou|mbote|bjr)(\s+mwalimu)?[!\s.]*$/i.test(t);
+  return /^(bonjour|bonsoir|salut|hello|coucou|mbote|bjr)(\s+mwalimu)?$/i.test(t);
 }
 
 function estMessageRemerciement(texte = "") {
-  const t = String(texte || "").toLowerCase().trim();
-  const remerciements = [
-    "merci", "merci beaucoup", "mercii", "grand merci", "mersi",
-    "merci mwalimu", "merci beaucoup mwalimu", "je te remercie",
-    "je vous remercie", "ok merci", "d'accord merci", "dac merci"
+  const t = normaliserMessageCourt(texte);
+
+  if (!t) return false;
+
+  const exacts = [
+    "merci",
+    "merci beaucoup",
+    "mercii",
+    "grand merci",
+    "mersi",
+    "merci mwalimu",
+    "merci beaucoup mwalimu",
+    "je te remercie",
+    "je vous remercie",
+    "ok merci",
+    "d accord merci",
+    "dac merci"
   ];
-  return remerciements.includes(t);
+
+  if (exacts.includes(t)) return true;
+
+  return (
+    t.startsWith("merci ") ||
+    t.endsWith(" merci") ||
+    t.includes(" merci ") ||
+    t.startsWith("je te remercie") ||
+    t.startsWith("je vous remercie")
+  );
 }
 
 function estMessageCourtHumain(texte = "") {
-  const t = String(texte || "").toLowerCase().trim();
-  return ["ok", "okay", "d'accord", "dac", "ça va", "ca va", "oui", "non", "bien", "super", "cool", "entendu", "compris"].includes(t);
+  const t = normaliserMessageCourt(texte);
+  return [
+    "ok", "okay", "d accord", "dac", "ca va", "oui", "non",
+    "bien", "super", "cool", "entendu", "compris"
+  ].includes(t);
 }
 
 function estMessageRelationnelSimple(texte = "") {
-  return estMessageSalutation(texte) || estMessageRemerciement(texte) || estMessageCourtHumain(texte);
+  return (
+    estMessageSalutation(texte) ||
+    estMessageRemerciement(texte) ||
+    estMessageCourtHumain(texte)
+  );
+}
+
+function estReponseRelationnelleSimpleIA(texte = "") {
+  const t = String(texte || "").trim();
+  const n = normaliserMessageCourt(t);
+
+  if (!t) return false;
+  if (/🔵\s*\[VÉCU\]|🟡\s*\[SAVOIR\]|🔴\s*\[INSPIRATION\]|❓\s*\[CONSOLIDATION\]/i.test(t)) return false;
+  if (t.length > 180) return false;
+
+  return (
+    n.startsWith("je t en prie") ||
+    n.startsWith("avec plaisir") ||
+    n.startsWith("c est normal") ||
+    n.startsWith("toujours la pour t aider") ||
+    n.startsWith("bonjour") ||
+    n.startsWith("bonsoir") ||
+    n.startsWith("salut") ||
+    n.startsWith("bonne nuit") ||
+    n.startsWith("d accord")
+  );
 }
 
 function estSoumissionReponse(texte = "") {
@@ -478,9 +538,10 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
 function choisirCitationContextuelle(reponse = "", question = "") {
   const t = `${reponse} ${question}`.toLowerCase();
 
-  if (t.includes("merci") || t.includes("bonjour") || t.includes("bonsoir")) {
-    return pick(CITATIONS.relationnel);
+  if (estMessageRelationnelSimple(question)) {
+    return "";
   }
+
   if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("droit")) {
     return pick(CITATIONS.civisme);
   }
@@ -614,22 +675,33 @@ function renforcerBlocConsolidation(corps = "", question = "") {
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
   const corps = String(reponse || "").toLowerCase();
-  const q = String(question || "").toLowerCase().trim();
+  const q = normaliserMessageCourt(question);
 
-  if (estMessageRelationnelSimple(q)) {
-    if (q.includes("merci")) return "";
-    if (q.includes("bonne nuit") || q.includes("bonne soirée") || q.includes("a demain")) return "👉 Repose-toi bien.";
-    return "";
+  if (estMessageRelationnelSimple(q)) return "";
+
+  if (estQuestionTechnique(q)) {
+    return "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse.";
   }
 
-  if (estQuestionTechnique(q)) return "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse.";
-  if (corps.includes("géographie") || corps.includes("geographie") || corps.includes("rdc") || corps.includes("congo")) return "👉 Nous pouvons continuer avec une autre petite question de géographie.";
+  if (
+    corps.includes("géographie") ||
+    corps.includes("geographie") ||
+    corps.includes("rdc") ||
+    corps.includes("congo")
+  ) {
+    return "👉 Nous pouvons continuer avec une autre petite question de géographie.";
+  }
+
   return pick(OUVERTURES);
 }
 
 function choisirEncouragementContextuel(reponse = "", question = "") {
   const corps = String(reponse || "").toLowerCase();
   const q = String(question || "").toLowerCase();
+
+  if (estMessageRelationnelSimple(question)) {
+    return "";
+  }
 
   if (corps.includes("je n'arrive pas encore") || corps.includes("petit souci technique") || corps.includes("réessaie") || corps.includes("image plus nette") || corps.includes("message vocal plus clair")) {
     return "🌟 Mot d'encouragement : Ne te décourage pas ; nous pouvons reprendre calmement.";
@@ -658,22 +730,23 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
 function construireReponseHumaineSimple(user = {}, texte = "") {
   const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
   const appel = construireAppel({ nom: prenom });
-  const t = String(texte || "").toLowerCase().trim();
+  const t = normaliserMessageCourt(texte);
 
   if (estMessageRemerciement(t)) {
     return pick([
+      `Je t’en prie ${appel} 😊`,
       `Avec plaisir ${appel} 😊`,
-      `Je t’en prie ${appel}`,
       `C’est normal ${appel}`,
       `Toujours là pour t’aider ${appel} 💪`
     ]);
   }
 
   if (estMessageSalutation(t)) {
+    if (t.includes("bonsoir")) return `Bonsoir ${appel} 🌙`;
+    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌙`;
     return pick([
       `Bonjour ${appel} 😊`,
-      `Salut ${appel} 👋`,
-      `Bonsoir ${appel} 🌙`
+      `Salut ${appel} 👋`
     ]);
   }
 
@@ -793,13 +866,12 @@ function fautChercherSurWeb(question = "", fiche = null) {
 }
 
 function dedupeBlocFinal(texte = "") {
-  let t = String(texte || "").trim();
-
-  const lignes = t.split("\n").map((l) => l.trimRight());
+  const lignes = String(texte || "").split("\n");
   const resultat = [];
-  const deja = new Set();
+  const uniques = new Set();
 
-  for (const ligne of lignes) {
+  for (const ligneBrute of lignes) {
+    const ligne = ligneBrute.trimRight();
     const normalisee = ligne.trim().toLowerCase();
 
     if (!normalisee) {
@@ -809,14 +881,15 @@ function dedupeBlocFinal(texte = "") {
       continue;
     }
 
-    const ligneUnique =
+    const estUnique =
       normalisee.startsWith("👉 ") ||
       normalisee.startsWith("🌟 mot d'encouragement") ||
-      normalisee.startsWith("***«");
+      normalisee.startsWith("***«") ||
+      normalisee === "────────────────";
 
-    if (ligneUnique) {
-      if (deja.has(normalisee)) continue;
-      deja.add(normalisee);
+    if (estUnique) {
+      if (uniques.has(normalisee)) continue;
+      uniques.add(normalisee);
     }
 
     resultat.push(ligne);
@@ -1434,7 +1507,13 @@ Aucune fiche locale fiable trouvée.`;
     model: "gemini-2.5-flash",
     systemInstruction: `${system}
 MODE AUDIO :
-- Commence toujours par dire : "J'ai bien reçu ton audio."
+- Commence toujours par dire : "J'ai bien reçu ton audio." seulement si le message audio n'est pas juste un simple salut ou un simple remerciement
+- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, d'accord ou autre message social très court :
+  - réponds avec UNE seule phrase naturelle et courte
+  - sans structure pédagogique
+  - sans header
+  - sans citation
+  - sans encouragement
 - Si le sujet demande une liste complète, sois exhaustif
 - Sois succinct quand c'est possible
 - Ne génère jamais la citation finale
@@ -1526,23 +1605,22 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
   const encouragement = choisirEncouragementContextuel(corps, question);
   const citation = choisirCitationContextuelle(corps, question);
 
-  const message = [
+  const parties = [
     HEADER_MWALIMU,
-    "",
+    "────────────────",
     corps,
     ouverture,
     encouragement,
     citation
-  ]
-    .filter(v => v !== null && v !== undefined && String(v).trim() !== "")
-    .join("\n");
+  ].filter((v) => String(v || "").trim() !== "");
 
-  return dedupeBlocFinal(message);
+  return dedupeBlocFinal(parties.join("\n"));
 }
 
 function messageSecours(user, msgType = "message") {
   const appel = construireAppel({ nom: user?.nom || "élève" });
   return `${HEADER_MWALIMU}
+────────────────
 🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}, ${appel}.
 🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
 🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.
@@ -1570,7 +1648,8 @@ function construireConsignePedagogique(texte = "", type = "text") {
 
   if (type === "audio") {
     return `MODE AUDIO :
-- Commence par dire que tu as bien reçu l'audio
+- Si c'est un simple remerciement, une simple salutation ou un court message social, réponds en une phrase courte naturelle sans structure
+- Sinon, commence par dire que tu as bien reçu l'audio
 - Réponds avec chaleur et pédagogie
 - Sois bref et clair`;
   }
@@ -1693,7 +1772,8 @@ async function traiterAudio(user, msg, historique) {
 🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
 🔴 [INSPIRATION] : Nous pouvons réessayer calmement.
 ❓ [CONSOLIDATION] : Réessaie avec un message vocal plus clair.`,
-      fiche: null
+      fiche: null,
+      bypassFormat: false
     };
   }
 
@@ -1706,7 +1786,8 @@ async function traiterAudio(user, msg, historique) {
 🟡 [SAVOIR] : Le format audio n'est pas encore supporté.
 🔴 [INSPIRATION] : Ce n’est pas grave.
 ❓ [CONSOLIDATION] : Envoie-moi un audio en OGG, MP3, MP4, WAV, WEBM, AAC ou AMR.`,
-      fiche: null
+      fiche: null,
+      bypassFormat: false
     };
   }
 
@@ -1719,7 +1800,9 @@ async function traiterAudio(user, msg, historique) {
 ❓ [CONSOLIDATION] : Envoie-moi un message vocal plus clair.`;
   }
 
-  return { reponse, fiche: null };
+  const bypassFormat = estReponseRelationnelleSimpleIA(reponse);
+
+  return { reponse, fiche: null, bypassFormat };
 }
 
 async function traiterImage(user, msg, historique) {
@@ -1731,7 +1814,8 @@ async function traiterImage(user, msg, historique) {
 🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
 🔴 [INSPIRATION] : Nous allons y arriver.
 ❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`,
-      fiche: null
+      fiche: null,
+      bypassFormat: false
     };
   }
 
@@ -1744,7 +1828,8 @@ async function traiterImage(user, msg, historique) {
 🟡 [SAVOIR] : Le format d’image n'est pas encore supporté.
 🔴 [INSPIRATION] : Ce n’est pas grave.
 ❓ [CONSOLIDATION] : Envoie-moi une image en JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
-      fiche: null
+      fiche: null,
+      bypassFormat: false
     };
   }
 
@@ -1758,7 +1843,7 @@ async function traiterImage(user, msg, historique) {
 ❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`;
   }
 
-  return { reponse, fiche: null };
+  return { reponse, fiche: null, bypassFormat: false };
 }
 
 /* =========================================================
@@ -1786,6 +1871,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
     await envoyerWhatsApp(
       from,
       `${HEADER_MWALIMU}
+────────────────
 🔵 [VÉCU] : J'ai bien reçu ta demande.
 🟡 [SAVOIR] : Les rappels du matin sont maintenant arrêtés.
 🔴 [INSPIRATION] : Tu gardes le contrôle de ton rythme.
@@ -1799,6 +1885,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
     await envoyerWhatsApp(
       from,
       `${HEADER_MWALIMU}
+────────────────
 🔵 [VÉCU] : J'ai bien reçu ta demande.
 🟡 [SAVOIR] : Les rappels du matin sont maintenant réactivés.
 🔴 [INSPIRATION] : Une bonne régularité aide à progresser.
@@ -1813,6 +1900,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
     await envoyerWhatsApp(
       from,
       `${HEADER_MWALIMU}
+────────────────
 🔵 [VÉCU] : J'ai bien reçu ta demande.
 🟡 [SAVOIR] : L'historique a été remis à zéro.
 🔴 [INSPIRATION] : Repartir proprement peut aider.
@@ -1830,6 +1918,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
     await envoyerWhatsApp(
       from,
       `${HEADER_MWALIMU}
+────────────────
 🔄 *Mise à jour de ton profil*
 🟡 Quel est ton *prénom* ?`
     );
@@ -1860,6 +1949,7 @@ cron.schedule("0 7 * * *", async () => {
         const citation = pick(CITATIONS.patriotisme);
 
         const messageRappel = `${HEADER_MWALIMU}
+────────────────
 🔵 [VÉCU] : Bonjour ${appel}.
 🟡 [SAVOIR] : Petit rappel du matin : avance aujourd’hui avec calme et sérieux.
 🔴 [INSPIRATION] : Ton objectif n’est pas d’aller vite, mais de bien comprendre.
@@ -1923,6 +2013,7 @@ app.post("/webhook", async (req, res) => {
       return await envoyerWhatsApp(
         from,
         `${HEADER_MWALIMU}
+────────────────
 🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.
 🟡 Quel est ton *prénom* ?`
       );
@@ -1939,6 +2030,7 @@ app.post("/webhook", async (req, res) => {
         return await envoyerWhatsApp(
           from,
           `${HEADER_MWALIMU}
+────────────────
 🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`
         );
       }
@@ -2020,12 +2112,14 @@ Exemple : avocat, médecin, ingénieur, pilote.`
       const resultat = await traiterAudio({ ...user, phone: from }, msg, historique);
       reponseBrute = resultat?.reponse || "";
       ficheContexte = resultat?.fiche || null;
+      bypassFormat = Boolean(resultat?.bypassFormat);
       contenuUtilisateurPourMemoire = "[audio envoyé]";
       await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
     } else if (msgType === "image") {
       const resultat = await traiterImage({ ...user, phone: from }, msg, historique);
       reponseBrute = resultat?.reponse || "";
       ficheContexte = resultat?.fiche || null;
+      bypassFormat = Boolean(resultat?.bypassFormat);
       contenuUtilisateurPourMemoire = "[image envoyée]";
       await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
     } else {
@@ -2070,6 +2164,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`
         await envoyerWhatsApp(
           from,
           `${HEADER_MWALIMU}
+────────────────
 🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}.
 🟡 [SAVOIR] : Je suis momentanément très sollicité.
 🔴 [INSPIRATION] : Ce petit contretemps n’empêche pas notre progression.
