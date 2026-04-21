@@ -273,6 +273,44 @@ function normaliserMessageCourt(texte = "") {
     .trim();
 }
 
+function normaliserTranscriptionAudioSocial(texte = "") {
+  let t = normaliserMessageCourt(texte);
+
+  t = t
+    .replace(/\bmwalimu\b/g, " ")
+    .replace(/\bhein\b/g, " ")
+    .replace(/\beuh\b/g, " ")
+    .replace(/\bhum\b/g, " ")
+    .replace(/\bah\b/g, " ")
+    .replace(/\boh\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const remplacements = [
+    [/^mercii+$/i, "merci"],
+    [/^mersi$/i, "merci"],
+    [/^okai$/i, "okay"],
+    [/^okey$/i, "okay"],
+    [/^okay+$/i, "okay"],
+    [/^o k$/i, "ok"],
+    [/^d accord$/i, "d accord"],
+    [/^dac$/i, "dac"],
+    [/^sa va$/i, "ca va"],
+    [/^ca vas$/i, "ca va"],
+    [/^merci beaucoup$/i, "merci beaucoup"],
+    [/^grand merci$/i, "grand merci"]
+  ];
+
+  for (const [regex, valeur] of remplacements) {
+    if (regex.test(t)) {
+      t = valeur;
+      break;
+    }
+  }
+
+  return t;
+}
+
 function adapterTexteGenre(texte = "", nom = "") {
   const appel = construireAppel({ nom });
   return String(texte || "")
@@ -291,7 +329,7 @@ function nettoyerAppelsRepetitifs(texte = "", nom = "") {
 }
 
 function estMessageSalutation(texte = "") {
-  const t = normaliserMessageCourt(texte);
+  const t = normaliserTranscriptionAudioSocial(texte) || normaliserMessageCourt(texte);
 
   const salutations = [
     "bonjour", "bonsoir", "salut", "cc", "coucou", "hello", "bjr",
@@ -301,11 +339,11 @@ function estMessageSalutation(texte = "") {
   ];
 
   if (salutations.includes(t)) return true;
-  return /^(bonjour|bonsoir|salut|hello|coucou|mbote|bjr)(\s+mwalimu)?$/i.test(t);
+  return /^(bonjour|bonsoir|salut|hello|coucou|mbote|bjr)$/i.test(t);
 }
 
 function estMessageRemerciement(texte = "") {
-  const t = normaliserMessageCourt(texte);
+  const t = normaliserTranscriptionAudioSocial(texte) || normaliserMessageCourt(texte);
 
   if (!t) return false;
 
@@ -336,7 +374,7 @@ function estMessageRemerciement(texte = "") {
 }
 
 function estMessageCourtHumain(texte = "") {
-  const t = normaliserMessageCourt(texte);
+  const t = normaliserTranscriptionAudioSocial(texte) || normaliserMessageCourt(texte);
   return [
     "ok", "okay", "d accord", "dac", "ca va", "oui", "non",
     "bien", "super", "cool", "entendu", "compris"
@@ -730,7 +768,7 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
 function construireReponseHumaineSimple(user = {}, texte = "") {
   const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
   const appel = construireAppel({ nom: prenom });
-  const t = normaliserMessageCourt(texte);
+  const t = normaliserTranscriptionAudioSocial(texte) || normaliserMessageCourt(texte);
 
   if (estMessageRemerciement(t)) {
     return pick([
@@ -1497,7 +1535,7 @@ async function analyserAudioCourt(user, audioBuffer, mimeType, historique = []) 
 MODE ANALYSE AUDIO COURT :
 - Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide
 - Détecte si l'audio est un simple message social ou non
-- "social" = merci, bonjour, bonsoir, salut, bonne nuit, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va
+- "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va
 - "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.
 - Si l'audio est trop flou, mets "type":"incompris"
 - Réponds uniquement sous ce format :
@@ -1827,12 +1865,9 @@ async function traiterAudio(user, msg, historique) {
 
   if (!audioId) {
     return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton audio.
-🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
-🔴 [INSPIRATION] : Nous pouvons réessayer calmement.
-❓ [CONSOLIDATION] : Réessaie avec un message vocal plus clair.`,
+      reponse: "Je n'arrive pas à lire ton audio.",
       fiche: null,
-      bypassFormat: false
+      bypassFormat: true
     };
   }
 
@@ -1841,33 +1876,42 @@ async function traiterAudio(user, msg, historique) {
 
   if (!estMimeAudioSupporte(mimeType)) {
     return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton audio.
-🟡 [SAVOIR] : Le format audio n'est pas encore supporté.
-🔴 [INSPIRATION] : Ce n’est pas grave.
-❓ [CONSOLIDATION] : Envoie-moi un audio en OGG, MP3, MP4, WAV, WEBM, AAC ou AMR.`,
+      reponse: "Format audio non supporté.",
       fiche: null,
-      bypassFormat: false
+      bypassFormat: true
     };
   }
 
-  const analyseAudio = await analyserAudioCourt(user, buffer, mimeType, historique);
-  const transcription = String(analyseAudio?.transcription || "").trim();
-  const typeAudio = String(analyseAudio?.type || "incompris").trim().toLowerCase();
+  const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
+  const transcriptionBrute = String(analyse?.transcription || "").trim();
+  const transcription = normaliserTranscriptionAudioSocial(transcriptionBrute);
+  const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
-  if (typeAudio === "social" && transcription) {
-    const reponseSimple = construireReponseHumaineSimple(user, transcription);
-    if (reponseSimple) {
+  if (transcription && estMessageRelationnelSimple(transcription)) {
+    const rep = construireReponseHumaineSimple(user, transcription);
+    if (rep) {
       return {
-        reponse: reponseSimple,
+        reponse: rep,
         fiche: null,
         bypassFormat: true
       };
     }
   }
 
-  if (typeAudio === "social" && !transcription) {
+  if (transcriptionBrute && estMessageRelationnelSimple(transcriptionBrute)) {
+    const rep = construireReponseHumaineSimple(user, transcriptionBrute);
+    if (rep) {
+      return {
+        reponse: rep,
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+  }
+
+  if (typeAudio === "social") {
     return {
-      reponse: construireReponseHumaineSimple(user, "merci") || "Je t’en prie 😊",
+      reponse: construireReponseHumaineSimple(user, transcription || transcriptionBrute || "merci") || "Je t’en prie 😊",
       fiche: null,
       bypassFormat: true
     };
@@ -1875,16 +1919,22 @@ async function traiterAudio(user, msg, historique) {
 
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
 
-  if (!reponse || !String(reponse).trim()) {
-    reponse = `🔵 [VÉCU] : J'ai bien reçu ton audio.
-🟡 [SAVOIR] : Je n'arrive pas encore à le traiter correctement.
-🔴 [INSPIRATION] : Nous pouvons réessayer calmement.
-❓ [CONSOLIDATION] : Envoie-moi un message vocal plus clair.`;
+  if (!reponse || !reponse.trim()) {
+    reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
+    return {
+      reponse,
+      fiche: null,
+      bypassFormat: true
+    };
   }
 
   const bypassFormat = estReponseRelationnelleSimpleIA(reponse);
 
-  return { reponse, fiche: null, bypassFormat };
+  return {
+    reponse,
+    fiche: null,
+    bypassFormat
+  };
 }
 
 async function traiterImage(user, msg, historique) {
