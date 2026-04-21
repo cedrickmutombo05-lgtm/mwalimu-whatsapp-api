@@ -1488,6 +1488,64 @@ Donne maintenant la réponse finale de Mwalimu.`
   );
 }
 
+async function analyserAudioCourt(user, audioBuffer, mimeType, historique = []) {
+  const system = construireSystemPrompt(user);
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: `${system}
+MODE ANALYSE AUDIO COURT :
+- Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide
+- Détecte si l'audio est un simple message social ou non
+- "social" = merci, bonjour, bonsoir, salut, bonne nuit, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va
+- "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.
+- Si l'audio est trop flou, mets "type":"incompris"
+- Réponds uniquement sous ce format :
+{
+  "transcription": "texte court entendu",
+  "type": "social|pedagogique|incompris"
+}`
+  });
+
+  const formattedHistory = historique.slice(-2).map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(m.content) }]
+  }));
+
+  const brut = await safeAI(
+    async () => {
+      const r = await genererAvecRetry(model, {
+        contents: [
+          ...formattedHistory,
+          {
+            role: "user",
+            parts: [
+              { text: "Analyse cet audio et réponds uniquement en JSON valide." },
+              { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
+            ]
+          }
+        ],
+        generationConfig: { temperature: 0 }
+      });
+      return r.response.text();
+    },
+    `{"transcription":"","type":"incompris"}`
+  );
+
+  try {
+    const parsed = JSON.parse(String(brut || "{}"));
+    return {
+      transcription: String(parsed.transcription || "").trim(),
+      type: String(parsed.type || "incompris").trim().toLowerCase()
+    };
+  } catch {
+    return {
+      transcription: "",
+      type: "incompris"
+    };
+  }
+}
+
 async function reponseAudioUneSeulePasse(user, audioBuffer, mimeType, historique = [], fiche = null) {
   const system = construireSystemPrompt(user);
 
@@ -1508,12 +1566,13 @@ Aucune fiche locale fiable trouvée.`;
     systemInstruction: `${system}
 MODE AUDIO :
 - Commence toujours par dire : "J'ai bien reçu ton audio." seulement si le message audio n'est pas juste un simple salut ou un simple remerciement
-- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, d'accord ou autre message social très court :
+- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va ou autre message social très court :
   - réponds avec UNE seule phrase naturelle et courte
   - sans structure pédagogique
   - sans header
   - sans citation
   - sans encouragement
+  - sans VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
 - Si le sujet demande une liste complète, sois exhaustif
 - Sois succinct quand c'est possible
 - Ne génère jamais la citation finale
@@ -1788,6 +1847,29 @@ async function traiterAudio(user, msg, historique) {
 ❓ [CONSOLIDATION] : Envoie-moi un audio en OGG, MP3, MP4, WAV, WEBM, AAC ou AMR.`,
       fiche: null,
       bypassFormat: false
+    };
+  }
+
+  const analyseAudio = await analyserAudioCourt(user, buffer, mimeType, historique);
+  const transcription = String(analyseAudio?.transcription || "").trim();
+  const typeAudio = String(analyseAudio?.type || "incompris").trim().toLowerCase();
+
+  if (typeAudio === "social" && transcription) {
+    const reponseSimple = construireReponseHumaineSimple(user, transcription);
+    if (reponseSimple) {
+      return {
+        reponse: reponseSimple,
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+  }
+
+  if (typeAudio === "social" && !transcription) {
+    return {
+      reponse: construireReponseHumaineSimple(user, "merci") || "Je t’en prie 😊",
+      fiche: null,
+      bypassFormat: true
     };
   }
 
