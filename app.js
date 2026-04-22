@@ -1327,6 +1327,33 @@ async function envoyerWhatsApp(to, texte) {
   }
 }
 
+async function envoyerIndicateurFrappe(messageId) {
+  try {
+    if (!messageId) return;
+
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: messageId,
+        typing_indicator: {
+          type: "text"
+        }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 15000
+      }
+    );
+  } catch (e) {
+    console.error("Erreur typing indicator:", e.response?.data || e.message);
+  }
+}
+
 async function recupererMetaMediaInfo(mediaId) {
   const r = await axios.get(
     `https://graph.facebook.com/v18.0/${mediaId}`,
@@ -2273,6 +2300,8 @@ app.post("/webhook", async (req, res) => {
       [msgId]
     );
     if (check.rowCount === 0) return;
+
+    await envoyerIndicateurFrappe(msgId);
 
     let user = await getUser(from);
 
