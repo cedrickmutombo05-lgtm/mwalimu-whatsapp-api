@@ -139,10 +139,6 @@ const CITATIONS = {
     "***« Le civisme commence par de petits actes honnêtes. »***",
     "***« Respecter la loi, c’est aussi participer à la vie de la nation. »***"
   ],
-  relationnel: [
-    "***« La politesse et le respect élèvent aussi la personne. »***",
-    "***« Un cœur discipliné honore sa famille et sa patrie. »***"
-  ],
   general: [
     "***« Apprendre avec sérieux aujourd’hui, c’est mieux servir le Congo demain. »***",
     "***« Le savoir et la discipline font grandir la nation. »***"
@@ -709,6 +705,17 @@ function extraireSujetMemoire(texte = "") {
   return t.split(" ").slice(0, 4).join(" ");
 }
 
+function estQuestionSimpleDefinition(texte = "") {
+  const t = normaliserTexteMemoire(texte);
+  return (
+    t.startsWith("qu est ce que ") ||
+    t.startsWith("c est quoi ") ||
+    t.startsWith("definis ") ||
+    t.startsWith("definition ") ||
+    t.startsWith("qu est ce qu ")
+  );
+}
+
 function retrouverSujetProche(historique = [], texteActuel = "") {
   const actuel = extraireSujetMemoire(texteActuel);
   if (!actuel) return "";
@@ -725,6 +732,8 @@ function retrouverSujetProche(historique = [], texteActuel = "") {
 
 function construirePhraseRetourMemoire(historique = [], texteActuel = "", user = {}) {
   if (estMessageRelationnelSimple(texteActuel)) return "";
+  if (estQuestionSimpleDefinition(texteActuel)) return "";
+
   const sujet = retrouverSujetProche(historique, texteActuel);
   const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
   if (!sujet) return "";
@@ -826,7 +835,7 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
 }
 
 /* =========================================================
-   6B) DÉTECTION DE THÈME CORRIGÉE
+   6B) DÉTECTION DE THÈME
 ========================================================= */
 function detecterThemePrincipal(question = "", corps = "", fiche = null) {
   const q = String(question || "").toLowerCase();
@@ -1013,51 +1022,53 @@ B. Mémoriser sans comprendre suffit toujours
 👉 Choisis la bonne réponse.`;
 }
 
+function blocConsolidationAuto(question = "", corps = "", fiche = null) {
+  return `❓ [CONSOLIDATION] :\n\n${construireQuestionsConsolidation(question, corps, fiche)}`;
+}
+
+function contientConsolidationComplete(texte = "") {
+  const t = String(texte || "").toLowerCase();
+  return (
+    t.includes("question de réflexion") &&
+    t.includes("petite vérification rapide")
+  );
+}
+
 function renforcerBlocConsolidation(corps = "", question = "", fiche = null) {
   let t = String(corps || "").trim();
   if (!t) return t;
-  const blocPlus = construireQuestionsConsolidation(question, t, fiche);
+
+  if (contientConsolidationComplete(t)) return t;
 
   if (/❓\s*\[CONSOLIDATION\]/i.test(t)) {
     return t.replace(
-      /(❓\s*\[CONSOLIDATION\]\s*:?\s*[\s\S]*?)(?=\n👉|\n🌟|$)/i,
-      (match) => {
-        if (/question de réflexion/i.test(match) || /petite vérification rapide/i.test(match)) return match;
-        return `${match}\n\n${blocPlus}`;
+      /(❓\s*\[CONSOLIDATION\]\s*:?\s*)([\s\S]*?)(?=(\n👉|\n🌟|$))/i,
+      (_m, p1, p2) => {
+        const contenu = String(p2 || "").trim();
+        if (!contenu) {
+          return blocConsolidationAuto(question, t, fiche);
+        }
+        return `${p1}${contenu}\n\n${construireQuestionsConsolidation(question, t, fiche)}`;
       }
     );
   }
 
-  return `${t}\n\n❓ [CONSOLIDATION] :\n\n${blocPlus}`;
+  return `${t}\n\n${blocConsolidationAuto(question, t, fiche)}`;
 }
 
-function choisirOuvertureContextuelle(reponse = "", user = {}, question = "", fiche = null) {
+function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "", fiche = null) {
   const q = normaliserMessageCourt(question);
   if (estMessageRelationnelSimple(q)) return "";
 
   const theme = detecterThemePrincipal(question, reponse, fiche);
 
-  if (theme === THEME_MATH) {
-    return pick(OUVERTURES.math);
-  }
-  if (theme === THEME_HISTOIRE) {
-    return pick(OUVERTURES.histoire);
-  }
-  if (theme === THEME_GEOGRAPHIE) {
-    return pick(OUVERTURES.geographie);
-  }
-  if (theme === THEME_DROIT) {
-    return pick(OUVERTURES.droit);
-  }
-  if (theme === THEME_PHYSIQUE) {
-    return pick(OUVERTURES.physique);
-  }
-  if (theme === THEME_CHIMIE) {
-    return pick(OUVERTURES.chimie);
-  }
-  if (theme === THEME_FRANCAIS) {
-    return pick(OUVERTURES.francais);
-  }
+  if (theme === THEME_MATH) return pick(OUVERTURES.math);
+  if (theme === THEME_HISTOIRE) return pick(OUVERTURES.histoire);
+  if (theme === THEME_GEOGRAPHIE) return pick(OUVERTURES.geographie);
+  if (theme === THEME_DROIT) return pick(OUVERTURES.droit);
+  if (theme === THEME_PHYSIQUE) return pick(OUVERTURES.physique);
+  if (theme === THEME_CHIMIE) return pick(OUVERTURES.chimie);
+  if (theme === THEME_FRANCAIS) return pick(OUVERTURES.francais);
 
   if (estQuestionTechnique(q)) {
     return "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse.";
@@ -1070,11 +1081,15 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
   const corps = String(reponse || "").toLowerCase();
   const q = String(question || "").toLowerCase();
 
-  if (estMessageRelationnelSimple(question)) {
-    return "";
-  }
+  if (estMessageRelationnelSimple(question)) return "";
 
-  if (corps.includes("je n'arrive pas encore") || corps.includes("petit souci technique") || corps.includes("réessaie") || corps.includes("image plus nette") || corps.includes("message vocal plus clair")) {
+  if (
+    corps.includes("je n'arrive pas encore") ||
+    corps.includes("petit souci technique") ||
+    corps.includes("réessaie") ||
+    corps.includes("image plus nette") ||
+    corps.includes("message vocal plus clair")
+  ) {
     return "🌟 Mot d'encouragement : Ne te décourage pas ; nous pouvons reprendre calmement.";
   }
 
@@ -1256,43 +1271,10 @@ function fautChercherSurWeb(question = "", fiche = null) {
   return false;
 }
 
-function dedupeBlocFinal(texte = "") {
-  const lignes = String(texte || "").split("\n");
-  const resultat = [];
-  const uniques = new Set();
-
-  for (const ligneBrute of lignes) {
-    const ligne = ligneBrute.trimRight();
-    const normalisee = ligne.trim().toLowerCase();
-
-    if (!normalisee) {
-      if (resultat[resultat.length - 1] !== "") {
-        resultat.push("");
-      }
-      continue;
-    }
-
-    const estUnique =
-      normalisee.startsWith("👉 ") ||
-      normalisee.startsWith("🌟 mot d'encouragement") ||
-      normalisee.startsWith("***«") ||
-      normalisee === "────────────────";
-
-    if (estUnique) {
-      if (uniques.has(normalisee)) continue;
-      uniques.add(normalisee);
-    }
-
-    resultat.push(ligne);
-  }
-
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-async function attendreAvecBackoff(tentative = 0) {
+function attendreAvecBackoff(tentative = 0) {
   const base = 1800;
   const extra = tentative * 1400;
-  await attendre(base + extra);
+  return attendre(base + extra);
 }
 
 async function genererAvecRetry(model, payload, maxRetries = 2) {
@@ -1999,7 +1981,9 @@ Aucune fiche locale disponible.`;
 - Ne réponds jamais comme un moteur de recherche
 - Si la question demande une liste administrative complète, recopie la liste complète trouvée
 - Si tu n'es pas sûr d'une liste complète, dis-le honnêtement
-- N'invente jamais un territoire, une commune, une ville ou un article`
+- N'invente jamais un territoire, une commune, une ville ou un article
+- N'écris jamais deux fois la structure pédagogique
+- Si tu as déjà donné VÉCU, SAVOIR, INSPIRATION et CONSOLIDATION, ne recommence pas`
       },
       { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
       ...historique.slice(-5),
@@ -2131,7 +2115,8 @@ MODE IMAGE :
 - Sois succinct
 - Ne génère jamais la citation finale
 - Ne génère jamais l’ouverture finale
-- Ne génère jamais le mot d’encouragement final`,
+- Ne génère jamais le mot d’encouragement final
+- N'écris jamais deux fois la structure pédagogique`,
     tools: [{ googleSearch: {} }]
   });
 
@@ -2161,6 +2146,9 @@ MODE IMAGE :
   );
 }
 
+/* =========================================================
+   11B) NETTOYAGE FORT DES DOUBLONS
+========================================================= */
 function nettoyerStyleFinal(texte = "") {
   return String(texte || "")
     .replace(/\bfuture avocate\b/gi, "future professionnelle")
@@ -2168,41 +2156,50 @@ function nettoyerStyleFinal(texte = "") {
     .replace(/\bmon enfant\b/gi, "cher élève");
 }
 
-function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
-  const reponseNettoyee = nettoyerReponseIA(reponseBrute);
-  const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
-  const corpsAvecStructure = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
-  const corpsRenforce = renforcerBlocConsolidation(corpsAvecStructure, question, fiche);
+function extraireBloc(tag = "VÉCU", texte = "") {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`([🔵🟡🔴❓]\\s*\\[${escaped}\\]\\s*:\\s*[\\s\\S]*?)(?=\\n[🔵🟡🔴❓]\\s*\\[|$)`, "i");
+  const match = String(texte || "").match(regex);
+  return match ? match[1].trim() : "";
+}
 
-  let corps = adapterTexteGenre(corpsRenforce, user.nom);
-  corps = nettoyerAppelsRepetitifs(corps, user.nom);
-  corps = nettoyerStyleFinal(corps);
-  corps = supprimerDoublonsLignes(corps);
+function contientStructureComplete(texte = "") {
+  const t = String(texte || "");
+  return (
+    /🔵\s*VÉCU/i.test(t) &&
+    /🟡\s*SAVOIR/i.test(t) &&
+    /🔴\s*INSPIRATION/i.test(t) &&
+    /❓\s*CONSOLIDATION/i.test(t)
+  );
+}
 
-  const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corps, user, question, fiche), user.nom);
-  const encouragement = choisirEncouragementContextuel(corps, question);
-  const citation = choisirCitationContextuelle(corps, question, fiche);
+function normaliserStructureUnique(texte = "") {
+  const t = String(texte || "").trim();
+  if (!contientStructureComplete(t)) return t;
 
-  const parties = [
-    HEADER_MWALIMU,
-    "────────────────",
-    corps,
-    ouverture,
-    encouragement,
-    citation
-  ].filter((v) => String(v || "").trim() !== "");
+  const vecu = extraireBloc("VÉCU", t);
+  const savoir = extraireBloc("SAVOIR", t);
+  const inspiration = extraireBloc("INSPIRATION", t);
+  const consolidation = extraireBloc("CONSOLIDATION", t);
 
-  return dedupeBlocFinal(parties.join("\n"));
+  return [vecu, savoir, inspiration, consolidation]
+    .filter(Boolean)
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
   let t = String(corps || "").trim();
+
+  if (contientStructureComplete(t)) {
+    return normaliserStructureUnique(t);
+  }
+
   const aVecu = /🔵\s*VÉCU/i.test(t);
   const aSavoir = /🟡\s*SAVOIR/i.test(t);
   const aInspiration = /🔴\s*INSPIRATION/i.test(t);
   const aConsolidation = /❓\s*CONSOLIDATION/i.test(t);
-
-  if (aVecu && aSavoir && aInspiration && aConsolidation) return t;
 
   const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
   const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
@@ -2218,7 +2215,113 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
   if (!aInspiration) morceaux.push(inspiration);
   if (!aConsolidation) morceaux.push(consolidation);
 
-  return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  return normaliserStructureUnique(
+    morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim()
+  );
+}
+
+function garderUneSeuleCitation(texte = "") {
+  const lignes = String(texte || "").split("\n");
+  let citationGardee = false;
+  const resultat = [];
+
+  for (const ligne of lignes) {
+    const trimmed = ligne.trim();
+    const estCitation = /^\*\*\*«.*»\*\*\*$/.test(trimmed);
+    if (estCitation) {
+      if (citationGardee) continue;
+      citationGardee = true;
+    }
+    resultat.push(ligne);
+  }
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function garderUneSeuleOuverture(texte = "") {
+  const lignes = String(texte || "").split("\n");
+  let ouvertureGardee = false;
+  const resultat = [];
+
+  for (const ligne of lignes) {
+    const trimmed = ligne.trim();
+    if (trimmed.startsWith("👉 ")) {
+      if (ouvertureGardee) continue;
+      ouvertureGardee = true;
+    }
+    resultat.push(ligne);
+  }
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function dedupeBlocFinal(texte = "") {
+  let t = String(texte || "");
+
+  t = normaliserStructureUnique(t);
+  t = garderUneSeuleOuverture(t);
+  t = garderUneSeuleCitation(t);
+
+  const lignes = t.split("\n");
+  const resultat = [];
+  const uniques = new Set();
+
+  for (const ligneBrute of lignes) {
+    const ligne = ligneBrute.trimRight();
+    const normalisee = ligne.trim().toLowerCase();
+
+    if (!normalisee) {
+      if (resultat[resultat.length - 1] !== "") {
+        resultat.push("");
+      }
+      continue;
+    }
+
+    const estUnique =
+      normalisee.startsWith("👉 ") ||
+      normalisee.startsWith("🌟 mot d'encouragement") ||
+      normalisee.startsWith("***«") ||
+      normalisee === "────────────────" ||
+      /[🔵🟡🔴❓]\s*(vécu|savoir|inspiration|consolidation)/i.test(ligne);
+
+    if (estUnique) {
+      if (uniques.has(normalisee)) continue;
+      uniques.add(normalisee);
+    }
+
+    resultat.push(ligne);
+  }
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
+  const reponseNettoyee = nettoyerReponseIA(reponseBrute);
+  const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
+  let corps = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
+  corps = renforcerBlocConsolidation(corps, question, fiche);
+  corps = normaliserStructureUnique(corps);
+
+  let corpsFinal = adapterTexteGenre(corps, user.nom);
+  corpsFinal = nettoyerAppelsRepetitifs(corpsFinal, user.nom);
+  corpsFinal = nettoyerStyleFinal(corpsFinal);
+  corpsFinal = supprimerDoublonsLignes(corpsFinal);
+  corpsFinal = normaliserStructureUnique(corpsFinal);
+
+  const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corpsFinal, user, question, fiche), user.nom);
+  const encouragement = choisirEncouragementContextuel(corpsFinal, question);
+  const citation = choisirCitationContextuelle(corpsFinal, question, fiche);
+
+  const parties = [
+    HEADER_MWALIMU,
+    "────────────────",
+    corpsFinal,
+    ouverture,
+    encouragement,
+    citation
+  ].filter((v) => String(v || "").trim() !== "");
+
+  return dedupeBlocFinal(parties.join("\n"));
 }
 
 function messageSecours(user, msgType = "message") {
@@ -2345,6 +2448,9 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   if (theme === THEME_HISTOIRE) {
     consigneFinale += `\nLe message concerne l'histoire. Reste strictement dans le thème histoire pour l'explication, la consolidation et l'ouverture.`;
   }
+
+  consigneFinale += `\nN'ajoute jamais une deuxième structure pédagogique si une première structure complète est déjà présente.`;
+  consigneFinale += `\nN'introduis pas de retour sur une ancienne question si l'élève pose une nouvelle question simple de définition.`;
 
   if (antiBoucle.consigne) {
     consigneFinale += `\n${antiBoucle.consigne}`;
