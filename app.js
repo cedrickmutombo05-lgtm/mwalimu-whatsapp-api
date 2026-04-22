@@ -74,39 +74,33 @@ function horodatage() {
 }
 
 function logInfo(event, meta = {}) {
-  console.log(
-    JSON.stringify({
-      level: "info",
-      event,
-      ts: horodatage(),
-      ...meta
-    })
-  );
+  console.log(JSON.stringify({
+    level: "info",
+    event,
+    ts: horodatage(),
+    ...meta
+  }));
 }
 
 function logWarn(event, meta = {}) {
-  console.warn(
-    JSON.stringify({
-      level: "warn",
-      event,
-      ts: horodatage(),
-      ...meta
-    })
-  );
+  console.warn(JSON.stringify({
+    level: "warn",
+    event,
+    ts: horodatage(),
+    ...meta
+  }));
 }
 
 function logError(event, error, meta = {}) {
-  console.error(
-    JSON.stringify({
-      level: "error",
-      event,
-      ts: horodatage(),
-      message: error?.message || String(error || ""),
-      stack: error?.stack || null,
-      data: error?.response?.data || null,
-      ...meta
-    })
-  );
+  console.error(JSON.stringify({
+    level: "error",
+    event,
+    ts: horodatage(),
+    message: error?.message || String(error || ""),
+    stack: error?.stack || null,
+    data: error?.response?.data || null,
+    ...meta
+  }));
 }
 
 function nowMs() {
@@ -755,11 +749,39 @@ function retrouverSujetProche(historique = [], texteActuel = "") {
 }
 
 function construirePhraseRetourMemoire(historique = [], texteActuel = "", user = {}) {
+  const texte = String(texteActuel || "").trim().toLowerCase();
+
+  if (!texte) return "";
   if (estMessageRelationnelSimple(texteActuel)) return "";
   if (estQuestionSimpleDefinition(texteActuel)) return "";
+
+  if (
+    texte.includes("[audio envoyé]") ||
+    texte.includes("[audio envoye]") ||
+    texte.includes("[image envoyée]") ||
+    texte.includes("[image envoyee]") ||
+    texte === "audio envoyé" ||
+    texte === "audio envoye" ||
+    texte === "image envoyée" ||
+    texte === "image envoyee" ||
+    texte.includes("audio envoye") ||
+    texte.includes("image envoyee")
+  ) {
+    return "";
+  }
+
   const sujet = retrouverSujetProche(historique, texteActuel);
   const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
+
   if (!sujet) return "";
+  if (
+    ["audio envoye", "image envoyee", "audio envoyé", "image envoyée"].includes(
+      String(sujet || "").toLowerCase()
+    )
+  ) {
+    return "";
+  }
+
   return `🔵 [VÉCU] : Je suis content que tu reviennes sur ${sujet}, ${prenom}. Prenons cela calmement et clairement.`;
 }
 
@@ -2190,196 +2212,6 @@ MODE IMAGE :
     },
     ""
   );
-}
-
-/* =========================================================
-   11B) NETTOYAGE FORT DES DOUBLONS
-========================================================= */
-function nettoyerStyleFinal(texte = "") {
-  return String(texte || "")
-    .replace(/\bfuture avocate\b/gi, "future professionnelle")
-    .replace(/\bfutur avocat\b/gi, "futur professionnel")
-    .replace(/\bmon enfant\b/gi, "cher élève");
-}
-
-function extraireBloc(tag = "VÉCU", texte = "") {
-  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`([🔵🟡🔴❓]\\s*\\[${escaped}\\]\\s*:\\s*[\\s\\S]*?)(?=\\n[🔵🟡🔴❓]\\s*\\[|$)`, "i");
-  const match = String(texte || "").match(regex);
-  return match ? match[1].trim() : "";
-}
-
-function contientStructureComplete(texte = "") {
-  const t = String(texte || "");
-  return (
-    /🔵\s*VÉCU/i.test(t) &&
-    /🟡\s*SAVOIR/i.test(t) &&
-    /🔴\s*INSPIRATION/i.test(t) &&
-    /❓\s*CONSOLIDATION/i.test(t)
-  );
-}
-
-function normaliserStructureUnique(texte = "") {
-  const t = String(texte || "").trim();
-  if (!contientStructureComplete(t)) return t;
-
-  const vecu = extraireBloc("VÉCU", t);
-  const savoir = extraireBloc("SAVOIR", t);
-  const inspiration = extraireBloc("INSPIRATION", t);
-  const consolidation = extraireBloc("CONSOLIDATION", t);
-
-  return [vecu, savoir, inspiration, consolidation]
-    .filter(Boolean)
-    .join("\n\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
-  let t = String(corps || "").trim();
-
-  if (contientStructureComplete(t)) {
-    return normaliserStructureUnique(t);
-  }
-
-  const aVecu = /🔵\s*VÉCU/i.test(t);
-  const aSavoir = /🟡\s*SAVOIR/i.test(t);
-  const aInspiration = /🔴\s*INSPIRATION/i.test(t);
-  const aConsolidation = /❓\s*CONSOLIDATION/i.test(t);
-
-  const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
-  const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
-
-  const vecu = aVecu ? "" : (phraseRetour || `🔵 [VÉCU] : Je suis heureux de continuer cet échange avec toi, ${prenom}.`);
-  const savoir = aSavoir ? "" : `🟡 [SAVOIR] : Voici l’idée essentielle à retenir.`;
-  const inspiration = aInspiration ? "" : `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ta confiance.`;
-  const consolidation = aConsolidation ? "" : `❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.`;
-
-  const morceaux = [];
-  if (!aVecu) morceaux.push(vecu);
-  morceaux.push(t);
-  if (!aSavoir) morceaux.push(savoir);
-  if (!aInspiration) morceaux.push(inspiration);
-  if (!aConsolidation) morceaux.push(consolidation);
-
-  return normaliserStructureUnique(morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim());
-}
-
-function garderUneSeuleCitation(texte = "") {
-  const lignes = String(texte || "").split("\n");
-  let citationGardee = false;
-  const resultat = [];
-
-  for (const ligne of lignes) {
-    const trimmed = ligne.trim();
-    const estCitation = /^\*\*\*«.*»\*\*\*$/.test(trimmed);
-    if (estCitation) {
-      if (citationGardee) continue;
-      citationGardee = true;
-    }
-    resultat.push(ligne);
-  }
-
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function garderUneSeuleOuverture(texte = "") {
-  const lignes = String(texte || "").split("\n");
-  let ouvertureGardee = false;
-  const resultat = [];
-
-  for (const ligne of lignes) {
-    const trimmed = ligne.trim();
-    if (trimmed.startsWith("👉 ")) {
-      if (ouvertureGardee) continue;
-      ouvertureGardee = true;
-    }
-    resultat.push(ligne);
-  }
-
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function dedupeBlocFinal(texte = "") {
-  let t = String(texte || "");
-  t = normaliserStructureUnique(t);
-  t = garderUneSeuleOuverture(t);
-  t = garderUneSeuleCitation(t);
-
-  const lignes = t.split("\n");
-  const resultat = [];
-  const uniques = new Set();
-
-  for (const ligneBrute of lignes) {
-    const ligne = ligneBrute.trimRight();
-    const normalisee = ligne.trim().toLowerCase();
-
-    if (!normalisee) {
-      if (resultat[resultat.length - 1] !== "") {
-        resultat.push("");
-      }
-      continue;
-    }
-
-    const estUnique =
-      normalisee.startsWith("👉 ") ||
-      normalisee.startsWith("🌟 mot d'encouragement") ||
-      normalisee.startsWith("***«") ||
-      normalisee === "────────────────" ||
-      /[🔵🟡🔴❓]\s*(vécu|savoir|inspiration|consolidation)/i.test(ligne);
-
-    if (estUnique) {
-      if (uniques.has(normalisee)) continue;
-      uniques.add(normalisee);
-    }
-
-    resultat.push(ligne);
-  }
-
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
-  const reponseNettoyee = nettoyerReponseIA(reponseBrute);
-  const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
-
-  let corps = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
-  corps = renforcerBlocConsolidation(corps, question, fiche);
-  corps = normaliserStructureUnique(corps);
-
-  let corpsFinal = adapterTexteGenre(corps, user.nom);
-  corpsFinal = nettoyerAppelsRepetitifs(corpsFinal, user.nom);
-  corpsFinal = nettoyerStyleFinal(corpsFinal);
-  corpsFinal = supprimerDoublonsLignes(corpsFinal);
-  corpsFinal = normaliserStructureUnique(corpsFinal);
-
-  const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corpsFinal, user, question, fiche), user.nom);
-  const encouragement = choisirEncouragementContextuel(corpsFinal, question);
-  const citation = choisirCitationContextuelle(corpsFinal, question, fiche);
-
-  const parties = [
-    HEADER_MWALIMU,
-    "────────────────",
-    corpsFinal,
-    ouverture,
-    encouragement,
-    citation
-  ].filter((v) => String(v || "").trim() !== "");
-
-  return dedupeBlocFinal(parties.join("\n"));
-}
-
-function messageSecours(user, msgType = "message") {
-  const appel = construireAppel({ nom: user?.nom || "élève" });
-  return `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}, ${appel}.
-🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
-🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.
-❓ [CONSOLIDATION] : Réessaie dans un instant, ou reformule ta question plus simplement.
-👉 Je reste à tes côtés.
-🌟 Mot d'encouragement : Nous pouvons reprendre calmement.
-${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /* =========================================================
