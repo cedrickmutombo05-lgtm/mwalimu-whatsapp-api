@@ -722,8 +722,16 @@ function retrouverSujetProche(historique = [], texteActuel = "") {
   for (let i = historique.length - 1; i >= 0; i--) {
     const item = historique[i];
     if (!item || item.role !== "user") continue;
-    const ancien = extraireSujetMemoire(item.content || "");
-    if (ancien && (ancien === actuel || String(item.content || "").toLowerCase().includes(actuel))) {
+    const contenu = String(item.content || "");
+    if (
+      contenu.includes("[audio envoyé]") ||
+      contenu.includes("[image envoyée]") ||
+      contenu.includes("[message")
+    ) {
+      continue;
+    }
+    const ancien = extraireSujetMemoire(contenu);
+    if (ancien && (ancien === actuel || contenu.toLowerCase().includes(actuel))) {
       return ancien;
     }
   }
@@ -733,11 +741,15 @@ function retrouverSujetProche(historique = [], texteActuel = "") {
 function construirePhraseRetourMemoire(historique = [], texteActuel = "", user = {}) {
   if (estMessageRelationnelSimple(texteActuel)) return "";
   if (estQuestionSimpleDefinition(texteActuel)) return "";
+  if (/audio|image|document/i.test(String(texteActuel || ""))) return "";
 
   const sujet = retrouverSujetProche(historique, texteActuel);
   const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
+
   if (!sujet) return "";
-  return `🔵 [VÉCU] : Je suis content que tu reviennes sur ${sujet}, ${prenom}. Prenons cela calmement et clairement.`;
+  if (["audio envoye", "image envoyee", "document"].includes(String(sujet).toLowerCase())) return "";
+
+  return `🔵 [VÉCU] : Je suis content que tu reviennes sur ${sujet}, ${prenom}.`;
 }
 
 function supprimerDoublonsLignes(texte = "") {
@@ -1271,10 +1283,10 @@ function fautChercherSurWeb(question = "", fiche = null) {
   return false;
 }
 
-function attendreAvecBackoff(tentative = 0) {
+async function attendreAvecBackoff(tentative = 0) {
   const base = 1800;
   const extra = tentative * 1400;
-  return attendre(base + extra);
+  await attendre(base + extra);
 }
 
 async function genererAvecRetry(model, payload, maxRetries = 2) {
@@ -2074,14 +2086,21 @@ MODE AUDIO :
 - Sois succinct quand c'est possible
 - Ne génère jamais la citation finale
 - Ne génère jamais l’ouverture finale
-- Ne génère jamais le mot d’encouragement final`,
+- Ne génère jamais le mot d’encouragement final
+- N'introduis jamais une réponse par "je suis content que tu reviennes sur audio envoyé" ou formule équivalente`,
     tools: [{ googleSearch: {} }]
   });
 
-  const formattedHistory = historique.slice(-4).map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: String(m.content) }]
-  }));
+  const formattedHistory = historique
+    .filter((m) => {
+      const c = String(m.content || "");
+      return !c.includes("[audio envoyé]") && !c.includes("[image envoyée]");
+    })
+    .slice(-4)
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content) }]
+    }));
 
   return await safeAI(
     async () => {
@@ -2121,10 +2140,16 @@ MODE IMAGE :
   });
 
   const contents = [
-    ...historique.slice(-4).map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content) }]
-    })),
+    ...historique
+      .filter((m) => {
+        const c = String(m.content || "");
+        return !c.includes("[audio envoyé]") && !c.includes("[image envoyée]");
+      })
+      .slice(-4)
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: String(m.content) }]
+      })),
     {
       role: "user",
       parts: [
@@ -2149,11 +2174,22 @@ MODE IMAGE :
 /* =========================================================
    11B) NETTOYAGE FORT DES DOUBLONS
 ========================================================= */
-function nettoyerStyleFinal(texte = "") {
+function couperDoubleReponse(texte = "") {
+  const t = String(texte || "").trim();
+  const blocs = t.split(/(?=🔴🟡🔵)/g).filter(Boolean);
+  if (blocs.length <= 1) return t;
+  return blocs[0].trim();
+}
+
+function nettoyerParasitesMemoire(texte = "") {
   return String(texte || "")
-    .replace(/\bfuture avocate\b/gi, "future professionnelle")
-    .replace(/\bfutur avocat\b/gi, "futur professionnel")
-    .replace(/\bmon enfant\b/gi, "cher élève");
+    .replace(/🔵\s*VÉCU\s*:\s*Je suis content que tu reviennes sur .*?\.\s*/gi, "")
+    .replace(/🔵\s*VÉCU\s*:\s*Je suis heureux de continuer cet échange avec toi, .*?\.\s*/gi, "")
+    .replace(/Prenons cela calmement et clairement\.\s*/gi, "")
+    .replace(/\baudio envoy[eé]\b/gi, "")
+    .replace(/\bimage envoy[ée]e?\b/gi, "")
+    .replace(/\bfuture professionnelle\b/gi, "future personne compétente")
+    .trim();
 }
 
 function extraireBloc(tag = "VÉCU", texte = "") {
@@ -2175,49 +2211,22 @@ function contientStructureComplete(texte = "") {
 
 function normaliserStructureUnique(texte = "") {
   const t = String(texte || "").trim();
-  if (!contientStructureComplete(t)) return t;
 
-  const vecu = extraireBloc("VÉCU", t);
-  const savoir = extraireBloc("SAVOIR", t);
-  const inspiration = extraireBloc("INSPIRATION", t);
-  const consolidation = extraireBloc("CONSOLIDATION", t);
+  const vecuMatch = t.match(/🔵\s*VÉCU[\s\S]*?(?=\n[🟡🔴❓]\s*|$)/i);
+  const savoirMatch = t.match(/🟡\s*\[SAVOIR[\s\S]*?(?=\n[🔴❓]\s*|$)/i);
+  const inspirationMatch = t.match(/🔴\s*\[INSPIRATION[\s\S]*?(?=\n❓\s*|$)/i);
+  const consolidationMatch = t.match(/❓\s*\[CONSOLIDATION[\s\S]*/i);
 
-  return [vecu, savoir, inspiration, consolidation]
+  return [
+    vecuMatch?.[0]?.trim(),
+    savoirMatch?.[0]?.trim(),
+    inspirationMatch?.[0]?.trim(),
+    consolidationMatch?.[0]?.trim()
+  ]
     .filter(Boolean)
     .join("\n\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
-  let t = String(corps || "").trim();
-
-  if (contientStructureComplete(t)) {
-    return normaliserStructureUnique(t);
-  }
-
-  const aVecu = /🔵\s*VÉCU/i.test(t);
-  const aSavoir = /🟡\s*SAVOIR/i.test(t);
-  const aInspiration = /🔴\s*INSPIRATION/i.test(t);
-  const aConsolidation = /❓\s*CONSOLIDATION/i.test(t);
-
-  const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
-  const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
-  const vecu = aVecu ? "" : (phraseRetour || `🔵 [VÉCU] : Je suis heureux de continuer cet échange avec toi, ${prenom}.`);
-  const savoir = aSavoir ? "" : `🟡 [SAVOIR] : Voici l’idée essentielle à retenir.`;
-  const inspiration = aInspiration ? "" : `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ta confiance.`;
-  const consolidation = aConsolidation ? "" : `❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.`;
-
-  const morceaux = [];
-  if (!aVecu) morceaux.push(vecu);
-  morceaux.push(t);
-  if (!aSavoir) morceaux.push(savoir);
-  if (!aInspiration) morceaux.push(inspiration);
-  if (!aConsolidation) morceaux.push(consolidation);
-
-  return normaliserStructureUnique(
-    morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim()
-  );
 }
 
 function garderUneSeuleCitation(texte = "") {
@@ -2255,16 +2264,61 @@ function garderUneSeuleOuverture(texte = "") {
   return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function dedupeBlocFinal(texte = "") {
-  let t = String(texte || "");
+function nettoyerStyleFinal(texte = "") {
+  return String(texte || "")
+    .replace(/\bfuture avocate\b/gi, "future personne compétente")
+    .replace(/\bfutur avocat\b/gi, "future personne compétente")
+    .replace(/\bmon enfant\b/gi, "cher élève");
+}
 
+function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
+  let t = String(corps || "").trim();
+  t = couperDoubleReponse(t);
+  t = nettoyerParasitesMemoire(t);
+
+  if (contientStructureComplete(t)) {
+    return normaliserStructureUnique(t);
+  }
+
+  const aVecu = /🔵\s*VÉCU/i.test(t);
+  const aSavoir = /🟡\s*SAVOIR/i.test(t);
+  const aInspiration = /🔴\s*INSPIRATION/i.test(t);
+  const aConsolidation = /❓\s*CONSOLIDATION/i.test(t);
+
+  const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
+  const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
+
+  const vecu = aVecu ? "" : (phraseRetour || `🔵 [VÉCU] : Je suis heureux de t'aider, ${prenom}.`);
+  const savoir = aSavoir ? "" : `🟡 [SAVOIR] : Voici l’idée essentielle à retenir.`;
+  const inspiration = aInspiration ? "" : `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ta confiance.`;
+  const consolidation = aConsolidation ? "" : `❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.`;
+
+  const morceaux = [];
+  if (!aVecu) morceaux.push(vecu);
+  morceaux.push(t);
+  if (!aSavoir) morceaux.push(savoir);
+  if (!aInspiration) morceaux.push(inspiration);
+  if (!aConsolidation) morceaux.push(consolidation);
+
+  return normaliserStructureUnique(
+    nettoyerParasitesMemoire(
+      morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim()
+    )
+  );
+}
+
+function dedupeBlocFinal(texte = "") {
+  let t = String(texte || "").trim();
+
+  t = couperDoubleReponse(t);
+  t = nettoyerParasitesMemoire(t);
   t = normaliserStructureUnique(t);
   t = garderUneSeuleOuverture(t);
   t = garderUneSeuleCitation(t);
 
   const lignes = t.split("\n");
   const resultat = [];
-  const uniques = new Set();
+  let dernierBloc = "";
 
   for (const ligneBrute of lignes) {
     const ligne = ligneBrute.trimRight();
@@ -2277,16 +2331,15 @@ function dedupeBlocFinal(texte = "") {
       continue;
     }
 
-    const estUnique =
-      normalisee.startsWith("👉 ") ||
-      normalisee.startsWith("🌟 mot d'encouragement") ||
-      normalisee.startsWith("***«") ||
-      normalisee === "────────────────" ||
-      /[🔵🟡🔴❓]\s*(vécu|savoir|inspiration|consolidation)/i.test(ligne);
+    const estBlocStructure =
+      /🔵\s*vécu/i.test(ligne) ||
+      /🟡\s*savoir/i.test(ligne) ||
+      /🔴\s*inspiration/i.test(ligne) ||
+      /❓\s*consolidation/i.test(ligne);
 
-    if (estUnique) {
-      if (uniques.has(normalisee)) continue;
-      uniques.add(normalisee);
+    if (estBlocStructure) {
+      if (dernierBloc === normalisee) continue;
+      dernierBloc = normalisee;
     }
 
     resultat.push(ligne);
@@ -2296,19 +2349,28 @@ function dedupeBlocFinal(texte = "") {
 }
 
 function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
-  const reponseNettoyee = nettoyerReponseIA(reponseBrute);
-  const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
+  let propre = couperDoubleReponse(reponseBrute);
+  propre = nettoyerReponseIA(propre);
+  propre = nettoyerParasitesMemoire(propre);
+
+  const sortieScientifique = appliquerLes4EtapesScientifiques(propre, question, fiche);
+
   let corps = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
   corps = renforcerBlocConsolidation(corps, question, fiche);
+  corps = nettoyerParasitesMemoire(corps);
   corps = normaliserStructureUnique(corps);
 
   let corpsFinal = adapterTexteGenre(corps, user.nom);
   corpsFinal = nettoyerAppelsRepetitifs(corpsFinal, user.nom);
   corpsFinal = nettoyerStyleFinal(corpsFinal);
   corpsFinal = supprimerDoublonsLignes(corpsFinal);
+  corpsFinal = nettoyerParasitesMemoire(corpsFinal);
   corpsFinal = normaliserStructureUnique(corpsFinal);
 
-  const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corpsFinal, user, question, fiche), user.nom);
+  const ouverture = adapterTexteGenre(
+    choisirOuvertureContextuelle(corpsFinal, user, question, fiche),
+    user.nom
+  );
   const encouragement = choisirEncouragementContextuel(corpsFinal, question);
   const citation = choisirCitationContextuelle(corpsFinal, question, fiche);
 
@@ -2501,7 +2563,12 @@ async function traiterAudio(user, msg, historique) {
     };
   }
 
-  const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
+  const historiquePropre = (historique || []).filter((m) => {
+    const c = String(m.content || "");
+    return !c.includes("[audio envoyé]") && !c.includes("[image envoyée]");
+  });
+
+  const analyse = await analyserAudioCourt(user, buffer, mimeType, historiquePropre);
   const transcriptionBrute = String(analyse?.transcription || "").trim();
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
@@ -2553,7 +2620,8 @@ async function traiterAudio(user, msg, historique) {
     };
   }
 
-  let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
+  let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historiquePropre, null);
+  reponse = nettoyerParasitesMemoire(reponse);
 
   const texteAudioNormalise = normaliserTexteRelationnel(reponse);
 
@@ -2617,6 +2685,7 @@ async function traiterImage(user, msg, historique) {
 
   const base64Image = buffer.toString("base64");
   let reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
+  reponse = nettoyerParasitesMemoire(reponse);
 
   if (!reponse || !String(reponse).trim()) {
     reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.
@@ -2930,7 +2999,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`
   }
 
   const messageFinal = bypassFormat
-    ? reponseBrute
+    ? nettoyerParasitesMemoire(reponseBrute)
     : construireMessageFinal(
         user,
         reponseBrute,
