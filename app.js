@@ -149,16 +149,62 @@ const CITATIONS = {
   ]
 };
 
-const OUVERTURES = [
-  "👉 Nous avançons ensemble, pas à pas.",
-  "👉 Tu peux m'envoyer ta réponse, et je vais la vérifier avec toi.",
-  "👉 Garde confiance, nous allons comprendre cela ensemble."
-];
+const OUVERTURES = {
+  histoire: [
+    "👉 Nous pouvons continuer avec une autre petite question d’histoire.",
+    "👉 Si tu veux, nous pouvons voir maintenant un exemple historique concret.",
+    "👉 Nous pouvons avancer pas à pas sur un autre fait historique."
+  ],
+  geographie: [
+    "👉 Nous pouvons continuer avec une autre petite question de géographie.",
+    "👉 Si tu veux, nous pouvons voir maintenant une autre subdivision ou un autre lieu.",
+    "👉 Nous pouvons poursuivre avec une autre notion de géographie."
+  ],
+  droit: [
+    "👉 Nous pouvons continuer avec une autre petite question de droit.",
+    "👉 Si tu veux, nous pouvons examiner maintenant un autre article ou une autre notion juridique.",
+    "👉 Nous pouvons avancer avec une autre notion de droit."
+  ],
+  math: [
+    "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse.",
+    "👉 Si tu veux, nous pouvons faire un autre petit exercice.",
+    "👉 Nous pouvons poursuivre étape par étape."
+  ],
+  physique: [
+    "👉 Nous pouvons continuer avec une autre petite question de physique.",
+    "👉 Si tu veux, nous pouvons appliquer cela à un exemple simple.",
+    "👉 Nous pouvons reprendre cela avec un autre cas pratique."
+  ],
+  chimie: [
+    "👉 Nous pouvons continuer avec une autre petite question de chimie.",
+    "👉 Si tu veux, nous pouvons voir maintenant un autre exemple chimique.",
+    "👉 Nous pouvons reprendre cette notion avec un autre cas simple."
+  ],
+  francais: [
+    "👉 Nous pouvons continuer avec une autre petite question de français.",
+    "👉 Si tu veux, nous pouvons faire un autre exemple ensemble.",
+    "👉 Nous pouvons poursuivre avec une autre notion de langue."
+  ],
+  general: [
+    "👉 Nous avançons ensemble, pas à pas.",
+    "👉 Tu peux m'envoyer ta réponse, et je vais la vérifier avec toi.",
+    "👉 Garde confiance, nous allons comprendre cela ensemble."
+  ]
+};
 
 const MATIERE_MATH = "math";
 const MATIERE_PHYSIQUE = "physique";
 const MATIERE_CHIMIE = "chimie";
 const MATIERE_GENERAL = "general";
+
+const THEME_HISTOIRE = "histoire";
+const THEME_GEOGRAPHIE = "geographie";
+const THEME_DROIT = "droit";
+const THEME_MATH = "math";
+const THEME_PHYSIQUE = "physique";
+const THEME_CHIMIE = "chimie";
+const THEME_FRANCAIS = "francais";
+const THEME_GENERAL = "general";
 
 const REGLE_FORMAT_MATH = `FORMAT OBLIGATOIRE D'ÉCRITURE SCIENTIFIQUE (WhatsApp) :
 - Écris les calculs, formules et expressions de manière simple, scolaire et lisible
@@ -196,7 +242,7 @@ STYLE OBLIGATOIRE :
 - Ne sois jamais bavard
 - Ne félicite pas exagérément
 - N'écris pas "bravo" sauf si l'élève a réellement bien répondu, corrigé juste ou fourni une bonne démarche
-- Évite les compliments excessifs comme "future avocate" ou "œil de lynx" sauf si c'est vraiment utile
+- Évite les compliments excessifs comme "future avocate", "futur avocat", "œil de lynx", "mon enfant" sauf si c'est vraiment utile
 - Si l'élève dit juste bonjour, bonsoir, merci, bonne nuit, réponds humainement et normalement, sans structure pédagogique
 - Quand il faut une vraie réponse pédagogique, la structure est :
 🔵 [VÉCU]
@@ -251,7 +297,7 @@ const JSON_SCHEMA_AUDIO = {
    4) CACHE TTL PROPRE
 ========================================================= */
 class TTLCache {
-  constructor({ ttlMs = 60_000, maxEntries = 500, cleanupIntervalMs = 120_000 } = {}) {
+  constructor({ ttlMs = 60000, maxEntries = 500, cleanupIntervalMs = 120000 } = {}) {
     this.ttlMs = ttlMs;
     this.maxEntries = maxEntries;
     this.store = new Map();
@@ -310,9 +356,9 @@ class TTLCache {
 }
 
 const cache = new TTLCache({
-  ttlMs: 60_000,
+  ttlMs: 60000,
   maxEntries: 1000,
-  cleanupIntervalMs: 120_000
+  cleanupIntervalMs: 120000
 });
 
 function makeCacheKey(user = {}, texte = "") {
@@ -414,8 +460,7 @@ function construireAppel(user = {}) {
     `**${prenom}**`,
     `${prenom}`,
     `cher ${prenom}`,
-    `mon ami`,
-    `mon enfant`
+    `mon ami`
   ];
   return pick(styles);
 }
@@ -482,7 +527,8 @@ function adapterTexteGenre(texte = "", nom = "") {
     .replace(/ma chère\s+[^,\n]+/gi, appel)
     .replace(/mon cher\s+[^,\n]+/gi, appel)
     .replace(/mon élève/gi, appel)
-    .replace(/cher élève/gi, appel);
+    .replace(/cher élève/gi, appel)
+    .replace(/\bmon enfant\b/gi, appel);
 }
 
 function nettoyerAppelsRepetitifs(texte = "", nom = "") {
@@ -779,80 +825,140 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
   return { matiere, texte };
 }
 
-function choisirCitationContextuelle(reponse = "", question = "") {
-  const t = `${reponse} ${question}`.toLowerCase();
+/* =========================================================
+   6B) DÉTECTION DE THÈME CORRIGÉE
+========================================================= */
+function detecterThemePrincipal(question = "", corps = "", fiche = null) {
+  const q = String(question || "").toLowerCase();
+  const r = String(corps || "").toLowerCase();
+  const f = `${fiche?.matiere || ""} ${fiche?.titre || ""} ${fiche?.contenu || ""}`.toLowerCase();
+  const t = `${q} ${r} ${f}`;
 
-  if (estMessageRelationnelSimple(question)) {
-    return "";
-  }
+  if (
+    q.includes("qu'est-ce que l'histoire") ||
+    q.includes("qu est ce que l histoire") ||
+    q.includes("histoire") ||
+    t.includes("événement passé") ||
+    t.includes("evenement passe") ||
+    t.includes("passé") ||
+    t.includes("passe") ||
+    t.includes("chronologie") ||
+    t.includes("historique")
+  ) return THEME_HISTOIRE;
 
-  if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("droit")) {
-    return pick(CITATIONS.civisme);
-  }
   if (
-    t.includes("géographie") || t.includes("geographie") ||
-    t.includes("territoire") || t.includes("province") ||
-    t.includes("commune") || t.includes("ville")
-  ) {
-    return pick(CITATIONS.geographie);
-  }
+    q.includes("loi") ||
+    q.includes("code") ||
+    q.includes("article") ||
+    q.includes("juridique") ||
+    q.includes("droit") ||
+    q.includes("ohada") ||
+    q.includes("tribunal") ||
+    q.includes("constitution")
+  ) return THEME_DROIT;
+
   if (
-    t.includes("math") || t.includes("calcul") ||
-    t.includes("équation") || t.includes("equation") ||
-    t.includes("fraction") || t.includes("chimie")
-  ) {
-    return pick(CITATIONS.mathematiques);
-  }
-  if (t.includes("physique") || t.includes("science")) {
-    return pick(CITATIONS.sciences);
-  }
-  if (t.includes("histoire") || t.includes("date")) {
-    return pick(CITATIONS.histoire);
-  }
+    q.includes("géographie") ||
+    q.includes("geographie") ||
+    q.includes("territoire") ||
+    q.includes("territoires") ||
+    q.includes("province") ||
+    q.includes("commune") ||
+    q.includes("communes") ||
+    q.includes("ville") ||
+    q.includes("villes") ||
+    q.includes("haut-katanga") ||
+    q.includes("haut katanga") ||
+    q.includes("rdc") ||
+    q.includes("congo")
+  ) return THEME_GEOGRAPHIE;
+
+  if (
+    q.includes("math") ||
+    q.includes("maths") ||
+    q.includes("équation") ||
+    q.includes("equation") ||
+    q.includes("fraction") ||
+    q.includes("calcul") ||
+    q.includes("racine") ||
+    q.includes("puissance")
+  ) return THEME_MATH;
+
+  if (
+    q.includes("physique") ||
+    q.includes("force") ||
+    q.includes("vitesse") ||
+    q.includes("énergie") ||
+    q.includes("energie") ||
+    q.includes("masse") ||
+    q.includes("distance")
+  ) return THEME_PHYSIQUE;
+
+  if (
+    q.includes("chimie") ||
+    q.includes("molécule") ||
+    q.includes("molecule") ||
+    q.includes("acide") ||
+    q.includes("base") ||
+    q.includes("solution") ||
+    q.includes("h₂o") ||
+    q.includes("h2o") ||
+    q.includes("co₂") ||
+    q.includes("co2")
+  ) return THEME_CHIMIE;
+
+  if (
+    q.includes("français") ||
+    q.includes("francais") ||
+    q.includes("grammaire") ||
+    q.includes("orthographe") ||
+    q.includes("verbe") ||
+    q.includes("nom") ||
+    q.includes("adjectif")
+  ) return THEME_FRANCAIS;
+
+  if (String(fiche?.matiere || "").toLowerCase().includes("histoire")) return THEME_HISTOIRE;
+  if (String(fiche?.matiere || "").toLowerCase().includes("géographie") || String(fiche?.matiere || "").toLowerCase().includes("geographie")) return THEME_GEOGRAPHIE;
+  if (String(fiche?.matiere || "").toLowerCase().includes("droit")) return THEME_DROIT;
+  if (String(fiche?.matiere || "").toLowerCase().includes("math")) return THEME_MATH;
+  if (String(fiche?.matiere || "").toLowerCase().includes("physique")) return THEME_PHYSIQUE;
+  if (String(fiche?.matiere || "").toLowerCase().includes("chimie")) return THEME_CHIMIE;
+  if (String(fiche?.matiere || "").toLowerCase().includes("français") || String(fiche?.matiere || "").toLowerCase().includes("francais")) return THEME_FRANCAIS;
+
+  return THEME_GENERAL;
+}
+
+function choisirCitationContextuelle(reponse = "", question = "", fiche = null) {
+  if (estMessageRelationnelSimple(question)) return "";
+
+  const theme = detecterThemePrincipal(question, reponse, fiche);
+
+  if (theme === THEME_HISTOIRE) return pick(CITATIONS.histoire);
+  if (theme === THEME_GEOGRAPHIE) return pick(CITATIONS.geographie);
+  if (theme === THEME_DROIT) return pick(CITATIONS.civisme);
+  if (theme === THEME_MATH) return pick(CITATIONS.mathematiques);
+  if (theme === THEME_PHYSIQUE || theme === THEME_CHIMIE) return pick(CITATIONS.sciences);
+  if (theme === THEME_FRANCAIS) return pick(CITATIONS.francais);
 
   return pick(CITATIONS.general);
 }
 
-function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
-  let t = String(corps || "").trim();
-  const aVecu = /🔵\s*\[VÉCU\]/i.test(t);
-  const aSavoir = /🟡\s*\[SAVOIR\]/i.test(t);
-  const aInspiration = /🔴\s*\[INSPIRATION\]/i.test(t);
-  const aConsolidation = /❓\s*\[CONSOLIDATION\]/i.test(t);
-
-  if (aVecu && aSavoir && aInspiration && aConsolidation) return t;
-
-  const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
-  const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
-  const vecu = aVecu ? "" : (phraseRetour || `🔵 [VÉCU] : Je suis heureux de continuer cet échange avec toi, ${prenom}.`);
-  const savoir = aSavoir ? "" : `🟡 [SAVOIR] : Voici l’idée essentielle à retenir.`;
-  const inspiration = aInspiration ? "" : `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ta confiance.`;
-  const consolidation = aConsolidation ? "" : `❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.`;
-
-  const morceaux = [];
-  if (!aVecu) morceaux.push(vecu);
-  morceaux.push(t);
-  if (!aSavoir) morceaux.push(savoir);
-  if (!aInspiration) morceaux.push(inspiration);
-  if (!aConsolidation) morceaux.push(consolidation);
-
-  return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+function detecterThemeConsolidation(question = "", corps = "", fiche = null) {
+  return detecterThemePrincipal(question, corps, fiche);
 }
 
-function detecterThemeConsolidation(question = "", corps = "") {
-  const t = `${question} ${corps}`.toLowerCase();
-  if (t.includes("territoire") || t.includes("province") || t.includes("rdc") || t.includes("congo") || t.includes("commune") || t.includes("ville")) return "geographie";
-  if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("ohada") || t.includes("tribunal") || t.includes("droit")) return "droit";
-  if (t.includes("math") || t.includes("équation") || t.includes("fraction") || t.includes("calcul")) return "math";
-  if (t.includes("physique") || t.includes("vitesse") || t.includes("force")) return "physique";
-  if (t.includes("chimie") || t.includes("molécule") || t.includes("acide") || t.includes("base")) return "chimie";
-  return "general";
-}
+function construireQuestionsConsolidation(question = "", corps = "", fiche = null) {
+  const theme = detecterThemeConsolidation(question, corps, fiche);
 
-function construireQuestionsConsolidation(question = "", corps = "") {
-  const theme = detecterThemeConsolidation(question, corps);
+  if (theme === THEME_HISTOIRE) {
+    return `1) Question de réflexion : pourquoi est-il important de connaître le passé de son pays ?
+2) Petite vérification rapide :
+A. L’histoire aide à comprendre le présent
+B. L’histoire ne sert presque à rien
+👉 Choisis la bonne réponse.`;
+  }
 
-  if (theme === "geographie") {
+  if (theme === THEME_GEOGRAPHIE) {
     return `1) Question de réflexion : pourquoi faut-il connaître correctement les subdivisions administratives ?
 2) Petite vérification rapide :
 A. Une liste administrative doit être précise
@@ -860,7 +966,7 @@ B. Une liste approximative suffit
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "droit") {
+  if (theme === THEME_DROIT) {
     return `1) Question de réflexion : pourquoi faut-il vérifier la source avant de citer un article ?
 2) Petite vérification rapide :
 A. On peut citer sans vérifier
@@ -868,7 +974,7 @@ B. Il faut vérifier le texte exact
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "math") {
+  if (theme === THEME_MATH) {
     return `1) Question de réflexion : pourquoi la méthode compte-t-elle ?
 2) Petite vérification rapide :
 A. La méthode compte aussi
@@ -876,7 +982,7 @@ B. Seule la réponse finale compte
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "physique") {
+  if (theme === THEME_PHYSIQUE) {
     return `1) Question de réflexion : pourquoi les unités sont-elles importantes ?
 2) Petite vérification rapide :
 A. Les unités aident à vérifier le raisonnement
@@ -884,11 +990,19 @@ B. Les unités ne servent presque à rien
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "chimie") {
+  if (theme === THEME_CHIMIE) {
     return `1) Question de réflexion : pourquoi faut-il bien écrire les symboles chimiques ?
 2) Petite vérification rapide :
 A. H₂O et CO₂ sont différents
 B. H₂O et CO₂ sont identiques
+👉 Choisis la bonne réponse.`;
+  }
+
+  if (theme === THEME_FRANCAIS) {
+    return `1) Question de réflexion : pourquoi faut-il bien choisir ses mots ?
+2) Petite vérification rapide :
+A. Bien écrire aide à mieux penser
+B. Bien écrire n’a pas d’importance
 👉 Choisis la bonne réponse.`;
   }
 
@@ -899,10 +1013,10 @@ B. Mémoriser sans comprendre suffit toujours
 👉 Choisis la bonne réponse.`;
 }
 
-function renforcerBlocConsolidation(corps = "", question = "") {
+function renforcerBlocConsolidation(corps = "", question = "", fiche = null) {
   let t = String(corps || "").trim();
   if (!t) return t;
-  const blocPlus = construireQuestionsConsolidation(question, t);
+  const blocPlus = construireQuestionsConsolidation(question, t, fiche);
 
   if (/❓\s*\[CONSOLIDATION\]/i.test(t)) {
     return t.replace(
@@ -917,26 +1031,39 @@ function renforcerBlocConsolidation(corps = "", question = "") {
   return `${t}\n\n❓ [CONSOLIDATION] :\n\n${blocPlus}`;
 }
 
-function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
-  const corps = String(reponse || "").toLowerCase();
+function choisirOuvertureContextuelle(reponse = "", user = {}, question = "", fiche = null) {
   const q = normaliserMessageCourt(question);
-
   if (estMessageRelationnelSimple(q)) return "";
+
+  const theme = detecterThemePrincipal(question, reponse, fiche);
+
+  if (theme === THEME_MATH) {
+    return pick(OUVERTURES.math);
+  }
+  if (theme === THEME_HISTOIRE) {
+    return pick(OUVERTURES.histoire);
+  }
+  if (theme === THEME_GEOGRAPHIE) {
+    return pick(OUVERTURES.geographie);
+  }
+  if (theme === THEME_DROIT) {
+    return pick(OUVERTURES.droit);
+  }
+  if (theme === THEME_PHYSIQUE) {
+    return pick(OUVERTURES.physique);
+  }
+  if (theme === THEME_CHIMIE) {
+    return pick(OUVERTURES.chimie);
+  }
+  if (theme === THEME_FRANCAIS) {
+    return pick(OUVERTURES.francais);
+  }
 
   if (estQuestionTechnique(q)) {
     return "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse.";
   }
 
-  if (
-    corps.includes("géographie") ||
-    corps.includes("geographie") ||
-    corps.includes("rdc") ||
-    corps.includes("congo")
-  ) {
-    return "👉 Nous pouvons continuer avec une autre petite question de géographie.";
-  }
-
-  return pick(OUVERTURES);
+  return pick(OUVERTURES.general);
 }
 
 function choisirEncouragementContextuel(reponse = "", question = "") {
@@ -1670,7 +1797,9 @@ INTERDICTION :
 - Ne répète jamais le header Mwalimu
 - Ne génère jamais une citation finale
 - Ne génère jamais une deuxième ouverture finale
-- Ne génère jamais un mot d'encouragement final`;
+- Ne génère jamais un mot d'encouragement final
+- N'utilise pas "future avocate", "futur avocat" ou assimilé sauf si c'est explicitement demandé
+- Évite "mon enfant"`;
 }
 
 function toGeminiContents(messages = []) {
@@ -2032,19 +2161,27 @@ MODE IMAGE :
   );
 }
 
+function nettoyerStyleFinal(texte = "") {
+  return String(texte || "")
+    .replace(/\bfuture avocate\b/gi, "future professionnelle")
+    .replace(/\bfutur avocat\b/gi, "futur professionnel")
+    .replace(/\bmon enfant\b/gi, "cher élève");
+}
+
 function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
   const reponseNettoyee = nettoyerReponseIA(reponseBrute);
   const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
   const corpsAvecStructure = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
-  const corpsRenforce = renforcerBlocConsolidation(corpsAvecStructure, question);
+  const corpsRenforce = renforcerBlocConsolidation(corpsAvecStructure, question, fiche);
 
   let corps = adapterTexteGenre(corpsRenforce, user.nom);
   corps = nettoyerAppelsRepetitifs(corps, user.nom);
+  corps = nettoyerStyleFinal(corps);
   corps = supprimerDoublonsLignes(corps);
 
-  const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corps, user, question), user.nom);
+  const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corps, user, question, fiche), user.nom);
   const encouragement = choisirEncouragementContextuel(corps, question);
-  const citation = choisirCitationContextuelle(corps, question);
+  const citation = choisirCitationContextuelle(corps, question, fiche);
 
   const parties = [
     HEADER_MWALIMU,
@@ -2056,6 +2193,32 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
   ].filter((v) => String(v || "").trim() !== "");
 
   return dedupeBlocFinal(parties.join("\n"));
+}
+
+function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
+  let t = String(corps || "").trim();
+  const aVecu = /🔵\s*VÉCU/i.test(t);
+  const aSavoir = /🟡\s*SAVOIR/i.test(t);
+  const aInspiration = /🔴\s*INSPIRATION/i.test(t);
+  const aConsolidation = /❓\s*CONSOLIDATION/i.test(t);
+
+  if (aVecu && aSavoir && aInspiration && aConsolidation) return t;
+
+  const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
+  const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
+  const vecu = aVecu ? "" : (phraseRetour || `🔵 [VÉCU] : Je suis heureux de continuer cet échange avec toi, ${prenom}.`);
+  const savoir = aSavoir ? "" : `🟡 [SAVOIR] : Voici l’idée essentielle à retenir.`;
+  const inspiration = aInspiration ? "" : `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ta confiance.`;
+  const consolidation = aConsolidation ? "" : `❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.`;
+
+  const morceaux = [];
+  if (!aVecu) morceaux.push(vecu);
+  morceaux.push(t);
+  if (!aSavoir) morceaux.push(savoir);
+  if (!aInspiration) morceaux.push(inspiration);
+  if (!aConsolidation) morceaux.push(consolidation);
+
+  return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function messageSecours(user, msgType = "message") {
@@ -2158,7 +2321,8 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     texteMin.includes("communes") ||
     texteMin.includes("ville") ||
     texteMin.includes("villes") ||
-    texteMin.includes("province");
+    texteMin.includes("province") ||
+    texteMin.includes("histoire");
 
   if (besoinAnalyseIA) {
     analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
@@ -2175,6 +2339,11 @@ async function traiterTexte(user, texteUtilisateur, historique) {
 
   if (analyse.intention === "geographie_rdc" || estQuestionGeographieRDC(texteUtilisateur, fiche)) {
     consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
+  }
+
+  const theme = detecterThemePrincipal(texteUtilisateur, "", fiche);
+  if (theme === THEME_HISTOIRE) {
+    consigneFinale += `\nLe message concerne l'histoire. Reste strictement dans le thème histoire pour l'explication, la consolidation et l'ouverture.`;
   }
 
   if (antiBoucle.consigne) {
@@ -2613,6 +2782,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`
     historique = Array.isArray(userFresh?.historique)
       ? userFresh.historique
       : safeJsonParse(userFresh?.historique, []);
+    user = userFresh || user;
   }
 
   let reponseBrute = "";
