@@ -44,7 +44,7 @@ const pool = new Pool({
 });
 
 pool.on("error", (err) => {
-  console.error("❌ Erreur PostgreSQL inattendue :", err.message);
+  logError("postgres_idle", err);
 });
 
 app.use(express.json({
@@ -65,7 +65,48 @@ const webhookLimiter = rateLimit({
 app.use(webhookLimiter);
 
 /* =========================================================
-   2) CONSTANTES
+   2) LOGS
+========================================================= */
+function horodatage() {
+  return new Date().toISOString();
+}
+
+function logInfo(event, meta = {}) {
+  console.log(JSON.stringify({
+    level: "info",
+    event,
+    ts: horodatage(),
+    ...meta
+  }));
+}
+
+function logWarn(event, meta = {}) {
+  console.warn(JSON.stringify({
+    level: "warn",
+    event,
+    ts: horodatage(),
+    ...meta
+  }));
+}
+
+function logError(event, error, meta = {}) {
+  console.error(JSON.stringify({
+    level: "error",
+    event,
+    ts: horodatage(),
+    message: error?.message || String(error || ""),
+    stack: error?.stack || null,
+    data: error?.response?.data || null,
+    ...meta
+  }));
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+/* =========================================================
+   3) CONSTANTES
 ========================================================= */
 const HEADER_MWALIMU = "🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excellence* 🇨🇩";
 
@@ -186,10 +227,100 @@ const SYSTEM_GEO_WEB = `RÈGLES GÉOGRAPHIE / ADMINISTRATION :
 - Pour le Haut-Katanga, la RDC, provinces et subdivisions, sois particulièrement précis
 - Quand tu donnes une liste administrative, recopie tous les éléments trouvés, pas seulement une partie`;
 
+const JSON_SCHEMA_INTENTION = {
+  type: "OBJECT",
+  properties: {
+    intention: { type: "STRING" },
+    matiere: { type: "STRING" },
+    besoinCorrectionRenforcee: { type: "BOOLEAN" },
+    sujet: { type: "STRING" }
+  },
+  required: ["intention", "matiere", "besoinCorrectionRenforcee", "sujet"]
+};
+
+const JSON_SCHEMA_AUDIO = {
+  type: "OBJECT",
+  properties: {
+    transcription: { type: "STRING" },
+    type: { type: "STRING" }
+  },
+  required: ["transcription", "type"]
+};
+
 /* =========================================================
-   3) OUTILS SIMPLES
+   4) CACHE TTL PROPRE
 ========================================================= */
-const cache = new Map();
+class TTLCache {
+  constructor({ ttlMs = 60_000, maxEntries = 500, cleanupIntervalMs = 120_000 } = {}) {
+    this.ttlMs = ttlMs;
+    this.maxEntries = maxEntries;
+    this.store = new Map();
+    this.timer = setInterval(() => this.cleanup(), cleanupIntervalMs);
+    if (typeof this.timer.unref === "function") this.timer.unref();
+  }
+
+  get(key) {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) {
+      this.store.delete(key);
+      return null;
+    }
+    entry.lastAccess = Date.now();
+    return entry.value;
+  }
+
+  set(key, value, ttlMs = this.ttlMs) {
+    if (this.store.size >= this.maxEntries) {
+      this.evictOldest();
+    }
+
+    this.store.set(key, {
+      value,
+      createdAt: Date.now(),
+      lastAccess: Date.now(),
+      expiresAt: Date.now() + ttlMs
+    });
+  }
+
+  cleanup() {
+    const now = Date.now();
+    for (const [key, entry] of this.store.entries()) {
+      if (entry.expiresAt <= now) {
+        this.store.delete(key);
+      }
+    }
+  }
+
+  evictOldest() {
+    let oldestKey = null;
+    let oldestAccess = Infinity;
+
+    for (const [key, entry] of this.store.entries()) {
+      if (entry.lastAccess < oldestAccess) {
+        oldestAccess = entry.lastAccess;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey) {
+      this.store.delete(oldestKey);
+    }
+  }
+}
+
+const cache = new TTLCache({
+  ttlMs: 60_000,
+  maxEntries: 1000,
+  cleanupIntervalMs: 120_000
+});
+
+function makeCacheKey(user = {}, texte = "") {
+  const classe = String(user?.classe || "").toLowerCase().trim();
+  const nom = String(user?.nom || "").toLowerCase().trim();
+  const q = String(texte || "").toLowerCase().trim();
+  return `${nom}|${classe}|${q}`;
+}
 
 function getCache(key) {
   return cache.get(key);
@@ -197,9 +328,33 @@ function getCache(key) {
 
 function setCache(key, value) {
   cache.set(key, value);
-  setTimeout(() => cache.delete(key), 60000);
 }
 
+/* =========================================================
+   5) QUEUE PAR NUMÉRO
+========================================================= */
+const processingQueues = new Map();
+
+function runSequentialByKey(key, task) {
+  const previous = processingQueues.get(key) || Promise.resolve();
+
+  const execution = previous
+    .catch(() => {})
+    .then(() => task());
+
+  const tracked = execution.finally(() => {
+    if (processingQueues.get(key) === tracked) {
+      processingQueues.delete(key);
+    }
+  });
+
+  processingQueues.set(key, tracked);
+  return tracked;
+}
+
+/* =========================================================
+   6) OUTILS SIMPLES
+========================================================= */
 function pick(arr = []) {
   if (!arr.length) return "";
   return arr[Math.floor(Math.random() * arr.length)];
@@ -884,7 +1039,7 @@ function messageTypeLisible(msgType = "message") {
 }
 
 /* =========================================================
-   3B) FONCTIONS CRITIQUES
+   7) FONCTIONS CRITIQUES
 ========================================================= */
 function estMimeImageSupporte(mimeType = "") {
   const allowed = [
@@ -1021,7 +1176,7 @@ async function genererAvecRetry(model, payload, maxRetries = 2) {
       return await model.generateContent(payload);
     } catch (e) {
       lastError = e;
-      console.error(`Erreur Gemini tentative ${tentative + 1}:`, e?.message || e);
+      logError("gemini_retry", e, { tentative: tentative + 1 });
       if (estErreurQuotaGemini(e) && tentative < maxRetries) {
         await attendre(4000 + tentative * 3000);
         continue;
@@ -1038,7 +1193,7 @@ async function safeAI(generateFn, fallbackMessage) {
     if (!res || !String(res).trim()) throw new Error("Réponse vide");
     return res;
   } catch (e) {
-    console.error("❌ AI Error:", e.message);
+    logError("safe_ai", e);
     return fallbackMessage;
   }
 }
@@ -1072,11 +1227,70 @@ function extraireJsonGemini(brut = "") {
 }
 
 /* =========================================================
-   4) DB
+   8) DB
 ========================================================= */
+async function ensureBibliothequeSearchInfra() {
+  await pool.query(`
+    ALTER TABLE bibliotheque
+    ADD COLUMN IF NOT EXISTS search_vector tsvector;
+  `);
+
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION bibliotheque_search_vector_update()
+    RETURNS trigger AS $$
+    BEGIN
+      NEW.search_vector :=
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.titre, ''))), 'A') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.matiere, ''))), 'A') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.classe, ''))), 'B') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.mots_cles, ''))), 'A') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.contenu, ''))), 'B') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.commentaire_ai, ''))), 'C');
+      RETURN NEW;
+    END
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await pool.query(`
+    DROP TRIGGER IF EXISTS trg_bibliotheque_search_vector_update ON bibliotheque;
+  `);
+
+  await pool.query(`
+    CREATE TRIGGER trg_bibliotheque_search_vector_update
+    BEFORE INSERT OR UPDATE OF titre, matiere, classe, mots_cles, contenu, commentaire_ai
+    ON bibliotheque
+    FOR EACH ROW
+    EXECUTE FUNCTION bibliotheque_search_vector_update();
+  `);
+
+  await pool.query(`
+    UPDATE bibliotheque
+    SET search_vector =
+      setweight(to_tsvector('simple', unaccent(coalesce(titre, ''))), 'A') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(matiere, ''))), 'A') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(classe, ''))), 'B') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(mots_cles, ''))), 'A') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(contenu, ''))), 'B') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(commentaire_ai, ''))), 'C')
+    WHERE search_vector IS NULL;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_bibliotheque_search_vector
+    ON bibliotheque
+    USING GIN (search_vector);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_bibliotheque_updated_at
+    ON bibliotheque (updated_at DESC);
+  `);
+}
+
 async function initDB() {
   try {
     await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS processed_messages (
         msg_id TEXT PRIMARY KEY,
@@ -1140,9 +1354,26 @@ async function initDB() {
       );
     `);
 
-    console.log("✅ DB prête.");
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at
+      ON processed_messages (created_at DESC);
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_unanswered_questions_created_at
+      ON unanswered_questions (created_at DESC);
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_student_attempts_phone_sujet_updated
+      ON student_attempts (phone, sujet, updated_at DESC);
+    `);
+
+    await ensureBibliothequeSearchInfra();
+
+    logInfo("db_ready");
   } catch (e) {
-    console.error("Init DB Error:", e.message);
+    logError("init_db", e);
     process.exit(1);
   }
 }
@@ -1223,7 +1454,7 @@ async function logUnansweredQuestion(user = {}, question = "", msgType = "text",
       ]
     );
   } catch (e) {
-    console.error("Erreur logUnansweredQuestion:", e.message);
+    logError("log_unanswered_question", e);
   }
 }
 
@@ -1274,7 +1505,7 @@ async function resetAllStudentAttempts(phone) {
 }
 
 /* =========================================================
-   5) SÉCURITÉ WEBHOOK
+   9) SÉCURITÉ WEBHOOK
 ========================================================= */
 function verifierSignatureMeta(req) {
   try {
@@ -1302,7 +1533,7 @@ function extraireMessageWhatsApp(body) {
 }
 
 /* =========================================================
-   6) WHATSAPP
+   10) WHATSAPP
 ========================================================= */
 async function envoyerWhatsApp(to, texte) {
   try {
@@ -1323,7 +1554,7 @@ async function envoyerWhatsApp(to, texte) {
       }
     );
   } catch (e) {
-    console.error("Erreur WA:", e.response?.data || e.message);
+    logError("whatsapp_send", e, { to });
   }
 }
 
@@ -1350,7 +1581,7 @@ async function envoyerIndicateurFrappe(messageId) {
       }
     );
   } catch (e) {
-    console.error("Erreur typing indicator:", e.response?.data || e.message);
+    logWarn("typing_indicator_error", { message: e?.message || "", data: e?.response?.data || null });
   }
 }
 
@@ -1391,7 +1622,7 @@ async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
 }
 
 /* =========================================================
-   7) IA
+   11) IA
 ========================================================= */
 async function consulterBibliotheque(question = "", classe = "") {
   try {
@@ -1402,31 +1633,10 @@ async function consulterBibliotheque(question = "", classe = "") {
       SELECT
         id, titre, matiere, classe, mots_cles, contenu, commentaire_ai,
         source_type, source_url, provenance, created_at, updated_at,
-        ts_rank(
-          to_tsvector(
-            'simple',
-            unaccent(
-              coalesce(titre, '') || ' ' ||
-              coalesce(matiere, '') || ' ' ||
-              coalesce(mots_cles, '') || ' ' ||
-              coalesce(contenu, '') || ' ' ||
-              coalesce(commentaire_ai, '')
-            )
-          ),
-          plainto_tsquery('simple', unaccent($1))
-        ) AS score
+        ts_rank(search_vector, plainto_tsquery('simple', unaccent($1))) AS score
       FROM bibliotheque
       WHERE
-        to_tsvector(
-          'simple',
-          unaccent(
-            coalesce(titre, '') || ' ' ||
-            coalesce(matiere, '') || ' ' ||
-            coalesce(mots_cles, '') || ' ' ||
-            coalesce(contenu, '') || ' ' ||
-            coalesce(commentaire_ai, '')
-          )
-        ) @@ plainto_tsquery('simple', unaccent($1))
+        search_vector @@ plainto_tsquery('simple', unaccent($1))
         AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
       ORDER BY score DESC, updated_at DESC, id DESC
       LIMIT 1
@@ -1436,7 +1646,7 @@ async function consulterBibliotheque(question = "", classe = "") {
     const { rows } = await pool.query(q, [termes, classe || "", motifClasse]);
     return rows[0] || null;
   } catch (e) {
-    console.error("Erreur consulterBibliotheque:", e.message);
+    logError("consulter_bibliotheque", e);
     return null;
   }
 }
@@ -1463,18 +1673,22 @@ INTERDICTION :
 - Ne génère jamais un mot d'encouragement final`;
 }
 
+function toGeminiContents(messages = []) {
+  return messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content) }]
+    }));
+}
+
 async function appelerChatCompletion(messages) {
   const systemMessages = messages
     .filter((m) => m.role === "system")
     .map((m) => m.content)
     .join("\n\n");
 
-  const contents = messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content) }]
-    }));
+  const contents = toGeminiContents(messages);
 
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -1488,6 +1702,39 @@ async function appelerChatCompletion(messages) {
   });
 
   return result.response.text();
+}
+
+async function appelerJsonStrict({
+  systemInstruction = "",
+  prompt = "",
+  schema = null,
+  history = [],
+  inlineParts = []
+}) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction
+  });
+
+  const result = await genererAvecRetry(model, {
+    contents: [
+      ...toGeminiContents(history),
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          ...inlineParts
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+      ...(schema ? { responseSchema: schema } : {})
+    }
+  });
+
+  return extraireJsonGemini(result.response.text());
 }
 
 async function chercherContexteWeb(question = "", user = {}, historique = []) {
@@ -1524,7 +1771,14 @@ Donne un contexte web brut, précis et exhaustif si la question demande une list
 }
 
 async function detecterIntentionIA(user, texte = "", historique = []) {
-  const system = construireSystemPrompt(user);
+  const system = `${construireSystemPrompt(user)}
+MODE CLASSIFICATION STRICTE :
+- Réponds uniquement en JSON valide
+- intention possible : salutation, remerciement, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc
+- matiere possible : math, physique, chimie, general
+- besoinCorrectionRenforcee doit être true ou false
+- sujet doit être court`;
+
   const fallback = {
     intention: "question_normale",
     matiere: detecterMatiereScientifique(texte, "", null),
@@ -1532,36 +1786,24 @@ async function detecterIntentionIA(user, texte = "", historique = []) {
     sujet: extraireSujetMemoire(texte) || "general"
   };
 
-  const brut = await safeAI(
-    () => appelerChatCompletion([
-      { role: "system", content: system },
-      {
-        role: "system",
-        content: `Tu es un classificateur pédagogique.
-Réponds uniquement en JSON valide.
-Format :
-{
-  "intention": "salutation|remerciement|question_normale|exercice|soumission_reponse|audio|image|juridique|geographie_rdc",
-  "matiere": "math|physique|chimie|general",
-  "besoinCorrectionRenforcee": true,
-  "sujet": "mot ou petit groupe de mots"
-}`
-      },
-      ...historique.slice(-3),
-      { role: "user", content: texte }
-    ]),
-    JSON.stringify(fallback)
-  );
-
   try {
-    const parsed = JSON.parse(brut);
+    const parsed = await appelerJsonStrict({
+      systemInstruction: system,
+      prompt: `Analyse ce message et classe-le.\n\nMESSAGE :\n${texte}`,
+      schema: JSON_SCHEMA_INTENTION,
+      history: historique.slice(-3)
+    });
+
+    if (!parsed || typeof parsed !== "object") return fallback;
+
     return {
-      intention: parsed.intention || fallback.intention,
-      matiere: parsed.matiere || fallback.matiere,
+      intention: String(parsed.intention || fallback.intention),
+      matiere: String(parsed.matiere || fallback.matiere),
       besoinCorrectionRenforcee: Boolean(parsed.besoinCorrectionRenforcee),
-      sujet: parsed.sujet || fallback.sujet
+      sujet: String(parsed.sujet || fallback.sujet)
     };
-  } catch {
+  } catch (e) {
+    logError("detecter_intention_ia", e);
     return fallback;
   }
 }
@@ -1652,73 +1894,42 @@ Donne maintenant la réponse finale de Mwalimu.`
 }
 
 async function analyserAudioCourt(user, audioBuffer, mimeType, historique = []) {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: `${construireSystemPrompt(user)}
+  const systemInstruction = `${construireSystemPrompt(user)}
 MODE ANALYSE AUDIO COURT :
 - Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide
 - Détecte si l'audio est un simple message social ou non
 - "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, bon apres-midi, bon après-midi, bonne journée, bon week-end, bon weekend, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va
 - "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.
 - Si l'audio est trop flou, mets "type":"incompris"
-- Réponds uniquement sous ce format :
-{
-  "transcription": "texte court entendu",
-  "type": "social|pedagogique|incompris"
-}`
-  });
+- Réponds strictement en JSON`;
 
-  const formattedHistory = historique.slice(-2).map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: String(m.content) }]
-  }));
+  try {
+    const parsed = await appelerJsonStrict({
+      systemInstruction,
+      prompt: "Analyse cet audio et renvoie uniquement le JSON demandé.",
+      schema: JSON_SCHEMA_AUDIO,
+      history: historique.slice(-2),
+      inlineParts: [
+        { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
+      ]
+    });
 
-  const brut = await safeAI(
-    async () => {
-      const r = await genererAvecRetry(model, {
-        contents: [
-          ...formattedHistory,
-          {
-            role: "user",
-            parts: [
-              { text: "Analyse cet audio et réponds uniquement en JSON valide." },
-              { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
-            ]
-          }
-        ],
-        generationConfig: { temperature: 0 }
-      });
-      return r.response.text();
-    },
-    `{"transcription":"","type":"incompris"}`
-  );
-
-  const parsed = extraireJsonGemini(brut);
-
-  if (!parsed) {
-    const brutNettoye = normaliserTexteRelationnel(brut);
-
-    if (
-      brutNettoye.includes("merci") ||
-      estMessageSalutation(brutNettoye) ||
-      estMessageCourtHumain(brutNettoye)
-    ) {
-      return {
-        transcription: brutNettoye,
-        type: "social"
-      };
+    if (!parsed || typeof parsed !== "object") {
+      return { transcription: "", type: "incompris" };
     }
+
+    return {
+      transcription: String(parsed.transcription || "").trim(),
+      type: String(parsed.type || "incompris").trim().toLowerCase()
+    };
+  } catch (e) {
+    logError("analyser_audio_court", e);
 
     return {
       transcription: "",
       type: "incompris"
     };
   }
-
-  return {
-    transcription: String(parsed.transcription || "").trim(),
-    type: String(parsed.type || "incompris").trim().toLowerCase()
-  };
 }
 
 async function reponseAudioUneSeulePasse(user, audioBuffer, mimeType, historique = [], fiche = null) {
@@ -1861,7 +2072,7 @@ ${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /* =========================================================
-   8) CONSIGNES PÉDAGOGIQUES
+   12) CONSIGNES PÉDAGOGIQUES
 ========================================================= */
 function construireConsignePedagogique(texte = "", type = "text") {
   const t = String(texte || "");
@@ -1906,13 +2117,13 @@ function construireConsignePedagogique(texte = "", type = "text") {
 }
 
 /* =========================================================
-   9) TRAITEMENT
+   13) TRAITEMENT
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  const cacheKey = String(texteUtilisateur || "").toLowerCase();
+  const cacheKey = makeCacheKey(user, texteUtilisateur);
   const cached = getCache(cacheKey);
   if (cached) {
-    console.log("⚡ Réponse depuis cache");
+    logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
     return { reponse: cached, fiche: null, bypassFormat: false };
   }
 
@@ -2005,7 +2216,7 @@ async function traiterAudio(user, msg, historique) {
   }
 
   const { buffer, mimeType } = await telechargerMedia(audioId, 8 * 1024 * 1024);
-  console.log("🎧 MIME audio reçu :", mimeType);
+  logInfo("audio_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeAudioSupporte(mimeType)) {
     return {
@@ -2116,7 +2327,7 @@ async function traiterImage(user, msg, historique) {
   }
 
   const { buffer, mimeType } = await telechargerMedia(imageId, 8 * 1024 * 1024);
-  console.log("🖼️ MIME image reçu :", mimeType);
+  logInfo("image_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeImageSupporte(mimeType)) {
     return {
@@ -2143,7 +2354,7 @@ async function traiterImage(user, msg, historique) {
 }
 
 /* =========================================================
-   10) COMMANDES
+   14) COMMANDES
 ========================================================= */
 async function traiterCommandeTexte(from, _user, texteUtilisateur) {
   const cmd = String(texteUtilisateur || "").trim().toLowerCase();
@@ -2225,11 +2436,11 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
 }
 
 /* =========================================================
-   11) CRON
+   15) CRON
 ========================================================= */
 cron.schedule("0 7 * * *", async () => {
   try {
-    console.log("⏰ Rappel matinal exécuté.");
+    logInfo("cron_morning_reminder_start");
 
     const { rows } = await pool.query(`
       SELECT phone, nom
@@ -2256,29 +2467,219 @@ ${citation}`.replace(/\n{3,}/g, "\n\n").trim();
 
         await envoyerWhatsApp(eleve.phone, messageRappel);
       } catch (e) {
-        console.error("Erreur rappel matinal:", e.message);
+        logError("cron_morning_reminder_user", e, { phone: eleve?.phone || "" });
       }
     }
+
+    logInfo("cron_morning_reminder_done", { count: rows.length });
   } catch (e) {
-    console.error("Erreur cron bonjour:", e.message);
+    logError("cron_morning_reminder", e);
   }
 }, { timezone: "Africa/Lubumbashi" });
 
 cron.schedule("0 3 * * *", async () => {
   try {
     await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '2 days'");
-    console.log("🧹 Nettoyage processed_messages terminé.");
+    logInfo("cron_cleanup_processed_messages_done");
   } catch (e) {
-    console.error("Erreur cron nettoyage:", e.message);
+    logError("cron_cleanup_processed_messages", e);
   }
 }, { timezone: "Africa/Lubumbashi" });
 
 /* =========================================================
-   12) WEBHOOK
+   16) PIPELINE D'UN MESSAGE
+========================================================= */
+async function processIncomingMessage(msg) {
+  const from = msg.from;
+  const msgId = msg.id;
+  const texteUtilisateur = msg.text?.body?.trim() || "";
+  const msgType = typeMessage(msg);
+  const startedAt = nowMs();
+
+  logInfo("incoming_message", {
+    phone: from,
+    msgId,
+    msgType,
+    preview: texteUtilisateur.slice(0, 80)
+  });
+
+  const check = await pool.query(
+    "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
+    [msgId]
+  );
+  if (check.rowCount === 0) {
+    logWarn("duplicate_message_ignored", { phone: from, msgId });
+    return;
+  }
+
+  await envoyerIndicateurFrappe(msgId);
+
+  let user = await getUser(from);
+
+  if (!user) {
+    await createUser(from);
+    user = await getUser(from);
+    await envoyerWhatsApp(
+      from,
+      `${HEADER_MWALIMU}
+────────────────
+🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.
+🟡 Quel est ton *prénom* ?`
+    );
+    return;
+  }
+
+  if (msgType === "text") {
+    const commandeTraitee = await traiterCommandeTexte(from, user, texteUtilisateur);
+    if (commandeTraitee) return;
+  }
+
+  if (!user.nom) {
+    const nom = normaliserNom(nettoyer(texteUtilisateur));
+    if (!nom) {
+      await envoyerWhatsApp(
+        from,
+        `${HEADER_MWALIMU}
+────────────────
+🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`
+      );
+      return;
+    }
+
+    await updateUserField(from, "nom", nom);
+    await envoyerWhatsApp(
+      from,
+      `🤝 Enchanté *${nom}* !
+🟡 En quelle *classe* es-tu ?`
+    );
+    return;
+  }
+
+  if (!user.classe) {
+    const cl = normaliserNom(nettoyer(texteUtilisateur));
+    if (!cl) {
+      await envoyerWhatsApp(
+        from,
+        `🟡 Écris-moi ta *classe* simplement.
+Exemple : 6e, 8e, Terminale, 1ère secondaire.`
+      );
+      return;
+    }
+
+    await updateUserField(from, "classe", cl);
+    user = await getUser(from);
+
+    await envoyerWhatsApp(
+      from,
+      `🟡 C'est bien noté, *${user.nom}*.
+❓ Quel est ton plus grand *rêve* professionnel ?`
+    );
+    return;
+  }
+
+  if (!user.reve) {
+    const rv = normaliserNom(nettoyer(texteUtilisateur));
+    if (!rv) {
+      await envoyerWhatsApp(
+        from,
+        `❓ Dis-moi simplement ton *rêve* professionnel.
+Exemple : avocat, médecin, ingénieur, pilote.`
+      );
+      return;
+    }
+
+    await updateUserField(from, "reve", rv);
+    user = await getUser(from);
+
+    await envoyerWhatsApp(
+      from,
+      `✨ *Quelle ambition magnifique !*
+🔴 Devenir *${rv}* est un rêve noble, et je sais que tu en es capable.
+🔵 *Pour commencer notre parcours ensemble, dis-moi :*
+👉 Quelle matière ou quel chapitre te pose problème en ce moment ?`
+    );
+    return;
+  }
+
+  let historique = Array.isArray(user.historique)
+    ? user.historique
+    : safeJsonParse(user.historique, []);
+
+  let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
+
+  if (msgType === "text" && texteUtilisateur) {
+    await appendHistorique(from, "user", texteUtilisateur);
+    const userFresh = await getUser(from);
+    historique = Array.isArray(userFresh?.historique)
+      ? userFresh.historique
+      : safeJsonParse(userFresh?.historique, []);
+  }
+
+  let reponseBrute = "";
+  let ficheContexte = null;
+  let bypassFormat = false;
+
+  if (msgType === "text") {
+    const resultat = await traiterTexte({ ...user, phone: from }, texteUtilisateur, historique);
+    reponseBrute = resultat?.reponse || "";
+    ficheContexte = resultat?.fiche || null;
+    bypassFormat = Boolean(resultat?.bypassFormat);
+  } else if (msgType === "audio") {
+    const resultat = await traiterAudio({ ...user, phone: from }, msg, historique);
+    reponseBrute = resultat?.reponse || "";
+    ficheContexte = resultat?.fiche || null;
+    bypassFormat = Boolean(resultat?.bypassFormat);
+    contenuUtilisateurPourMemoire = "[audio envoyé]";
+    await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+  } else if (msgType === "image") {
+    const resultat = await traiterImage({ ...user, phone: from }, msg, historique);
+    reponseBrute = resultat?.reponse || "";
+    ficheContexte = resultat?.fiche || null;
+    bypassFormat = Boolean(resultat?.bypassFormat);
+    contenuUtilisateurPourMemoire = "[image envoyée]";
+    await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+  } else {
+    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton message.
+🟡 [SAVOIR] : Pour l'instant, je traite surtout les textes, les audios et les images.
+🔴 [INSPIRATION] : Nous pouvons déjà avancer correctement avec ces formats.
+❓ [CONSOLIDATION] : Envoie-moi ta question par écrit, par audio ou avec une image nette.`;
+  }
+
+  if (!reponseBrute || !String(reponseBrute).trim()) {
+    await logUnansweredQuestion({ ...user, phone: from }, texteUtilisateur || contenuUtilisateurPourMemoire, msgType, "final_empty");
+    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.
+🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
+🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`;
+  }
+
+  const messageFinal = bypassFormat
+    ? reponseBrute
+    : construireMessageFinal(
+        user,
+        reponseBrute,
+        historique,
+        texteUtilisateur || contenuUtilisateurPourMemoire,
+        ficheContexte
+      );
+
+  await envoyerWhatsApp(from, messageFinal);
+  await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
+
+  logInfo("message_processed", {
+    phone: from,
+    msgId,
+    msgType,
+    durationMs: nowMs() - startedAt
+  });
+}
+
+/* =========================================================
+   17) WEBHOOK
 ========================================================= */
 app.post("/webhook", async (req, res) => {
   if (!verifierSignatureMeta(req)) {
-    console.warn("⛔ Signature Meta invalide");
+    logWarn("invalid_meta_signature");
     return res.sendStatus(403);
   }
 
@@ -2287,203 +2688,43 @@ app.post("/webhook", async (req, res) => {
 
   res.sendStatus(200);
 
-  const from = msg.from;
-  const msgId = msg.id;
-  const texteUtilisateur = msg.text?.body?.trim() || "";
-  const msgType = typeMessage(msg);
+  const from = msg.from || "unknown";
 
-  console.log("📩 Message reçu :", msgType, "|", texteUtilisateur?.slice(0, 50));
-
-  try {
-    const check = await pool.query(
-      "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
-      [msgId]
-    );
-    if (check.rowCount === 0) return;
-
-    await envoyerIndicateurFrappe(msgId);
-
-    let user = await getUser(from);
-
-    if (!user) {
-      await createUser(from);
-      user = await getUser(from);
-      return await envoyerWhatsApp(
-        from,
-        `${HEADER_MWALIMU}
-────────────────
-🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.
-🟡 Quel est ton *prénom* ?`
-      );
-    }
-
-    if (msgType === "text") {
-      const commandeTraitee = await traiterCommandeTexte(from, user, texteUtilisateur);
-      if (commandeTraitee) return;
-    }
-
-    if (!user.nom) {
-      const nom = normaliserNom(nettoyer(texteUtilisateur));
-      if (!nom) {
-        return await envoyerWhatsApp(
-          from,
-          `${HEADER_MWALIMU}
-────────────────
-🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`
-        );
-      }
-
-      await updateUserField(from, "nom", nom);
-      return await envoyerWhatsApp(
-        from,
-        `🤝 Enchanté *${nom}* !
-🟡 En quelle *classe* es-tu ?`
-      );
-    }
-
-    if (!user.classe) {
-      const cl = normaliserNom(nettoyer(texteUtilisateur));
-      if (!cl) {
-        return await envoyerWhatsApp(
-          from,
-          `🟡 Écris-moi ta *classe* simplement.
-Exemple : 6e, 8e, Terminale, 1ère secondaire.`
-        );
-      }
-
-      await updateUserField(from, "classe", cl);
-      user = await getUser(from);
-
-      return await envoyerWhatsApp(
-        from,
-        `🟡 C'est bien noté, *${user.nom}*.
-❓ Quel est ton plus grand *rêve* professionnel ?`
-      );
-    }
-
-    if (!user.reve) {
-      const rv = normaliserNom(nettoyer(texteUtilisateur));
-      if (!rv) {
-        return await envoyerWhatsApp(
-          from,
-          `❓ Dis-moi simplement ton *rêve* professionnel.
-Exemple : avocat, médecin, ingénieur, pilote.`
-        );
-      }
-
-      await updateUserField(from, "reve", rv);
-      user = await getUser(from);
-
-      return await envoyerWhatsApp(
-        from,
-        `✨ *Quelle ambition magnifique !*
-🔴 Devenir *${rv}* est un rêve noble, et je sais que tu en es capable.
-🔵 *Pour commencer notre parcours ensemble, dis-moi :*
-👉 Quelle matière ou quel chapitre te pose problème en ce moment ?`
-      );
-    }
-
-    let historique = Array.isArray(user.historique)
-      ? user.historique
-      : safeJsonParse(user.historique, []);
-
-    let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
-
-    if (msgType === "text" && texteUtilisateur) {
-      await appendHistorique(from, "user", texteUtilisateur);
-      const userFresh = await getUser(from);
-      historique = Array.isArray(userFresh?.historique)
-        ? userFresh.historique
-        : safeJsonParse(userFresh?.historique, []);
-    }
-
-    let reponseBrute = "";
-    let ficheContexte = null;
-    let bypassFormat = false;
-
-    if (msgType === "text") {
-      const resultat = await traiterTexte({ ...user, phone: from }, texteUtilisateur, historique);
-      reponseBrute = resultat?.reponse || "";
-      ficheContexte = resultat?.fiche || null;
-      bypassFormat = Boolean(resultat?.bypassFormat);
-    } else if (msgType === "audio") {
-      const resultat = await traiterAudio({ ...user, phone: from }, msg, historique);
-      reponseBrute = resultat?.reponse || "";
-      ficheContexte = resultat?.fiche || null;
-      bypassFormat = Boolean(resultat?.bypassFormat);
-      contenuUtilisateurPourMemoire = "[audio envoyé]";
-      await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
-    } else if (msgType === "image") {
-      const resultat = await traiterImage({ ...user, phone: from }, msg, historique);
-      reponseBrute = resultat?.reponse || "";
-      ficheContexte = resultat?.fiche || null;
-      bypassFormat = Boolean(resultat?.bypassFormat);
-      contenuUtilisateurPourMemoire = "[image envoyée]";
-      await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
-    } else {
-      reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton message.
-🟡 [SAVOIR] : Pour l'instant, je traite surtout les textes, les audios et les images.
-🔴 [INSPIRATION] : Nous pouvons déjà avancer correctement avec ces formats.
-❓ [CONSOLIDATION] : Envoie-moi ta question par écrit, par audio ou avec une image nette.`;
-    }
-
-    if (!reponseBrute || !String(reponseBrute).trim()) {
-      await logUnansweredQuestion({ ...user, phone: from }, texteUtilisateur || contenuUtilisateurPourMemoire, msgType, "final_empty");
-      reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.
-🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
-🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
-❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`;
-    }
-
-    const messageFinal = bypassFormat
-      ? reponseBrute
-      : construireMessageFinal(
-          user,
-          reponseBrute,
-          historique,
-          texteUtilisateur || contenuUtilisateurPourMemoire,
-          ficheContexte
-        );
-
-    await envoyerWhatsApp(from, messageFinal);
-    await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
-  } catch (e) {
-    console.error("Erreur générale complète:", {
-      message: e?.message || null,
-      stack: e?.stack || null,
-      data: e?.response?.data || null
-    });
-
+  runSequentialByKey(from, async () => {
     try {
-      let user = await getUser(from);
-      if (!user) user = { nom: "élève" };
+      await processIncomingMessage(msg);
+    } catch (e) {
+      logError("process_incoming_message", e, { phone: from });
 
-      if (estErreurQuotaGemini(e)) {
-        await envoyerWhatsApp(
-          from,
-          `${HEADER_MWALIMU}
+      try {
+        let user = await getUser(from);
+        if (!user) user = { nom: "élève" };
+
+        if (estErreurQuotaGemini(e)) {
+          await envoyerWhatsApp(
+            from,
+            `${HEADER_MWALIMU}
 ────────────────
-🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}.
+🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(typeMessage(msg))}.
 🟡 [SAVOIR] : Je suis momentanément très sollicité.
 🔴 [INSPIRATION] : Ce petit contretemps n’empêche pas notre progression.
 ❓ [CONSOLIDATION] : Réessaie dans une minute avec la même question.`
-        );
-        return;
-      }
+          );
+          return;
+        }
 
-      await envoyerWhatsApp(from, messageSecours(user, msgType));
-    } catch (e2) {
-      console.error("Erreur secours complète:", {
-        message: e2?.message || null,
-        stack: e2?.stack || null,
-        data: e2?.response?.data || null
-      });
+        await envoyerWhatsApp(from, messageSecours(user, typeMessage(msg)));
+      } catch (e2) {
+        logError("fallback_send_error", e2, { phone: from });
+      }
     }
-  }
+  }).catch((e) => {
+    logError("queue_error", e, { phone: from });
+  });
 });
 
 /* =========================================================
-   13) VERIFY + HEALTHCHECK
+   18) VERIFY + HEALTHCHECK
 ========================================================= */
 app.get("/", (_req, res) => {
   res.send("Mwalimu EdTech Server: OK");
@@ -2497,11 +2738,12 @@ app.get("/webhook", (req, res) => {
 });
 
 /* =========================================================
-   14) DÉMARRAGE
+   19) DÉMARRAGE
 ========================================================= */
 (async () => {
   await initDB();
   app.listen(PORT, () => {
+    logInfo("server_started", { port: PORT });
     console.log(`✅ Mwalimu en marche sur le port ${PORT}`);
   });
 })();
