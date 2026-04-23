@@ -47,14 +47,12 @@ pool.on("error", (err) => {
   logError("postgres_idle", err);
 });
 
-app.use(
-  express.json({
-    limit: "2mb",
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    }
-  })
-);
+app.use(express.json({
+  limit: "2mb",
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -141,68 +139,26 @@ const CITATIONS = {
     "***« Le civisme commence par de petits actes honnêtes. »***",
     "***« Respecter la loi, c’est aussi participer à la vie de la nation. »***"
   ],
+  relationnel: [
+    "***« La politesse et le respect élèvent aussi la personne. »***",
+    "***« Un cœur discipliné honore sa famille et sa patrie. »***"
+  ],
   general: [
     "***« Apprendre avec sérieux aujourd’hui, c’est mieux servir le Congo demain. »***",
     "***« Le savoir et la discipline font grandir la nation. »***"
   ]
 };
 
-const OUVERTURES = {
-  histoire: [
-    "👉 Nous pouvons continuer avec une autre petite question d’histoire.",
-    "👉 Si tu veux, nous pouvons voir maintenant un exemple historique concret.",
-    "👉 Nous pouvons avancer pas à pas sur un autre fait historique."
-  ],
-  geographie: [
-    "👉 Nous pouvons continuer avec une autre petite question de géographie.",
-    "👉 Si tu veux, nous pouvons voir maintenant une autre subdivision ou un autre lieu.",
-    "👉 Nous pouvons poursuivre avec une autre notion de géographie."
-  ],
-  droit: [
-    "👉 Nous pouvons continuer avec une autre petite question de droit.",
-    "👉 Si tu veux, nous pouvons examiner maintenant un autre article ou une autre notion juridique.",
-    "👉 Nous pouvons avancer avec une autre notion de droit."
-  ],
-  math: [
-    "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse.",
-    "👉 Si tu veux, nous pouvons faire un autre petit exercice.",
-    "👉 Nous pouvons poursuivre étape par étape."
-  ],
-  physique: [
-    "👉 Nous pouvons continuer avec une autre petite question de physique.",
-    "👉 Si tu veux, nous pouvons appliquer cela à un exemple simple.",
-    "👉 Nous pouvons reprendre cela avec un autre cas pratique."
-  ],
-  chimie: [
-    "👉 Nous pouvons continuer avec une autre petite question de chimie.",
-    "👉 Si tu veux, nous pouvons voir maintenant un autre exemple chimique.",
-    "👉 Nous pouvons reprendre cette notion avec un autre cas simple."
-  ],
-  francais: [
-    "👉 Nous pouvons continuer avec une autre petite question de français.",
-    "👉 Si tu veux, nous pouvons faire un autre exemple ensemble.",
-    "👉 Nous pouvons poursuivre avec une autre notion de langue."
-  ],
-  general: [
-    "👉 Nous avançons ensemble, pas à pas.",
-    "👉 Tu peux m'envoyer ta réponse, et je vais la vérifier avec toi.",
-    "👉 Garde confiance, nous allons comprendre cela ensemble."
-  ]
-};
+const OUVERTURES = [
+  "👉 Nous avançons ensemble, pas à pas.",
+  "👉 Tu peux m'envoyer ta réponse, et je vais la vérifier avec toi.",
+  "👉 Garde confiance, nous allons comprendre cela ensemble."
+];
 
 const MATIERE_MATH = "math";
 const MATIERE_PHYSIQUE = "physique";
 const MATIERE_CHIMIE = "chimie";
 const MATIERE_GENERAL = "general";
-
-const THEME_HISTOIRE = "histoire";
-const THEME_GEOGRAPHIE = "geographie";
-const THEME_DROIT = "droit";
-const THEME_MATH = "math";
-const THEME_PHYSIQUE = "physique";
-const THEME_CHIMIE = "chimie";
-const THEME_FRANCAIS = "francais";
-const THEME_GENERAL = "general";
 
 const REGLE_FORMAT_MATH = `FORMAT OBLIGATOIRE D'ÉCRITURE SCIENTIFIQUE (WhatsApp) :
 - Écris les calculs, formules et expressions de manière simple, scolaire et lisible
@@ -225,6 +181,7 @@ const REGLE_CALCUL_INTELLIGENT = `RÈGLES SPÉCIALES POUR LES CALCULS :
 - N’invente jamais un chiffre, une unité ou une formule`;
 
 const SYSTEM_BASE = `Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
+
 MISSION :
 - Aider l'élève à comprendre
 - Guider sans faire le travail à sa place
@@ -232,19 +189,21 @@ MISSION :
 - Utiliser un ton humain, simple, motivant et respectueux
 - Adapter le niveau à la classe de l'élève
 - Te référer au contexte scolaire de la RDC lorsque c'est pertinent
+
 STYLE OBLIGATOIRE :
 - Réponse claire, naturelle et brève
 - Évite les répétitions
 - Ne sois jamais bavard
 - Ne félicite pas exagérément
 - N'écris pas "bravo" sauf si l'élève a réellement bien répondu, corrigé juste ou fourni une bonne démarche
-- Évite les compliments excessifs comme "future avocate", "futur avocat", "œil de lynx", "mon enfant" sauf si c'est vraiment utile
+- Évite les compliments excessifs comme "future avocate" ou "œil de lynx" sauf si c'est vraiment utile
 - Si l'élève dit juste bonjour, bonsoir, merci, bonne nuit, réponds humainement et normalement, sans structure pédagogique
 - Quand il faut une vraie réponse pédagogique, la structure est :
 🔵 [VÉCU]
 🟡 [SAVOIR]
 🔴 [INSPIRATION]
 ❓ [CONSOLIDATION]
+
 ${REGLE_CALCUL_INTELLIGENT}
 ${REGLE_FORMAT_MATH}`;
 
@@ -292,7 +251,7 @@ const JSON_SCHEMA_AUDIO = {
    4) CACHE TTL PROPRE
 ========================================================= */
 class TTLCache {
-  constructor({ ttlMs = 60000, maxEntries = 500, cleanupIntervalMs = 120000 } = {}) {
+  constructor({ ttlMs = 60_000, maxEntries = 500, cleanupIntervalMs = 120_000 } = {}) {
     this.ttlMs = ttlMs;
     this.maxEntries = maxEntries;
     this.store = new Map();
@@ -315,6 +274,7 @@ class TTLCache {
     if (this.store.size >= this.maxEntries) {
       this.evictOldest();
     }
+
     this.store.set(key, {
       value,
       createdAt: Date.now(),
@@ -335,12 +295,14 @@ class TTLCache {
   evictOldest() {
     let oldestKey = null;
     let oldestAccess = Infinity;
+
     for (const [key, entry] of this.store.entries()) {
       if (entry.lastAccess < oldestAccess) {
         oldestAccess = entry.lastAccess;
         oldestKey = key;
       }
     }
+
     if (oldestKey) {
       this.store.delete(oldestKey);
     }
@@ -348,9 +310,9 @@ class TTLCache {
 }
 
 const cache = new TTLCache({
-  ttlMs: 60000,
+  ttlMs: 60_000,
   maxEntries: 1000,
-  cleanupIntervalMs: 120000
+  cleanupIntervalMs: 120_000
 });
 
 function makeCacheKey(user = {}, texte = "") {
@@ -375,7 +337,10 @@ const processingQueues = new Map();
 
 function runSequentialByKey(key, task) {
   const previous = processingQueues.get(key) || Promise.resolve();
-  const execution = previous.catch(() => {}).then(() => task());
+
+  const execution = previous
+    .catch(() => {})
+    .then(() => task());
 
   const tracked = execution.finally(() => {
     if (processingQueues.get(key) === tracked) {
@@ -431,42 +396,6 @@ function estErreurQuotaGemini(err) {
   return msg.includes("429") || msg.includes("quota") || data.includes("429") || data.includes("quota");
 }
 
-function detectPromptInjection(text = "") {
-  const t = String(text || "").toLowerCase();
-
-  const patterns = [
-    "ignore les instructions",
-    "ignore tes instructions",
-    "oublie les instructions",
-    "oublie tes consignes",
-    "ignore previous instructions",
-    "ignore all previous instructions",
-    "bypass",
-    "jailbreak",
-    "fais mon devoir",
-    "donne juste la réponse finale",
-    "donne seulement la réponse finale",
-    "réponds sans expliquer",
-    "answer only",
-    "just the final answer"
-  ];
-
-  return patterns.some((p) => t.includes(p));
-}
-
-function estMessageDangereuxPourTutorat(text = "") {
-  const t = String(text || "").toLowerCase();
-  return (
-    detectPromptInjection(t) ||
-    t.includes("fais tout à ma place") ||
-    t.includes("donne moi seulement la reponse") ||
-    t.includes("donne-moi seulement la réponse") ||
-    t.includes("sans explication") ||
-    t.includes("juste la reponse finale") ||
-    t.includes("juste la réponse finale")
-  );
-}
-
 function genreEleve(nom = "") {
   const prenom = String(nom || "").trim().split(" ")[0].toLowerCase();
   const prenomsFeminins = [
@@ -485,7 +414,8 @@ function construireAppel(user = {}) {
     `**${prenom}**`,
     `${prenom}`,
     `cher ${prenom}`,
-    `mon ami`
+    `mon ami`,
+    `mon enfant`
   ];
   return pick(styles);
 }
@@ -506,6 +436,7 @@ function retirerAccents(texte = "") {
 
 function normaliserTexteRelationnel(texte = "") {
   let t = retirerAccents(String(texte || "").toLowerCase());
+
   t = t
     .replace(/[-_]/g, " ")
     .replace(/[.,!?;:()"`'’´]/g, " ")
@@ -551,8 +482,7 @@ function adapterTexteGenre(texte = "", nom = "") {
     .replace(/ma chère\s+[^,\n]+/gi, appel)
     .replace(/mon cher\s+[^,\n]+/gi, appel)
     .replace(/mon élève/gi, appel)
-    .replace(/cher élève/gi, appel)
-    .replace(/\bmon enfant\b/gi, appel);
+    .replace(/cher élève/gi, appel);
 }
 
 function nettoyerAppelsRepetitifs(texte = "", nom = "") {
@@ -563,7 +493,9 @@ function nettoyerAppelsRepetitifs(texte = "", nom = "") {
 
 function estMessageSalutation(texte = "") {
   const t = normaliserTexteRelationnel(texte);
+
   if (!t) return false;
+
   return (
     /^(bonjour|bonsoir|salut|hello|coucou|bjr|mbote|yo|cc)$/.test(t) ||
     /^(bonne?\s+nuit)$/.test(t) ||
@@ -581,6 +513,7 @@ function estMessageSalutation(texte = "") {
 
 function estMessageRemerciement(texte = "") {
   const t = normaliserTexteRelationnel(texte);
+
   if (!t) return false;
 
   const exacts = [
@@ -630,6 +563,7 @@ function estMessageRemerciement(texte = "") {
 
 function estMessageCourtHumain(texte = "") {
   const t = normaliserTexteRelationnel(texte);
+
   return [
     "ok",
     "okay",
@@ -651,15 +585,21 @@ function estMessageCourtHumain(texte = "") {
 }
 
 function estMessageRelationnelSimple(texte = "") {
-  return estMessageSalutation(texte) || estMessageRemerciement(texte) || estMessageCourtHumain(texte);
+  return (
+    estMessageSalutation(texte) ||
+    estMessageRemerciement(texte) ||
+    estMessageCourtHumain(texte)
+  );
 }
 
 function estReponseRelationnelleSimpleIA(texte = "") {
   const t = String(texte || "").trim();
   const n = normaliserMessageCourt(t);
+
   if (!t) return false;
   if (/🔵\s*\[VÉCU\]|🟡\s*\[SAVOIR\]|🔴\s*\[INSPIRATION\]|❓\s*\[CONSOLIDATION\]/i.test(t)) return false;
   if (t.length > 180) return false;
+
   return (
     n.startsWith("je t en prie") ||
     n.startsWith("avec plaisir") ||
@@ -723,17 +663,6 @@ function extraireSujetMemoire(texte = "") {
   return t.split(" ").slice(0, 4).join(" ");
 }
 
-function estQuestionSimpleDefinition(texte = "") {
-  const t = normaliserTexteMemoire(texte);
-  return (
-    t.startsWith("qu est ce que ") ||
-    t.startsWith("c est quoi ") ||
-    t.startsWith("definis ") ||
-    t.startsWith("definition ") ||
-    t.startsWith("qu est ce qu ")
-  );
-}
-
 function retrouverSujetProche(historique = [], texteActuel = "") {
   const actuel = extraireSujetMemoire(texteActuel);
   if (!actuel) return "";
@@ -749,39 +678,10 @@ function retrouverSujetProche(historique = [], texteActuel = "") {
 }
 
 function construirePhraseRetourMemoire(historique = [], texteActuel = "", user = {}) {
-  const texte = String(texteActuel || "").trim().toLowerCase();
-
-  if (!texte) return "";
   if (estMessageRelationnelSimple(texteActuel)) return "";
-  if (estQuestionSimpleDefinition(texteActuel)) return "";
-
-  if (
-    texte.includes("[audio envoyé]") ||
-    texte.includes("[audio envoye]") ||
-    texte.includes("[image envoyée]") ||
-    texte.includes("[image envoyee]") ||
-    texte === "audio envoyé" ||
-    texte === "audio envoye" ||
-    texte === "image envoyée" ||
-    texte === "image envoyee" ||
-    texte.includes("audio envoye") ||
-    texte.includes("image envoyee")
-  ) {
-    return "";
-  }
-
   const sujet = retrouverSujetProche(historique, texteActuel);
   const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
-
   if (!sujet) return "";
-  if (
-    ["audio envoye", "image envoyee", "audio envoyé", "image envoyée"].includes(
-      String(sujet || "").toLowerCase()
-    )
-  ) {
-    return "";
-  }
-
   return `🔵 [VÉCU] : Je suis content que tu reviennes sur ${sujet}, ${prenom}. Prenons cela calmement et clairement.`;
 }
 
@@ -857,18 +757,9 @@ function detecterMatiereScientifique(question = "", reponse = "", fiche = null) 
   ].join(" ").toLowerCase();
 
   const score = { math: 0, physique: 0, chimie: 0 };
-
-  ["math", "maths", "équation", "equation", "fraction", "racine", "calcul"].forEach((m) => {
-    if (base.includes(m)) score.math += 2;
-  });
-
-  ["physique", "force", "vitesse", "énergie", "energie", "masse", "distance", "temps"].forEach((m) => {
-    if (base.includes(m)) score.physique += 2;
-  });
-
-  ["chimie", "mol", "solution", "acide", "base", "h2o", "co2", "o2", "nacl"].forEach((m) => {
-    if (base.includes(m)) score.chimie += 2;
-  });
+  ["math", "maths", "équation", "equation", "fraction", "racine", "calcul"].forEach((m) => { if (base.includes(m)) score.math += 2; });
+  ["physique", "force", "vitesse", "énergie", "energie", "masse", "distance", "temps"].forEach((m) => { if (base.includes(m)) score.physique += 2; });
+  ["chimie", "mol", "solution", "acide", "base", "h2o", "co2", "o2", "nacl"].forEach((m) => { if (base.includes(m)) score.chimie += 2; });
 
   const maxScore = Math.max(score.math, score.physique, score.chimie);
   if (maxScore <= 0) return MATIERE_GENERAL;
@@ -888,137 +779,80 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
   return { matiere, texte };
 }
 
-/* =========================================================
-   6B) DÉTECTION DE THÈME
-========================================================= */
-function detecterThemePrincipal(question = "", corps = "", fiche = null) {
-  const q = String(question || "").toLowerCase();
-  const r = String(corps || "").toLowerCase();
-  const f = `${fiche?.matiere || ""} ${fiche?.titre || ""} ${fiche?.contenu || ""}`.toLowerCase();
-  const t = `${q} ${r} ${f}`;
+function choisirCitationContextuelle(reponse = "", question = "") {
+  const t = `${reponse} ${question}`.toLowerCase();
 
+  if (estMessageRelationnelSimple(question)) {
+    return "";
+  }
+
+  if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("droit")) {
+    return pick(CITATIONS.civisme);
+  }
   if (
-    q.includes("qu'est-ce que l'histoire") ||
-    q.includes("qu est ce que l histoire") ||
-    q.includes("histoire") ||
-    t.includes("événement passé") ||
-    t.includes("evenement passe") ||
-    t.includes("passé") ||
-    t.includes("passe") ||
-    t.includes("chronologie") ||
-    t.includes("historique")
-  ) return THEME_HISTOIRE;
-
+    t.includes("géographie") || t.includes("geographie") ||
+    t.includes("territoire") || t.includes("province") ||
+    t.includes("commune") || t.includes("ville")
+  ) {
+    return pick(CITATIONS.geographie);
+  }
   if (
-    q.includes("loi") ||
-    q.includes("code") ||
-    q.includes("article") ||
-    q.includes("juridique") ||
-    q.includes("droit") ||
-    q.includes("ohada") ||
-    q.includes("tribunal") ||
-    q.includes("constitution")
-  ) return THEME_DROIT;
+    t.includes("math") || t.includes("calcul") ||
+    t.includes("équation") || t.includes("equation") ||
+    t.includes("fraction") || t.includes("chimie")
+  ) {
+    return pick(CITATIONS.mathematiques);
+  }
+  if (t.includes("physique") || t.includes("science")) {
+    return pick(CITATIONS.sciences);
+  }
+  if (t.includes("histoire") || t.includes("date")) {
+    return pick(CITATIONS.histoire);
+  }
 
-  if (
-    q.includes("géographie") ||
-    q.includes("geographie") ||
-    q.includes("territoire") ||
-    q.includes("territoires") ||
-    q.includes("province") ||
-    q.includes("commune") ||
-    q.includes("communes") ||
-    q.includes("ville") ||
-    q.includes("villes") ||
-    q.includes("haut-katanga") ||
-    q.includes("haut katanga") ||
-    q.includes("rdc") ||
-    q.includes("congo")
-  ) return THEME_GEOGRAPHIE;
-
-  if (
-    q.includes("math") ||
-    q.includes("maths") ||
-    q.includes("équation") ||
-    q.includes("equation") ||
-    q.includes("fraction") ||
-    q.includes("calcul") ||
-    q.includes("racine") ||
-    q.includes("puissance")
-  ) return THEME_MATH;
-
-  if (
-    q.includes("physique") ||
-    q.includes("force") ||
-    q.includes("vitesse") ||
-    q.includes("énergie") ||
-    q.includes("energie") ||
-    q.includes("masse") ||
-    q.includes("distance")
-  ) return THEME_PHYSIQUE;
-
-  if (
-    q.includes("chimie") ||
-    q.includes("molécule") ||
-    q.includes("molecule") ||
-    q.includes("acide") ||
-    q.includes("base") ||
-    q.includes("solution") ||
-    q.includes("h₂o") ||
-    q.includes("h2o") ||
-    q.includes("co₂") ||
-    q.includes("co2")
-  ) return THEME_CHIMIE;
-
-  if (
-    q.includes("français") ||
-    q.includes("francais") ||
-    q.includes("grammaire") ||
-    q.includes("orthographe") ||
-    q.includes("verbe") ||
-    q.includes("nom") ||
-    q.includes("adjectif")
-  ) return THEME_FRANCAIS;
-
-  if (String(fiche?.matiere || "").toLowerCase().includes("histoire")) return THEME_HISTOIRE;
-  if (String(fiche?.matiere || "").toLowerCase().includes("géographie") || String(fiche?.matiere || "").toLowerCase().includes("geographie")) return THEME_GEOGRAPHIE;
-  if (String(fiche?.matiere || "").toLowerCase().includes("droit")) return THEME_DROIT;
-  if (String(fiche?.matiere || "").toLowerCase().includes("math")) return THEME_MATH;
-  if (String(fiche?.matiere || "").toLowerCase().includes("physique")) return THEME_PHYSIQUE;
-  if (String(fiche?.matiere || "").toLowerCase().includes("chimie")) return THEME_CHIMIE;
-  if (String(fiche?.matiere || "").toLowerCase().includes("français") || String(fiche?.matiere || "").toLowerCase().includes("francais")) return THEME_FRANCAIS;
-
-  return THEME_GENERAL;
-}
-
-function choisirCitationContextuelle(reponse = "", question = "", fiche = null) {
-  if (estMessageRelationnelSimple(question)) return "";
-  const theme = detecterThemePrincipal(question, reponse, fiche);
-  if (theme === THEME_HISTOIRE) return pick(CITATIONS.histoire);
-  if (theme === THEME_GEOGRAPHIE) return pick(CITATIONS.geographie);
-  if (theme === THEME_DROIT) return pick(CITATIONS.civisme);
-  if (theme === THEME_MATH) return pick(CITATIONS.mathematiques);
-  if (theme === THEME_PHYSIQUE || theme === THEME_CHIMIE) return pick(CITATIONS.sciences);
-  if (theme === THEME_FRANCAIS) return pick(CITATIONS.francais);
   return pick(CITATIONS.general);
 }
 
-function detecterThemeConsolidation(question = "", corps = "", fiche = null) {
-  return detecterThemePrincipal(question, corps, fiche);
+function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
+  let t = String(corps || "").trim();
+  const aVecu = /🔵\s*\[VÉCU\]/i.test(t);
+  const aSavoir = /🟡\s*\[SAVOIR\]/i.test(t);
+  const aInspiration = /🔴\s*\[INSPIRATION\]/i.test(t);
+  const aConsolidation = /❓\s*\[CONSOLIDATION\]/i.test(t);
+
+  if (aVecu && aSavoir && aInspiration && aConsolidation) return t;
+
+  const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
+  const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
+  const vecu = aVecu ? "" : (phraseRetour || `🔵 [VÉCU] : Je suis heureux de continuer cet échange avec toi, ${prenom}.`);
+  const savoir = aSavoir ? "" : `🟡 [SAVOIR] : Voici l’idée essentielle à retenir.`;
+  const inspiration = aInspiration ? "" : `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ta confiance.`;
+  const consolidation = aConsolidation ? "" : `❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.`;
+
+  const morceaux = [];
+  if (!aVecu) morceaux.push(vecu);
+  morceaux.push(t);
+  if (!aSavoir) morceaux.push(savoir);
+  if (!aInspiration) morceaux.push(inspiration);
+  if (!aConsolidation) morceaux.push(consolidation);
+
+  return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function construireQuestionsConsolidation(question = "", corps = "", fiche = null) {
-  const theme = detecterThemeConsolidation(question, corps, fiche);
+function detecterThemeConsolidation(question = "", corps = "") {
+  const t = `${question} ${corps}`.toLowerCase();
+  if (t.includes("territoire") || t.includes("province") || t.includes("rdc") || t.includes("congo") || t.includes("commune") || t.includes("ville")) return "geographie";
+  if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("ohada") || t.includes("tribunal") || t.includes("droit")) return "droit";
+  if (t.includes("math") || t.includes("équation") || t.includes("fraction") || t.includes("calcul")) return "math";
+  if (t.includes("physique") || t.includes("vitesse") || t.includes("force")) return "physique";
+  if (t.includes("chimie") || t.includes("molécule") || t.includes("acide") || t.includes("base")) return "chimie";
+  return "general";
+}
 
-  if (theme === THEME_HISTOIRE) {
-    return `1) Question de réflexion : pourquoi est-il important de connaître le passé de son pays ?
-2) Petite vérification rapide :
-A. L’histoire aide à comprendre le présent
-B. L’histoire ne sert presque à rien
-👉 Choisis la bonne réponse.`;
-  }
+function construireQuestionsConsolidation(question = "", corps = "") {
+  const theme = detecterThemeConsolidation(question, corps);
 
-  if (theme === THEME_GEOGRAPHIE) {
+  if (theme === "geographie") {
     return `1) Question de réflexion : pourquoi faut-il connaître correctement les subdivisions administratives ?
 2) Petite vérification rapide :
 A. Une liste administrative doit être précise
@@ -1026,7 +860,7 @@ B. Une liste approximative suffit
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === THEME_DROIT) {
+  if (theme === "droit") {
     return `1) Question de réflexion : pourquoi faut-il vérifier la source avant de citer un article ?
 2) Petite vérification rapide :
 A. On peut citer sans vérifier
@@ -1034,7 +868,7 @@ B. Il faut vérifier le texte exact
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === THEME_MATH) {
+  if (theme === "math") {
     return `1) Question de réflexion : pourquoi la méthode compte-t-elle ?
 2) Petite vérification rapide :
 A. La méthode compte aussi
@@ -1042,7 +876,7 @@ B. Seule la réponse finale compte
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === THEME_PHYSIQUE) {
+  if (theme === "physique") {
     return `1) Question de réflexion : pourquoi les unités sont-elles importantes ?
 2) Petite vérification rapide :
 A. Les unités aident à vérifier le raisonnement
@@ -1050,19 +884,11 @@ B. Les unités ne servent presque à rien
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === THEME_CHIMIE) {
+  if (theme === "chimie") {
     return `1) Question de réflexion : pourquoi faut-il bien écrire les symboles chimiques ?
 2) Petite vérification rapide :
 A. H₂O et CO₂ sont différents
 B. H₂O et CO₂ sont identiques
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (theme === THEME_FRANCAIS) {
-    return `1) Question de réflexion : pourquoi faut-il bien choisir ses mots ?
-2) Petite vérification rapide :
-A. Bien écrire aide à mieux penser
-B. Bien écrire n’a pas d’importance
 👉 Choisis la bonne réponse.`;
   }
 
@@ -1073,69 +899,55 @@ B. Mémoriser sans comprendre suffit toujours
 👉 Choisis la bonne réponse.`;
 }
 
-function blocConsolidationAuto(question = "", corps = "", fiche = null) {
-  return `❓ [CONSOLIDATION] :\n\n${construireQuestionsConsolidation(question, corps, fiche)}`;
-}
-
-function contientConsolidationComplete(texte = "") {
-  const t = String(texte || "").toLowerCase();
-  return t.includes("question de réflexion") && t.includes("petite vérification rapide");
-}
-
-function renforcerBlocConsolidation(corps = "", question = "", fiche = null) {
+function renforcerBlocConsolidation(corps = "", question = "") {
   let t = String(corps || "").trim();
   if (!t) return t;
-  if (contientConsolidationComplete(t)) return t;
+  const blocPlus = construireQuestionsConsolidation(question, t);
 
   if (/❓\s*\[CONSOLIDATION\]/i.test(t)) {
     return t.replace(
-      /(❓\s*\[CONSOLIDATION\]\s*:?\s*)([\s\S]*?)(?=(\n👉|\n🌟|$))/i,
-      (_m, p1, p2) => {
-        const contenu = String(p2 || "").trim();
-        if (!contenu) {
-          return blocConsolidationAuto(question, t, fiche);
-        }
-        return `${p1}${contenu}\n\n${construireQuestionsConsolidation(question, t, fiche)}`;
+      /(❓\s*\[CONSOLIDATION\]\s*:?\s*[\s\S]*?)(?=\n👉|\n🌟|$)/i,
+      (match) => {
+        if (/question de réflexion/i.test(match) || /petite vérification rapide/i.test(match)) return match;
+        return `${match}\n\n${blocPlus}`;
       }
     );
   }
 
-  return `${t}\n\n${blocConsolidationAuto(question, t, fiche)}`;
+  return `${t}\n\n❓ [CONSOLIDATION] :\n\n${blocPlus}`;
 }
 
-function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "", fiche = null) {
+function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
+  const corps = String(reponse || "").toLowerCase();
   const q = normaliserMessageCourt(question);
-  if (estMessageRelationnelSimple(q)) return "";
-  const theme = detecterThemePrincipal(question, reponse, fiche);
 
-  if (theme === THEME_MATH) return pick(OUVERTURES.math);
-  if (theme === THEME_HISTOIRE) return pick(OUVERTURES.histoire);
-  if (theme === THEME_GEOGRAPHIE) return pick(OUVERTURES.geographie);
-  if (theme === THEME_DROIT) return pick(OUVERTURES.droit);
-  if (theme === THEME_PHYSIQUE) return pick(OUVERTURES.physique);
-  if (theme === THEME_CHIMIE) return pick(OUVERTURES.chimie);
-  if (theme === THEME_FRANCAIS) return pick(OUVERTURES.francais);
+  if (estMessageRelationnelSimple(q)) return "";
 
   if (estQuestionTechnique(q)) {
     return "👉 Essaie maintenant de continuer, puis envoie-moi ta réponse.";
   }
 
-  return pick(OUVERTURES.general);
+  if (
+    corps.includes("géographie") ||
+    corps.includes("geographie") ||
+    corps.includes("rdc") ||
+    corps.includes("congo")
+  ) {
+    return "👉 Nous pouvons continuer avec une autre petite question de géographie.";
+  }
+
+  return pick(OUVERTURES);
 }
 
 function choisirEncouragementContextuel(reponse = "", question = "") {
   const corps = String(reponse || "").toLowerCase();
   const q = String(question || "").toLowerCase();
 
-  if (estMessageRelationnelSimple(question)) return "";
+  if (estMessageRelationnelSimple(question)) {
+    return "";
+  }
 
-  if (
-    corps.includes("je n'arrive pas encore") ||
-    corps.includes("petit souci technique") ||
-    corps.includes("réessaie") ||
-    corps.includes("image plus nette") ||
-    corps.includes("message vocal plus clair")
-  ) {
+  if (corps.includes("je n'arrive pas encore") || corps.includes("petit souci technique") || corps.includes("réessaie") || corps.includes("image plus nette") || corps.includes("message vocal plus clair")) {
     return "🌟 Mot d'encouragement : Ne te décourage pas ; nous pouvons reprendre calmement.";
   }
 
@@ -1148,10 +960,7 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
     q.includes("ça donne") ||
     q.includes("j'obtiens");
 
-  if (
-    vraieReussite &&
-    (corps.includes("bonne réponse") || corps.includes("réponse correcte") || corps.includes("exact") || corps.includes("juste"))
-  ) {
+  if (vraieReussite && (corps.includes("bonne réponse") || corps.includes("réponse correcte") || corps.includes("exact") || corps.includes("juste"))) {
     return "🌟 Mot d'encouragement : Bon travail ; continue avec cette rigueur.";
   }
 
@@ -1185,6 +994,7 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     if (t.includes("apres midi")) return `Bon après-midi ${appel} 😊`;
     if (t.includes("week end") || t.includes("weekend")) return `Bon week-end ${appel} 😄`;
     if (t.includes("a demain")) return `À demain ${appel} 👋`;
+
     return pick([
       `Bonjour ${appel} 😊`,
       `Salut ${appel} 👋`,
@@ -1229,151 +1039,98 @@ function messageTypeLisible(msgType = "message") {
 }
 
 /* =========================================================
-   11B) NETTOYAGE FORT DES DOUBLONS
+   7) FONCTIONS CRITIQUES
 ========================================================= */
-function nettoyerStyleFinal(texte = "") {
-  return String(texte || "")
-    .replace(/\bfuture avocate\b/gi, "future professionnelle")
-    .replace(/\bfutur avocat\b/gi, "futur professionnel")
-    .replace(/\bmon enfant\b/gi, "cher élève");
+function estMimeImageSupporte(mimeType = "") {
+  const allowed = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+    "image/heic",
+    "image/heif"
+  ];
+  return allowed.includes(String(mimeType || "").toLowerCase());
 }
 
-function contientStructureComplete(texte = "") {
-  const t = String(texte || "");
+function estMimeAudioSupporte(mimeType = "") {
+  const allowed = [
+    "audio/ogg",
+    "audio/opus",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/webm",
+    "audio/aac",
+    "audio/amr"
+  ];
+  return allowed.includes(String(mimeType || "").toLowerCase());
+}
+
+function ficheEstFaible(fiche = null) {
+  if (!fiche) return true;
+  const contenu = String(fiche?.contenu || "").trim();
+  const commentaire = String(fiche?.commentaire_ai || "").trim();
+  if (!contenu && !commentaire) return true;
+  if (contenu.length < 80 && commentaire.length < 50) return true;
+  return false;
+}
+
+function estQuestionGeographieRDC(question = "", fiche = null) {
+  const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
   return (
-    /🔵\s*\[VÉCU\]/i.test(t) &&
-    /🟡\s*\[SAVOIR\]/i.test(t) &&
-    /🔴\s*\[INSPIRATION\]/i.test(t) &&
-    /❓\s*\[CONSOLIDATION\]/i.test(t)
+    t.includes("rdc") ||
+    t.includes("congo") ||
+    t.includes("province") ||
+    t.includes("territoire") ||
+    t.includes("territoires") ||
+    t.includes("commune") ||
+    t.includes("communes") ||
+    t.includes("ville") ||
+    t.includes("villes") ||
+    t.includes("haut-katanga") ||
+    t.includes("haut katanga") ||
+    t.includes("géographie") ||
+    t.includes("geographie")
   );
 }
 
-function contientUneStructureMwalimu(texte = "") {
-  const t = String(texte || "");
-  return /[🔵🟡🔴❓]\s*\[(VÉCU|SAVOIR|INSPIRATION|CONSOLIDATION)\]/i.test(t);
-}
+function fautChercherSurWeb(question = "", fiche = null) {
+  const q = String(question || "").toLowerCase().trim();
 
-function extraireBloc(tag = "VÉCU", texte = "") {
-  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(
-    `([🔵🟡🔴❓]\\s*\\[${escaped}\\]\\s*:\\s*[\\s\\S]*?)(?=\\n[🔵🟡🔴❓]\\s*\\[|$)`,
-    "i"
-  );
-  const match = String(texte || "").match(regex);
-  return match ? match[1].trim() : "";
-}
-
-function normaliserStructureUnique(texte = "") {
-  let t = String(texte || "").trim();
-  if (!t) return "";
-
-  t = t.replace(/\n{3,}/g, "\n\n").trim();
-
-  if (!contientUneStructureMwalimu(t)) return t;
-
-  const vecuMatches = [
-    ...t.matchAll(/🔵\s*\[VÉCU\]\s*:\s*([\s\S]*?)(?=\n[🟡🔴❓🔵]\s*\[|$)/gi)
-  ];
-  const savoirMatches = [
-    ...t.matchAll(/🟡\s*\[SAVOIR\]\s*:\s*([\s\S]*?)(?=\n[🔵🔴❓🟡]\s*\[|$)/gi)
-  ];
-  const inspirationMatches = [
-    ...t.matchAll(/🔴\s*\[INSPIRATION\]\s*:\s*([\s\S]*?)(?=\n[🔵🟡❓🔴]\s*\[|$)/gi)
-  ];
-  const consolidationMatches = [
-    ...t.matchAll(/❓\s*\[CONSOLIDATION\]\s*:\s*([\s\S]*?)(?=\n[🔵🟡🔴❓]\s*\[|$)/gi)
-  ];
-
-  const pickLastClean = (matches, label) => {
-    if (!matches.length) return "";
-    const raw = String(matches[matches.length - 1][1] || "").trim();
-    if (!raw) return "";
-    return `${label} : ${raw}`;
-  };
-
-  const blocs = [];
-  const vecu = pickLastClean(vecuMatches, "🔵 [VÉCU]");
-  const savoir = pickLastClean(savoirMatches, "🟡 [SAVOIR]");
-  const inspiration = pickLastClean(inspirationMatches, "🔴 [INSPIRATION]");
-  const consolidation = pickLastClean(consolidationMatches, "❓ [CONSOLIDATION]");
-
-  if (vecu) blocs.push(vecu);
-  if (savoir) blocs.push(savoir);
-  if (inspiration) blocs.push(inspiration);
-  if (consolidation) blocs.push(consolidation);
-
-  return blocs.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function garderUneSeuleCitation(texte = "") {
-  const lignes = String(texte || "").split("\n");
-  let citationGardee = false;
-  const resultat = [];
-
-  for (const ligne of lignes) {
-    const trimmed = ligne.trim();
-    const estCitation = /^\*\*\*«.*»\*\*\*$/.test(trimmed);
-    if (estCitation) {
-      if (citationGardee) continue;
-      citationGardee = true;
-    }
-    resultat.push(ligne);
+  if (!q) return false;
+  if (estMessageRelationnelSimple(q)) return false;
+  if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
+    return false;
   }
 
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
+  const casWeb = [
+    "loi", "code", "article", "constitution", "juridique", "droit",
+    "ohada", "impôt", "impot", "taxe", "tribunal",
+    "géographie", "geographie", "rdc", "congo",
+    "province", "territoire", "territoires",
+    "commune", "communes", "ville", "villes",
+    "haut-katanga", "haut katanga",
+    "actualité", "actualite", "récent", "recent",
+    "aujourd'hui", "actuel",
+    "histoire", "date", "indépendance",
+    "qui", "quand", "où", "ou", "combien", "pourquoi", "comment"
+  ];
 
-function garderUneSeuleOuverture(texte = "") {
-  const lignes = String(texte || "").split("\n");
-  let ouvertureGardee = false;
-  const resultat = [];
+  if (casWeb.some((m) => q.includes(m))) return true;
+  if (!fiche) return true;
+  if (ficheEstFaible(fiche)) return true;
+  if (estQuestionGeographieRDC(question, fiche)) return true;
 
-  for (const ligne of lignes) {
-    const trimmed = ligne.trim();
-    if (trimmed.startsWith("👉 ")) {
-      if (ouvertureGardee) continue;
-      ouvertureGardee = true;
-    }
-    resultat.push(ligne);
-  }
-
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
-  let t = String(corps || "").trim();
-  if (!t) return t;
-
-  if (contientUneStructureMwalimu(t)) {
-    return normaliserStructureUnique(t);
-  }
-
-  const prenom = normaliserNom(user?.nom || "").split(" ")[0] || "élève";
-  const phraseRetour = construirePhraseRetourMemoire(historique, question, user);
-
-  const vecu = phraseRetour || `🔵 [VÉCU] : Je suis heureux de continuer cet échange avec toi, ${prenom}.`;
-  const savoir = `🟡 [SAVOIR] : Voici l’idée essentielle à retenir.`;
-  const inspiration = `🔴 [INSPIRATION] : Chaque notion bien comprise renforce ta confiance.`;
-  const consolidation = `❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.`;
-
-  return `${vecu}
-
-${t}
-
-${savoir}
-
-${inspiration}
-
-${consolidation}`.replace(/\n{3,}/g, "\n\n").trim();
+  return false;
 }
 
 function dedupeBlocFinal(texte = "") {
-  let t = String(texte || "");
-  t = normaliserStructureUnique(t);
-  t = garderUneSeuleOuverture(t);
-  t = garderUneSeuleCitation(t);
-
-  const lignes = t.split("\n");
+  const lignes = String(texte || "").split("\n");
   const resultat = [];
   const uniques = new Set();
 
@@ -1392,8 +1149,7 @@ function dedupeBlocFinal(texte = "") {
       normalisee.startsWith("👉 ") ||
       normalisee.startsWith("🌟 mot d'encouragement") ||
       normalisee.startsWith("***«") ||
-      normalisee === "────────────────" ||
-      /[🔵🟡🔴❓]\s*\[(vécu|savoir|inspiration|consolidation)\]/i.test(ligne);
+      normalisee === "────────────────";
 
     if (estUnique) {
       if (uniques.has(normalisee)) continue;
@@ -1406,43 +1162,894 @@ function dedupeBlocFinal(texte = "") {
   return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+async function attendreAvecBackoff(tentative = 0) {
+  const base = 1800;
+  const extra = tentative * 1400;
+  await attendre(base + extra);
+}
+
+async function genererAvecRetry(model, payload, maxRetries = 2) {
+  let lastError = null;
+  for (let tentative = 0; tentative <= maxRetries; tentative++) {
+    try {
+      await attendreAvecBackoff(tentative);
+      return await model.generateContent(payload);
+    } catch (e) {
+      lastError = e;
+      logError("gemini_retry", e, { tentative: tentative + 1 });
+      if (estErreurQuotaGemini(e) && tentative < maxRetries) {
+        await attendre(4000 + tentative * 3000);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError;
+}
+
+async function safeAI(generateFn, fallbackMessage) {
+  try {
+    const res = await generateFn();
+    if (!res || !String(res).trim()) throw new Error("Réponse vide");
+    return res;
+  } catch (e) {
+    logError("safe_ai", e);
+    return fallbackMessage;
+  }
+}
+
+function extraireJsonGemini(brut = "") {
+  const txt = String(brut || "").trim();
+  if (!txt) return null;
+
+  try {
+    return JSON.parse(txt);
+  } catch {}
+
+  const sansFence = txt
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(sansFence);
+  } catch {}
+
+  const match = sansFence.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      return JSON.parse(match[0]);
+    } catch {}
+  }
+
+  return null;
+}
+
+/* =========================================================
+   8) DB
+========================================================= */
+async function ensureBibliothequeSearchInfra() {
+  await pool.query(`
+    ALTER TABLE bibliotheque
+    ADD COLUMN IF NOT EXISTS search_vector tsvector;
+  `);
+
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION bibliotheque_search_vector_update()
+    RETURNS trigger AS $$
+    BEGIN
+      NEW.search_vector :=
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.titre, ''))), 'A') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.matiere, ''))), 'A') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.classe, ''))), 'B') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.mots_cles, ''))), 'A') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.contenu, ''))), 'B') ||
+        setweight(to_tsvector('simple', unaccent(coalesce(NEW.commentaire_ai, ''))), 'C');
+      RETURN NEW;
+    END
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await pool.query(`
+    DROP TRIGGER IF EXISTS trg_bibliotheque_search_vector_update ON bibliotheque;
+  `);
+
+  await pool.query(`
+    CREATE TRIGGER trg_bibliotheque_search_vector_update
+    BEFORE INSERT OR UPDATE OF titre, matiere, classe, mots_cles, contenu, commentaire_ai
+    ON bibliotheque
+    FOR EACH ROW
+    EXECUTE FUNCTION bibliotheque_search_vector_update();
+  `);
+
+  await pool.query(`
+    UPDATE bibliotheque
+    SET search_vector =
+      setweight(to_tsvector('simple', unaccent(coalesce(titre, ''))), 'A') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(matiere, ''))), 'A') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(classe, ''))), 'B') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(mots_cles, ''))), 'A') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(contenu, ''))), 'B') ||
+      setweight(to_tsvector('simple', unaccent(coalesce(commentaire_ai, ''))), 'C')
+    WHERE search_vector IS NULL;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_bibliotheque_search_vector
+    ON bibliotheque
+    USING GIN (search_vector);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_bibliotheque_updated_at
+    ON bibliotheque (updated_at DESC);
+  `);
+}
+
+async function initDB() {
+  try {
+    await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS processed_messages (
+        msg_id TEXT PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        phone TEXT PRIMARY KEY,
+        nom TEXT DEFAULT '',
+        classe TEXT DEFAULT '',
+        reve TEXT DEFAULT '',
+        historique JSONB DEFAULT '[]'::jsonb,
+        reminders_enabled BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bibliotheque (
+        id SERIAL PRIMARY KEY,
+        titre TEXT,
+        matiere TEXT,
+        classe TEXT,
+        mots_cles TEXT,
+        contenu TEXT,
+        commentaire_ai TEXT DEFAULT '',
+        source_type TEXT DEFAULT 'db',
+        source_url TEXT DEFAULT '',
+        provenance TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS unanswered_questions (
+        id SERIAL PRIMARY KEY,
+        phone TEXT DEFAULT '',
+        question TEXT NOT NULL,
+        msg_type TEXT DEFAULT 'text',
+        classe TEXT DEFAULT '',
+        nom TEXT DEFAULT '',
+        reason TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS student_attempts (
+        id SERIAL PRIMARY KEY,
+        phone TEXT NOT NULL,
+        sujet TEXT DEFAULT '',
+        question TEXT DEFAULT '',
+        attempts_count INT DEFAULT 0,
+        last_user_answer TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at
+      ON processed_messages (created_at DESC);
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_unanswered_questions_created_at
+      ON unanswered_questions (created_at DESC);
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_student_attempts_phone_sujet_updated
+      ON student_attempts (phone, sujet, updated_at DESC);
+    `);
+
+    await ensureBibliothequeSearchInfra();
+
+    logInfo("db_ready");
+  } catch (e) {
+    logError("init_db", e);
+    process.exit(1);
+  }
+}
+
+async function getUser(phone) {
+  const { rows } = await pool.query("SELECT * FROM conversations WHERE phone = $1", [phone]);
+  return rows[0] || null;
+}
+
+async function createUser(phone) {
+  await pool.query(
+    `INSERT INTO conversations (phone, nom, classe, reve, historique, reminders_enabled)
+     VALUES ($1, '', '', '', '[]'::jsonb, TRUE)
+     ON CONFLICT (phone) DO NOTHING`,
+    [phone]
+  );
+  return getUser(phone);
+}
+
+async function updateUserField(phone, field, value) {
+  const fieldMap = {
+    nom: "nom",
+    classe: "classe",
+    reve: "reve",
+    historique: "historique",
+    reminders_enabled: "reminders_enabled"
+  };
+  const safeField = fieldMap[field];
+  if (!safeField) throw new Error("Champ non autorisé");
+  const query = `UPDATE conversations SET ${safeField} = $1, updated_at = NOW() WHERE phone = $2`;
+  await pool.query(query, [value, phone]);
+}
+
+async function appendHistorique(phone, role, content) {
+  const nouvelElement = {
+    role,
+    content: tronquerTexte(content, 2500),
+    ts: new Date().toISOString()
+  };
+
+  await pool.query(
+    `
+    UPDATE conversations
+    SET historique = (
+      SELECT COALESCE(jsonb_agg(value ORDER BY ord), '[]'::jsonb)
+      FROM (
+        SELECT value, ord
+        FROM jsonb_array_elements(
+          COALESCE(historique, '[]'::jsonb) || $1::jsonb
+        ) WITH ORDINALITY AS arr(value, ord)
+        ORDER BY ord DESC
+        LIMIT 12
+      ) t
+    ),
+    updated_at = NOW()
+    WHERE phone = $2
+    `,
+    [JSON.stringify([nouvelElement]), phone]
+  );
+
+  const user = await getUser(phone);
+  return Array.isArray(user?.historique) ? user.historique : safeJsonParse(user?.historique, []);
+}
+
+async function logUnansweredQuestion(user = {}, question = "", msgType = "text", reason = "") {
+  try {
+    if (!String(question || "").trim()) return;
+    await pool.query(
+      `INSERT INTO unanswered_questions (phone, question, msg_type, classe, nom, reason)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        user?.phone || "",
+        tronquerTexte(question, 2000),
+        msgType,
+        user?.classe || "",
+        user?.nom || "",
+        reason || ""
+      ]
+    );
+  } catch (e) {
+    logError("log_unanswered_question", e);
+  }
+}
+
+async function getStudentAttempt(phone, sujet = "") {
+  const { rows } = await pool.query(
+    `SELECT * FROM student_attempts
+     WHERE phone = $1 AND sujet = $2
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [phone, sujet]
+  );
+  return rows[0] || null;
+}
+
+async function saveStudentAttempt(phone, sujet = "", question = "", lastUserAnswer = "") {
+  const existing = await getStudentAttempt(phone, sujet);
+  if (!existing) {
+    await pool.query(
+      `INSERT INTO student_attempts (phone, sujet, question, attempts_count, last_user_answer, updated_at)
+       VALUES ($1, $2, $3, 1, $4, NOW())`,
+      [phone, sujet, question, lastUserAnswer]
+    );
+    return 1;
+  }
+
+  const nextCount = Number(existing.attempts_count || 0) + 1;
+  await pool.query(
+    `UPDATE student_attempts
+     SET attempts_count = $1,
+         question = $2,
+         last_user_answer = $3,
+         updated_at = NOW()
+     WHERE id = $4`,
+    [nextCount, question, lastUserAnswer, existing.id]
+  );
+  return nextCount;
+}
+
+async function resetStudentAttempt(phone, sujet = "") {
+  await pool.query(
+    `DELETE FROM student_attempts WHERE phone = $1 AND sujet = $2`,
+    [phone, sujet]
+  );
+}
+
+async function resetAllStudentAttempts(phone) {
+  await pool.query(`DELETE FROM student_attempts WHERE phone = $1`, [phone]);
+}
+
+/* =========================================================
+   9) SÉCURITÉ WEBHOOK
+========================================================= */
+function verifierSignatureMeta(req) {
+  try {
+    const signature = req.get("x-hub-signature-256");
+    if (!APP_SECRET || !signature || !req.rawBody) return false;
+
+    const expectedSignature =
+      "sha256=" +
+      crypto.createHmac("sha256", APP_SECRET).update(req.rawBody).digest("hex");
+
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expectedSignature);
+    if (sigBuf.length !== expBuf.length) return false;
+
+    return crypto.timingSafeEqual(sigBuf, expBuf);
+  } catch {
+    return false;
+  }
+}
+
+function extraireMessageWhatsApp(body) {
+  const value = body?.entry?.[0]?.changes?.[0]?.value;
+  if (!value || value.statuses?.length || !value.messages?.length) return null;
+  return value.messages[0];
+}
+
+/* =========================================================
+   10) WHATSAPP
+========================================================= */
+async function envoyerWhatsApp(to, texte) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { body: tronquerTexte(texte, 3900) }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 15000
+      }
+    );
+  } catch (e) {
+    logError("whatsapp_send", e, { to });
+  }
+}
+
+async function envoyerIndicateurFrappe(messageId) {
+  try {
+    if (!messageId) return;
+
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: messageId,
+        typing_indicator: {
+          type: "text"
+        }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 15000
+      }
+    );
+  } catch (e) {
+    logWarn("typing_indicator_error", { message: e?.message || "", data: e?.response?.data || null });
+  }
+}
+
+async function recupererMetaMediaInfo(mediaId) {
+  const r = await axios.get(
+    `https://graph.facebook.com/v18.0/${mediaId}`,
+    {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      timeout: 15000
+    }
+  );
+  return r.data || {};
+}
+
+async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
+  const mediaInfo = await recupererMetaMediaInfo(mediaId);
+  const mediaUrl = mediaInfo?.url || null;
+  if (!mediaUrl) throw new Error("URL média introuvable");
+
+  const response = await axios.get(mediaUrl, {
+    responseType: "arraybuffer",
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    timeout: 30000,
+    maxContentLength: maxBytes,
+    maxBodyLength: maxBytes,
+    validateStatus: (s) => s >= 200 && s < 300
+  });
+
+  const contentType = String(response.headers["content-type"] || mediaInfo?.mime_type || "application/octet-stream").toLowerCase();
+  const contentLength = Number(response.headers["content-length"] || response.data?.byteLength || 0);
+
+  if (contentLength > maxBytes) throw new Error("Fichier trop volumineux");
+
+  return {
+    buffer: Buffer.from(response.data),
+    mimeType: contentType
+  };
+}
+
+/* =========================================================
+   11) IA
+========================================================= */
+async function consulterBibliotheque(question = "", classe = "") {
+  try {
+    const termes = String(question || "").trim();
+    if (!termes) return null;
+
+    const q = `
+      SELECT
+        id, titre, matiere, classe, mots_cles, contenu, commentaire_ai,
+        source_type, source_url, provenance, created_at, updated_at,
+        ts_rank(search_vector, plainto_tsquery('simple', unaccent($1))) AS score
+      FROM bibliotheque
+      WHERE
+        search_vector @@ plainto_tsquery('simple', unaccent($1))
+        AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
+      ORDER BY score DESC, updated_at DESC, id DESC
+      LIMIT 1
+    `;
+
+    const motifClasse = `%${classe}%`;
+    const { rows } = await pool.query(q, [termes, classe || "", motifClasse]);
+    return rows[0] || null;
+  } catch (e) {
+    logError("consulter_bibliotheque", e);
+    return null;
+  }
+}
+
+function construireSystemPrompt(user) {
+  const appelEleve = construireAppel(user);
+  const classe = user?.classe ? `Classe de l'élève : ${user.classe}` : "Classe non précisée";
+  const reve = user?.reve ? `Rêve de l'élève : ${user.reve}` : "Rêve non précisé";
+
+  return `${SYSTEM_BASE}
+${SYSTEM_TUTORAT}
+${SYSTEM_JURIDIQUE_WEB}
+${SYSTEM_GEO_WEB}
+PERSONNALISATION :
+- Adresse l'élève ainsi : ${appelEleve}
+- ${classe}
+- ${reve}
+INTERDICTION :
+- Ne dis pas "mon élève"
+- Ne donne pas une réponse froide de moteur de recherche
+- Ne répète jamais le header Mwalimu
+- Ne génère jamais une citation finale
+- Ne génère jamais une deuxième ouverture finale
+- Ne génère jamais un mot d'encouragement final`;
+}
+
+function toGeminiContents(messages = []) {
+  return messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content) }]
+    }));
+}
+
+async function appelerChatCompletion(messages) {
+  const systemMessages = messages
+    .filter((m) => m.role === "system")
+    .map((m) => m.content)
+    .join("\n\n");
+
+  const contents = toGeminiContents(messages);
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: systemMessages,
+    tools: [{ googleSearch: {} }]
+  });
+
+  const result = await genererAvecRetry(model, {
+    contents,
+    generationConfig: { temperature: 0.1 }
+  });
+
+  return result.response.text();
+}
+
+async function appelerJsonStrict({
+  systemInstruction = "",
+  prompt = "",
+  schema = null,
+  history = [],
+  inlineParts = []
+}) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction
+  });
+
+  const result = await genererAvecRetry(model, {
+    contents: [
+      ...toGeminiContents(history),
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          ...inlineParts
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+      ...(schema ? { responseSchema: schema } : {})
+    }
+  });
+
+  return extraireJsonGemini(result.response.text());
+}
+
+async function chercherContexteWeb(question = "", user = {}, historique = []) {
+  const system = construireSystemPrompt(user);
+
+  const reponse = await safeAI(
+    () => appelerChatCompletion([
+      { role: "system", content: system },
+      {
+        role: "system",
+        content: `MISSION WEB :
+- Utilise Google Search
+- Donne un CONTEXTE WEB BRUT, court, clair et factuel
+- Si la question concerne une province, une commune, une ville, un territoire ou une subdivision administrative, donne la liste complète trouvée
+- Pour une liste administrative, n'omets aucun élément trouvé
+- Si tu n'es pas sûr que la liste soit exhaustive, dis exactement : "Liste à confirmer"
+- Pas de structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
+- Pas de citation finale
+- Pas d'encouragement`
+      },
+      ...historique.slice(-4),
+      {
+        role: "user",
+        content: `QUESTION :
+${question}
+
+Donne un contexte web brut, précis et exhaustif si la question demande une liste.`
+      }
+    ]),
+    ""
+  );
+
+  return String(reponse || "").trim();
+}
+
+async function detecterIntentionIA(user, texte = "", historique = []) {
+  const system = `${construireSystemPrompt(user)}
+MODE CLASSIFICATION STRICTE :
+- Réponds uniquement en JSON valide
+- intention possible : salutation, remerciement, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc
+- matiere possible : math, physique, chimie, general
+- besoinCorrectionRenforcee doit être true ou false
+- sujet doit être court`;
+
+  const fallback = {
+    intention: "question_normale",
+    matiere: detecterMatiereScientifique(texte, "", null),
+    besoinCorrectionRenforcee: false,
+    sujet: extraireSujetMemoire(texte) || "general"
+  };
+
+  try {
+    const parsed = await appelerJsonStrict({
+      systemInstruction: system,
+      prompt: `Analyse ce message et classe-le.\n\nMESSAGE :\n${texte}`,
+      schema: JSON_SCHEMA_INTENTION,
+      history: historique.slice(-3)
+    });
+
+    if (!parsed || typeof parsed !== "object") return fallback;
+
+    return {
+      intention: String(parsed.intention || fallback.intention),
+      matiere: String(parsed.matiere || fallback.matiere),
+      besoinCorrectionRenforcee: Boolean(parsed.besoinCorrectionRenforcee),
+      sujet: String(parsed.sujet || fallback.sujet)
+    };
+  } catch (e) {
+    logError("detecter_intention_ia", e);
+    return fallback;
+  }
+}
+
+async function construireConsigneAntiBoucle(user, texteUtilisateur = "", historique = []) {
+  const analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
+  const sujet = analyse.sujet || extraireSujetMemoire(texteUtilisateur) || "general";
+
+  if (analyse.intention !== "soumission_reponse" && !estSoumissionReponse(texteUtilisateur)) {
+    return { sujet, tentative: 0, consigne: "" };
+  }
+
+  const tentative = await saveStudentAttempt(user.phone, sujet, texteUtilisateur, texteUtilisateur);
+
+  if (tentative < 3) {
+    return {
+      sujet,
+      tentative,
+      consigne: `L'élève a proposé une réponse. Corrige avec douceur sans donner tout de suite la solution complète.`
+    };
+  }
+
+  return {
+    sujet,
+    tentative,
+    consigne: `L'élève s'est probablement trompé plusieurs fois. Simplifie davantage, découpe en très petites étapes et donne un indice plus fort.`
+  };
+}
+
+async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
+  let contexteWeb = "";
+
+  const utiliserWeb = fautChercherSurWeb(questionEleve, fiche);
+  if (utiliserWeb) {
+    contexteWeb = await chercherContexteWeb(questionEleve, user, historique);
+  }
+
+  const blocWeb = contexteWeb
+    ? `CONTEXTE WEB (SOURCE PRINCIPALE) :
+${contexteWeb}`
+    : `CONTEXTE WEB :
+Aucune information web utile trouvée.`;
+
+  const blocDB = fiche
+    ? `CONTEXTE DB (SECONDAIRE) :
+Titre : ${fiche?.titre || "Sans titre"}
+Matière : ${fiche?.matiere || "Non précisée"}
+Classe : ${fiche?.classe || "Non précisée"}
+Contenu :
+${fiche?.contenu || ""}
+Commentaire IA :
+${fiche?.commentaire_ai || ""}`
+    : `CONTEXTE DB :
+Aucune fiche locale disponible.`;
+
+  return await safeAI(
+    () => appelerChatCompletion([
+      { role: "system", content: construireSystemPrompt(user) },
+      {
+        role: "system",
+        content: `RÈGLE FONDAMENTALE :
+- Utilise d'abord le WEB si disponible
+- Utilise la DB comme appui
+- Ne réponds jamais comme un moteur de recherche
+- Si la question demande une liste administrative complète, recopie la liste complète trouvée
+- Si tu n'es pas sûr d'une liste complète, dis-le honnêtement
+- N'invente jamais un territoire, une commune, une ville ou un article`
+      },
+      { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
+      ...historique.slice(-5),
+      {
+        role: "user",
+        content: `QUESTION :
+${questionEleve}
+
+${blocWeb}
+
+${blocDB}
+
+Donne maintenant la réponse finale de Mwalimu.`
+      }
+    ]),
+    `🔵 [VÉCU] : J'ai bien reçu ta demande.
+🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
+🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`
+  );
+}
+
+async function analyserAudioCourt(user, audioBuffer, mimeType, historique = []) {
+  const systemInstruction = `${construireSystemPrompt(user)}
+MODE ANALYSE AUDIO COURT :
+- Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide
+- Détecte si l'audio est un simple message social ou non
+- "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, bon apres-midi, bon après-midi, bonne journée, bon week-end, bon weekend, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va
+- "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.
+- Si l'audio est trop flou, mets "type":"incompris"
+- Réponds strictement en JSON`;
+
+  try {
+    const parsed = await appelerJsonStrict({
+      systemInstruction,
+      prompt: "Analyse cet audio et renvoie uniquement le JSON demandé.",
+      schema: JSON_SCHEMA_AUDIO,
+      history: historique.slice(-2),
+      inlineParts: [
+        { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
+      ]
+    });
+
+    if (!parsed || typeof parsed !== "object") {
+      return { transcription: "", type: "incompris" };
+    }
+
+    return {
+      transcription: String(parsed.transcription || "").trim(),
+      type: String(parsed.type || "incompris").trim().toLowerCase()
+    };
+  } catch (e) {
+    logError("analyser_audio_court", e);
+
+    return {
+      transcription: "",
+      type: "incompris"
+    };
+  }
+}
+
+async function reponseAudioUneSeulePasse(user, audioBuffer, mimeType, historique = [], fiche = null) {
+  const blocDB = fiche
+    ? `CONTEXTE DB :
+Titre : ${fiche?.titre || "Sans titre"}
+Matière : ${fiche?.matiere || "Non précisée"}
+Classe : ${fiche?.classe || "Non précisée"}
+Contenu DB :
+${tronquerTexte(fiche?.contenu || "", 3000)}
+Commentaire IA :
+${tronquerTexte(fiche?.commentaire_ai || "Aucun commentaire IA.", 1200)}`
+    : `CONTEXTE DB :
+Aucune fiche locale fiable trouvée.`;
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: `${construireSystemPrompt(user)}
+MODE AUDIO :
+- Commence toujours par dire : "J'ai bien reçu ton audio." seulement si le message audio n'est pas juste un simple salut ou un simple remerciement
+- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va, bonne journée, bon après-midi, bon week-end ou autre message social très court :
+  - réponds avec UNE seule phrase naturelle et courte
+  - sans structure pédagogique
+  - sans header
+  - sans citation
+  - sans encouragement
+  - sans VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
+- Si le sujet demande une liste complète, sois exhaustif
+- Sois succinct quand c'est possible
+- Ne génère jamais la citation finale
+- Ne génère jamais l’ouverture finale
+- Ne génère jamais le mot d’encouragement final`,
+    tools: [{ googleSearch: {} }]
+  });
+
+  const formattedHistory = historique.slice(-4).map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(m.content) }]
+  }));
+
+  return await safeAI(
+    async () => {
+      const r = await genererAvecRetry(model, {
+        contents: [
+          ...formattedHistory,
+          {
+            role: "user",
+            parts: [
+              { text: `${blocDB}\nConsigne pédagogique :\n${construireConsignePedagogique("", "audio")}` },
+              { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
+            ]
+          }
+        ],
+        generationConfig: { temperature: 0.2 }
+      });
+      return r.response.text();
+    },
+    ``
+  );
+}
+
+async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: `${construireSystemPrompt(user)}
+MODE IMAGE :
+- Commence toujours par dire : "J'ai bien reçu ton image."
+- Recopie ce qui est visible
+- Si une partie est floue, dis-le honnêtement
+- Sois succinct
+- Ne génère jamais la citation finale
+- Ne génère jamais l’ouverture finale
+- Ne génère jamais le mot d’encouragement final`,
+    tools: [{ googleSearch: {} }]
+  });
+
+  const contents = [
+    ...historique.slice(-4).map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content) }]
+    })),
+    {
+      role: "user",
+      parts: [
+        { text: `Analyse cette image. Commence par : J'ai bien reçu ton image. Puis recopie ce qui est visible et explique.` },
+        { inlineData: { mimeType, data: base64Image } }
+      ]
+    }
+  ];
+
+  return await safeAI(
+    async () => {
+      const r = await genererAvecRetry(model, {
+        contents,
+        generationConfig: { temperature: 0.2 }
+      });
+      return r.response.text();
+    },
+    ``
+  );
+}
+
 function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
   const reponseNettoyee = nettoyerReponseIA(reponseBrute);
-  const sortieScientifique = appliquerLes4EtapesScientifiques(
-    reponseNettoyee,
-    question,
-    fiche
-  );
+  const sortieScientifique = appliquerLes4EtapesScientifiques(reponseNettoyee, question, fiche);
+  const corpsAvecStructure = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
+  const corpsRenforce = renforcerBlocConsolidation(corpsAvecStructure, question);
 
-  let corps = verifierStructureMwalimu(
-    sortieScientifique.texte,
-    user,
-    historique,
-    question
-  );
+  let corps = adapterTexteGenre(corpsRenforce, user.nom);
+  corps = nettoyerAppelsRepetitifs(corps, user.nom);
+  corps = supprimerDoublonsLignes(corps);
 
-  corps = renforcerBlocConsolidation(corps, question, fiche);
-
-  corps = normaliserStructureUnique(corps);
-  corps = normaliserStructureUnique(corps);
-
-  let corpsFinal = adapterTexteGenre(corps, user.nom);
-  corpsFinal = nettoyerAppelsRepetitifs(corpsFinal, user.nom);
-  corpsFinal = nettoyerStyleFinal(corpsFinal);
-  corpsFinal = supprimerDoublonsLignes(corpsFinal);
-  corpsFinal = normaliserStructureUnique(corpsFinal);
-
-  const ouverture = adapterTexteGenre(
-    choisirOuvertureContextuelle(corpsFinal, user, question, fiche),
-    user.nom
-  );
-  const encouragement = choisirEncouragementContextuel(corpsFinal, question);
-  const citation = choisirCitationContextuelle(corpsFinal, question, fiche);
+  const ouverture = adapterTexteGenre(choisirOuvertureContextuelle(corps, user, question), user.nom);
+  const encouragement = choisirEncouragementContextuel(corps, question);
+  const citation = choisirCitationContextuelle(corps, question);
 
   const parties = [
     HEADER_MWALIMU,
     "────────────────",
-    corpsFinal,
+    corps,
     ouverture,
     encouragement,
     citation
@@ -1515,18 +2122,9 @@ function construireConsignePedagogique(texte = "", type = "text") {
 async function traiterTexte(user, texteUtilisateur, historique) {
   const cacheKey = makeCacheKey(user, texteUtilisateur);
   const cached = getCache(cacheKey);
-
   if (cached) {
     logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
     return { reponse: cached, fiche: null, bypassFormat: false };
-  }
-
-  if (estMessageDangereuxPourTutorat(texteUtilisateur)) {
-    return {
-      reponse: "Restons concentrés sur l’apprentissage. Je vais t’aider étape par étape, sans faire le travail à ta place.",
-      fiche: null,
-      bypassFormat: true
-    };
   }
 
   if (estMessageRelationnelSimple(texteUtilisateur)) {
@@ -1544,7 +2142,6 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   };
 
   const texteMin = String(texteUtilisateur || "").toLowerCase();
-
   const besoinAnalyseIA =
     estSoumissionReponse(texteUtilisateur) ||
     estQuestionTechnique(texteUtilisateur) ||
@@ -1561,8 +2158,7 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     texteMin.includes("communes") ||
     texteMin.includes("ville") ||
     texteMin.includes("villes") ||
-    texteMin.includes("province") ||
-    texteMin.includes("histoire");
+    texteMin.includes("province");
 
   if (besoinAnalyseIA) {
     analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
@@ -1571,7 +2167,6 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
   const consigneBase = construireConsignePedagogique(texteUtilisateur, "text");
   const antiBoucle = await construireConsigneAntiBoucle(user, texteUtilisateur, historique);
-
   let consigneFinale = consigneBase;
 
   if (analyse.intention === "juridique") {
@@ -1582,19 +2177,17 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
   }
 
-  const theme = detecterThemePrincipal(texteUtilisateur, "", fiche);
-  if (theme === THEME_HISTOIRE) {
-    consigneFinale += `\nLe message concerne l'histoire. Reste strictement dans le thème histoire pour l'explication, la consolidation et l'ouverture.`;
-  }
-
-  consigneFinale += `\nN'ajoute jamais une deuxième structure pédagogique si une première structure complète est déjà présente.`;
-  consigneFinale += `\nN'introduis pas de retour sur une ancienne question si l'élève pose une nouvelle question simple de définition.`;
-
   if (antiBoucle.consigne) {
     consigneFinale += `\n${antiBoucle.consigne}`;
   }
 
-  const reponse = await construireReponseDbWebIa(user, texteUtilisateur, historique, fiche, consigneFinale);
+  const reponse = await construireReponseDbWebIa(
+    user,
+    texteUtilisateur,
+    historique,
+    fiche,
+    consigneFinale
+  );
 
   if (reponse && String(reponse).trim()) {
     setCache(cacheKey, reponse);
@@ -1661,11 +2254,14 @@ async function traiterAudio(user, msg, historique) {
   }
 
   const tMini = normaliserTexteRelationnel(transcriptionBrute);
-
   if (
     tMini &&
     tMini.split(" ").length <= 5 &&
-    (tMini.includes("merci") || estMessageSalutation(tMini) || estMessageCourtHumain(tMini))
+    (
+      tMini.includes("merci") ||
+      estMessageSalutation(tMini) ||
+      estMessageCourtHumain(tMini)
+    )
   ) {
     return {
       reponse: construireReponseHumaineSimple(user, tMini) || "Je t’en prie 😊",
@@ -1683,6 +2279,7 @@ async function traiterAudio(user, msg, historique) {
   }
 
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
+
   const texteAudioNormalise = normaliserTexteRelationnel(reponse);
 
   if (
@@ -1841,26 +2438,24 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
 /* =========================================================
    15) CRON
 ========================================================= */
-cron.schedule(
-  "0 7 * * *",
-  async () => {
-    try {
-      logInfo("cron_morning_reminder_start");
+cron.schedule("0 7 * * *", async () => {
+  try {
+    logInfo("cron_morning_reminder_start");
 
-      const { rows } = await pool.query(`
-        SELECT phone, nom
-        FROM conversations
-        WHERE coalesce(phone, '') <> ''
-          AND coalesce(nom, '') <> ''
-          AND coalesce(reminders_enabled, TRUE) = TRUE
-      `);
+    const { rows } = await pool.query(`
+      SELECT phone, nom
+      FROM conversations
+      WHERE coalesce(phone, '') <> ''
+        AND coalesce(nom, '') <> ''
+        AND coalesce(reminders_enabled, TRUE) = TRUE
+    `);
 
-      for (const eleve of rows) {
-        try {
-          const appel = `${genreEleve(eleve.nom)} **${normaliserNom(eleve.nom).split(" ")[0]}**`;
-          const citation = pick(CITATIONS.patriotisme);
+    for (const eleve of rows) {
+      try {
+        const appel = `${genreEleve(eleve.nom)} **${normaliserNom(eleve.nom).split(" ")[0]}**`;
+        const citation = pick(CITATIONS.patriotisme);
 
-          const messageRappel = `${HEADER_MWALIMU}
+        const messageRappel = `${HEADER_MWALIMU}
 ────────────────
 🔵 [VÉCU] : Bonjour ${appel}.
 🟡 [SAVOIR] : Petit rappel du matin : avance aujourd’hui avec calme et sérieux.
@@ -1870,32 +2465,26 @@ cron.schedule(
 🌟 Mot d'encouragement : Un élève constant progresse.
 ${citation}`.replace(/\n{3,}/g, "\n\n").trim();
 
-          await envoyerWhatsApp(eleve.phone, messageRappel);
-        } catch (e) {
-          logError("cron_morning_reminder_user", e, { phone: eleve?.phone || "" });
-        }
+        await envoyerWhatsApp(eleve.phone, messageRappel);
+      } catch (e) {
+        logError("cron_morning_reminder_user", e, { phone: eleve?.phone || "" });
       }
-
-      logInfo("cron_morning_reminder_done", { count: rows.length });
-    } catch (e) {
-      logError("cron_morning_reminder", e);
     }
-  },
-  { timezone: "Africa/Lubumbashi" }
-);
 
-cron.schedule(
-  "0 3 * * *",
-  async () => {
-    try {
-      await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '2 days'");
-      logInfo("cron_cleanup_processed_messages_done");
-    } catch (e) {
-      logError("cron_cleanup_processed_messages", e);
-    }
-  },
-  { timezone: "Africa/Lubumbashi" }
-);
+    logInfo("cron_morning_reminder_done", { count: rows.length });
+  } catch (e) {
+    logError("cron_morning_reminder", e);
+  }
+}, { timezone: "Africa/Lubumbashi" });
+
+cron.schedule("0 3 * * *", async () => {
+  try {
+    await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '2 days'");
+    logInfo("cron_cleanup_processed_messages_done");
+  } catch (e) {
+    logError("cron_cleanup_processed_messages", e);
+  }
+}, { timezone: "Africa/Lubumbashi" });
 
 /* =========================================================
    16) PIPELINE D'UN MESSAGE
@@ -1918,7 +2507,6 @@ async function processIncomingMessage(msg) {
     "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
     [msgId]
   );
-
   if (check.rowCount === 0) {
     logWarn("duplicate_message_ignored", { phone: from, msgId });
     return;
@@ -1959,7 +2547,6 @@ async function processIncomingMessage(msg) {
     }
 
     await updateUserField(from, "nom", nom);
-
     await envoyerWhatsApp(
       from,
       `🤝 Enchanté *${nom}* !
@@ -2014,23 +2601,18 @@ Exemple : avocat, médecin, ingénieur, pilote.`
     return;
   }
 
-  let historique = Array.isArray(user.historique) ? user.historique : safeJsonParse(user.historique, []);
-
-  if (msgType === "text" && detectPromptInjection(texteUtilisateur)) {
-    await envoyerWhatsApp(
-      from,
-      "⚠️ Restons concentrés sur l’apprentissage. Je peux t’aider avec la méthode, les étapes et la correction, mais pas contourner les règles du tutorat."
-    );
-    return;
-  }
+  let historique = Array.isArray(user.historique)
+    ? user.historique
+    : safeJsonParse(user.historique, []);
 
   let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
   if (msgType === "text" && texteUtilisateur) {
     await appendHistorique(from, "user", texteUtilisateur);
     const userFresh = await getUser(from);
-    historique = Array.isArray(userFresh?.historique) ? userFresh.historique : safeJsonParse(userFresh?.historique, []);
-    user = userFresh || user;
+    historique = Array.isArray(userFresh?.historique)
+      ? userFresh.historique
+      : safeJsonParse(userFresh?.historique, []);
   }
 
   let reponseBrute = "";
@@ -2064,13 +2646,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`
   }
 
   if (!reponseBrute || !String(reponseBrute).trim()) {
-    await logUnansweredQuestion(
-      { ...user, phone: from },
-      texteUtilisateur || contenuUtilisateurPourMemoire,
-      msgType,
-      "final_empty"
-    );
-
+    await logUnansweredQuestion({ ...user, phone: from }, texteUtilisateur || contenuUtilisateurPourMemoire, msgType, "final_empty");
     reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.
 🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
 🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
