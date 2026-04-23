@@ -411,11 +411,7 @@ function premierPrenom(nom = "") {
 
 function construireAppelNaturel(user = {}) {
   const prenom = premierPrenom(user?.nom || "");
-  const styles = [
-    prenom,
-    `**${prenom}**`
-  ];
-  return pick(styles);
+  return pick([prenom, `**${prenom}**`]);
 }
 
 function construireAppel(user = {}) {
@@ -498,6 +494,7 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
 
   t = t.replace(/\bAh,\s*\*\*[^*]+\*\*,?\s*/gi, "");
   t = t.replace(/\bAh,\s*[^,\n]+,?\s*/gi, "");
+  t = t.replace(/\bc'est une excellente question qui nous emmène dans un tout autre domaine, celui de l'histoire\s*!?/gi, "");
   t = t.replace(/\bfuture avocate\b/gi, "");
   t = t.replace(/\bfutur avocat\b/gi, "");
   t = t.replace(/\bmon cher\b/gi, prenom);
@@ -700,19 +697,123 @@ function construirePhraseRetourMemoire(historique = [], texteActuel = "", user =
   return `🔵 [VÉCU] : Nous revenons sur ${sujet}, ${prenom}. Prenons cela calmement.`;
 }
 
+function detecterMatierePrincipale(question = "", corps = "") {
+  const q = String(question || "").toLowerCase().trim();
+  const c = String(corps || "").toLowerCase().trim();
+
+  const scores = {
+    droit: 0,
+    geographie: 0,
+    histoire: 0,
+    math: 0,
+    physique: 0,
+    chimie: 0,
+    francais: 0,
+    general: 0
+  };
+
+  const ajouter = (theme, motsQuestion = [], motsCorps = [], poidsQuestion = 6, poidsCorps = 1) => {
+    for (const mot of motsQuestion) {
+      if (q.includes(mot)) scores[theme] += poidsQuestion;
+    }
+    for (const mot of motsCorps) {
+      if (c.includes(mot)) scores[theme] += poidsCorps;
+    }
+  };
+
+  ajouter(
+    "droit",
+    ["droit", "droit positif", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"],
+    ["droit", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"]
+  );
+
+  ajouter(
+    "geographie",
+    ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "subdivision administrative"],
+    ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie"]
+  );
+
+  ajouter(
+    "histoire",
+    ["histoire", "passé", "passe", "événement passé", "evenement passe", "colonisation", "indépendance", "independance", "royaume", "date historique"],
+    ["histoire", "passé", "passe", "colonisation", "indépendance", "independance", "royaume", "date"]
+  );
+
+  ajouter(
+    "math",
+    ["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance", "géométrie", "geometrie"],
+    ["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance"]
+  );
+
+  ajouter(
+    "physique",
+    ["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"],
+    ["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"]
+  );
+
+  ajouter(
+    "chimie",
+    ["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"],
+    ["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"]
+  );
+
+  ajouter(
+    "francais",
+    ["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"],
+    ["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"]
+  );
+
+  let meilleur = "general";
+  let meilleurScore = 0;
+
+  for (const [theme, score] of Object.entries(scores)) {
+    if (score > meilleurScore) {
+      meilleur = theme;
+      meilleurScore = score;
+    }
+  }
+
+  return meilleurScore > 0 ? meilleur : "general";
+}
+
 function construireVecuNaturel(user = {}, question = "", historique = []) {
-  const prenom = construireAppelNaturel(user);
+  const prenom = premierPrenom(user?.nom || "");
+  const sujetMemoire = retrouverSujetProche(historique, question);
+  const matiere = detecterMatierePrincipale(question, "");
 
   if (estMessageRelationnelSimple(question)) {
     return `🔵 [VÉCU] : Je te lis, ${prenom}.`;
   }
 
-  const sujetMemoire = retrouverSujetProche(historique, question);
   if (sujetMemoire) {
     return pick([
-      `🔵 [VÉCU] : Nous revenons sur ${sujetMemoire}, ${prenom}. Prenons cela calmement.`,
-      `🔵 [VÉCU] : D’accord ${prenom}, reprenons ${sujetMemoire} simplement.`,
-      `🔵 [VÉCU] : Très bien ${prenom}, continuons sur ${sujetMemoire}.`
+      `🔵 [VÉCU] : D’accord ${prenom}, reprenons cela calmement.`,
+      `🔵 [VÉCU] : Très bien ${prenom}, nous revenons sur ce point.`,
+      `🔵 [VÉCU] : Allons-y doucement ${prenom}, reprenons ensemble.`
+    ]);
+  }
+
+  if (matiere === "droit") {
+    return pick([
+      `🔵 [VÉCU] : D’accord ${prenom}, regardons cette notion de droit simplement.`,
+      `🔵 [VÉCU] : Très bien ${prenom}, prenons cette question juridique pas à pas.`,
+      `🔵 [VÉCU] : Voyons cela clairement ${prenom}.`
+    ]);
+  }
+
+  if (matiere === "geographie") {
+    return pick([
+      `🔵 [VÉCU] : D’accord ${prenom}, regardons ce point de géographie calmement.`,
+      `🔵 [VÉCU] : Très bien ${prenom}, prenons cela pas à pas.`,
+      `🔵 [VÉCU] : Voyons cela simplement ${prenom}.`
+    ]);
+  }
+
+  if (matiere === "histoire") {
+    return pick([
+      `🔵 [VÉCU] : D’accord ${prenom}, regardons cela comme un point d’histoire.`,
+      `🔵 [VÉCU] : Très bien ${prenom}, prenons ce sujet d’histoire simplement.`,
+      `🔵 [VÉCU] : Voyons cela calmement ${prenom}.`
     ]);
   }
 
@@ -735,6 +836,25 @@ function supprimerDoublonsLignes(texte = "") {
     if (normalisee && normalisee === precedent) continue;
     resultat.push(ligne);
     precedent = normalisee;
+  }
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function nettoyerOuverturesDupliquees(texte = "") {
+  const lignes = String(texte || "").split("\n");
+  const resultat = [];
+  let ouvertureTrouvee = false;
+
+  for (const ligne of lignes) {
+    const l = String(ligne || "").trim();
+
+    if (l.startsWith("👉 ")) {
+      if (ouvertureTrouvee) continue;
+      ouvertureTrouvee = true;
+    }
+
+    resultat.push(ligne);
   }
 
   return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -822,37 +942,16 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
 }
 
 function choisirCitationContextuelle(reponse = "", question = "") {
-  const t = `${reponse} ${question}`.toLowerCase();
+  const matiere = detecterMatierePrincipale(question, reponse);
 
   if (estMessageRelationnelSimple(question)) return "";
 
-  if (t.includes("loi") || t.includes("code") || t.includes("article") || t.includes("droit")) {
-    return pick(CITATIONS.civisme);
-  }
-
-  if (
-    t.includes("géographie") || t.includes("geographie") ||
-    t.includes("territoire") || t.includes("province") ||
-    t.includes("commune") || t.includes("ville")
-  ) {
-    return pick(CITATIONS.geographie);
-  }
-
-  if (
-    t.includes("math") || t.includes("calcul") ||
-    t.includes("équation") || t.includes("equation") ||
-    t.includes("fraction") || t.includes("chimie")
-  ) {
-    return pick(CITATIONS.mathematiques);
-  }
-
-  if (t.includes("physique") || t.includes("science")) {
-    return pick(CITATIONS.sciences);
-  }
-
-  if (t.includes("histoire") || t.includes("date")) {
-    return pick(CITATIONS.histoire);
-  }
+  if (matiere === "droit") return pick(CITATIONS.civisme);
+  if (matiere === "geographie") return pick(CITATIONS.geographie);
+  if (matiere === "histoire") return pick(CITATIONS.histoire);
+  if (matiere === "math") return pick(CITATIONS.mathematiques);
+  if (matiere === "physique" || matiere === "chimie") return pick(CITATIONS.sciences);
+  if (matiere === "francais") return pick(CITATIONS.francais);
 
   return pick(CITATIONS.general);
 }
@@ -882,147 +981,77 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
   return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function detecterThemePrincipalStrict(question = "", corps = "") {
-  const q = String(question || "").toLowerCase();
-  const c = String(corps || "").toLowerCase();
-
-  const scores = {
-    droit: 0,
-    geographie: 0,
-    math: 0,
-    physique: 0,
-    chimie: 0,
-    francais: 0,
-    histoire: 0,
-    general: 0
-  };
-
-  const add = (theme, mots, poidsQ = 3, poidsC = 1) => {
-    for (const mot of mots) {
-      if (q.includes(mot)) scores[theme] += poidsQ;
-      if (c.includes(mot)) scores[theme] += poidsC;
-    }
-  };
-
-  add("droit", [
-    "droit", "droit positif", "loi", "code", "article", "juridique",
-    "jurisprudence", "tribunal", "ohada", "constitution", "décret", "decret"
-  ]);
-
-  add("geographie", [
-    "géographie", "geographie", "province", "territoire", "commune",
-    "ville", "secteur", "chefferie", "subdivision", "rdc", "congo"
-  ]);
-
-  add("math", [
-    "math", "maths", "équation", "equation", "fraction", "calcul",
-    "racine", "puissance", "géométrie", "geometrie"
-  ]);
-
-  add("physique", [
-    "physique", "force", "vitesse", "masse", "énergie", "energie",
-    "mouvement", "travail", "pression"
-  ]);
-
-  add("chimie", [
-    "chimie", "acide", "base", "molécule", "molecule", "atome",
-    "solution", "réaction", "reaction"
-  ]);
-
-  add("francais", [
-    "français", "francais", "grammaire", "orthographe", "conjugaison",
-    "phrase", "verbe"
-  ]);
-
-  add("histoire", [
-    "histoire", "date", "roi", "colonisation", "indépendance", "independance"
-  ]);
-
-  let meilleur = "general";
-  let meilleurScore = 0;
-
-  for (const [theme, score] of Object.entries(scores)) {
-    if (score > meilleurScore) {
-      meilleur = theme;
-      meilleurScore = score;
-    }
-  }
-
-  return meilleur;
-}
-
 function construireQuestionsConsolidationCiblee(question = "", corps = "") {
-  const q = String(question || "").trim();
-  const qMin = q.toLowerCase();
-  const theme = detecterThemePrincipalStrict(question, corps);
+  const q = String(question || "").trim().toLowerCase();
+  const matiere = detecterMatierePrincipale(question, corps);
 
-  if (qMin.includes("droit positif")) {
-    return `1) Question de réflexion : pourquoi dit-on que le droit positif est le droit effectivement en vigueur ?
+  if (q.includes("droit positif")) {
+    return `1) Question de réflexion : pourquoi dit-on que le droit positif regroupe les règles effectivement en vigueur ?
 2) Petite vérification rapide :
-A. Le droit positif regroupe les règles applicables actuellement
-B. Le droit positif regroupe seulement les règles idéales
+A. Le droit positif correspond aux règles applicables actuellement
+B. Le droit positif correspond seulement à des règles idéales
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "droit") {
-    return `1) Question de réflexion : quelle idée essentielle retiens-tu ici sur la règle de droit ?
+  if (matiere === "droit") {
+    return `1) Question de réflexion : quelle idée principale retiens-tu sur cette notion juridique ?
 2) Petite vérification rapide :
-A. Une règle juridique doit être identifiable et applicable
-B. Une règle juridique peut rester vague sans importance
+A. Une règle de droit doit être applicable
+B. Une règle de droit peut rester floue sans importance
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "geographie") {
-    return `1) Question de réflexion : quelle subdivision administrative retiens-tu dans cette leçon ?
+  if (matiere === "geographie") {
+    return `1) Question de réflexion : quel élément de géographie retiens-tu dans cette réponse ?
 2) Petite vérification rapide :
-A. Une liste administrative doit être exacte
-B. Une liste administrative peut être approximative
+A. Une subdivision administrative doit être exacte
+B. Une subdivision administrative peut être approximative
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "math") {
-    return `1) Question de réflexion : quelle méthode faut-il suivre avant de donner le résultat ?
+  if (matiere === "histoire") {
+    return `1) Question de réflexion : pourquoi l’étude du passé aide-t-elle à mieux comprendre le présent ?
 2) Petite vérification rapide :
-A. Il faut montrer la démarche
-B. La démarche ne sert à rien
+A. L’histoire aide à comprendre l’évolution des sociétés
+B. L’histoire ne sert qu’à mémoriser des dates
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "physique") {
-    return `1) Question de réflexion : pourquoi faut-il faire attention aux unités ?
+  if (matiere === "math") {
+    return `1) Question de réflexion : pourquoi faut-il suivre une méthode avant de donner le résultat ?
+2) Petite vérification rapide :
+A. La méthode aide à vérifier la réponse
+B. Seule la réponse finale compte
+👉 Choisis la bonne réponse.`;
+  }
+
+  if (matiere === "physique") {
+    return `1) Question de réflexion : pourquoi les unités sont-elles importantes en physique ?
 2) Petite vérification rapide :
 A. Les unités aident à vérifier le raisonnement
-B. Les unités sont secondaires
+B. Les unités ne sont pas importantes
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "chimie") {
-    return `1) Question de réflexion : pourquoi faut-il bien distinguer les symboles chimiques ?
+  if (matiere === "chimie") {
+    return `1) Question de réflexion : pourquoi faut-il écrire correctement les symboles et formules en chimie ?
 2) Petite vérification rapide :
-A. Un symbole chimique doit être exact
-B. On peut écrire les symboles au hasard
+A. Une formule chimique doit être exacte
+B. Une formule chimique peut être approximative
 👉 Choisis la bonne réponse.`;
   }
 
-  if (theme === "francais") {
-    return `1) Question de réflexion : quelle règle de langue faut-il retenir ici ?
+  if (matiere === "francais") {
+    return `1) Question de réflexion : quelle règle de langue retiens-tu ici ?
 2) Petite vérification rapide :
 A. Il faut observer la règle avant d’écrire
-B. On peut écrire sans vérifier la règle
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (theme === "histoire") {
-    return `1) Question de réflexion : quel fait important retiens-tu de cette explication ?
-2) Petite vérification rapide :
-A. En histoire, les faits doivent être exacts
-B. En histoire, l’approximation suffit
+B. La règle n’est pas importante
 👉 Choisis la bonne réponse.`;
   }
 
   return `1) Question de réflexion : quelle idée principale retiens-tu ?
 2) Petite vérification rapide :
-A. Comprendre aide à retenir durablement
+A. Comprendre aide à mieux retenir
 B. Répéter sans comprendre suffit toujours
 👉 Choisis la bonne réponse.`;
 }
@@ -1031,41 +1060,41 @@ function remplacerBlocConsolidation(corps = "", question = "") {
   let t = String(corps || "").trim();
   if (!t) return t;
 
-  const nouveauBloc = `❓ [CONSOLIDATION]
+  const bloc = `❓ [CONSOLIDATION]
 ${construireQuestionsConsolidationCiblee(question, t)}`;
 
   if (/❓\s*\[CONSOLIDATION\]/i.test(t)) {
-    return t.replace(
+    t = t.replace(
       /❓\s*\[CONSOLIDATION\][\s\S]*?(?=\n👉|\n🌟|\n\*\*\*«|$)/i,
-      nouveauBloc
-    ).trim();
+      bloc
+    );
+  } else {
+    t = `${t}\n\n${bloc}`;
   }
 
-  return `${t}\n\n${nouveauBloc}`.trim();
+  return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
+  const matiere = detecterMatierePrincipale(question, reponse);
   const q = String(question || "").toLowerCase();
 
   if (estMessageRelationnelSimple(q)) return "";
 
-  if (q.includes("droit") || q.includes("loi") || q.includes("article") || q.includes("droit positif")) {
-    return "👉 Si tu veux, nous pouvons prendre un autre terme juridique ensuite.";
+  if (matiere === "droit") {
+    return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
   }
 
-  if (
-    q.includes("géographie") ||
-    q.includes("geographie") ||
-    q.includes("province") ||
-    q.includes("territoire") ||
-    q.includes("commune") ||
-    q.includes("ville")
-  ) {
+  if (matiere === "geographie") {
     return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
   }
 
-  if (estQuestionTechnique(q)) {
-    return "👉 Essaie maintenant une étape, puis envoie-moi ce que tu trouves.";
+  if (matiere === "histoire") {
+    return "👉 Si tu veux, nous pouvons prendre un autre point d’histoire ensuite.";
+  }
+
+  if (matiere === "math" || matiere === "physique" || matiere === "chimie") {
+    return "👉 Essaie maintenant de reformuler l’idée ou de faire une étape, puis envoie-moi ta réponse.";
   }
 
   return "👉 Dis-moi maintenant ce que tu retiens en une phrase simple.";
@@ -1823,8 +1852,10 @@ RÈGLE DE COHÉRENCE THÉMATIQUE :
 - Interdiction totale de mélanger deux matières différentes dans une même consolidation
 - Si la question porte sur le droit, la consolidation doit rester en droit
 - Si la question porte sur la géographie, la consolidation doit rester en géographie
+- Si la question porte sur l’histoire, la consolidation doit rester en histoire
+- La citation finale doit rester dans la même matière que la question
 - L’ouverture finale doit rester dans la même matière que la question
-- Ne bascule jamais du droit vers la géographie, ni l’inverse, sauf si l’élève le demande
+- Ne bascule jamais du droit vers la géographie, de l’histoire vers la géographie, ou d’une matière vers une autre, sauf si l’élève le demande
 
 INTERDICTION :
 - Ne dis pas "mon élève"
@@ -2032,7 +2063,10 @@ Aucune fiche locale disponible.`;
 - Si la question demande une liste administrative complète, recopie la liste complète trouvée
 - Si tu n'es pas sûr d'une liste complète, dis-le honnêtement
 - N'invente jamais un territoire, une commune, une ville ou un article
-- La consolidation doit rester strictement dans la matière de la question`
+- La matière de la CONSOLIDATION doit être strictement la même que celle de la question principale
+- La citation finale doit être strictement liée à la même matière
+- L’ouverture finale doit être strictement liée à la même matière
+- Interdiction de mélanger histoire, géographie, droit, sciences, mathématiques ou français dans la même consolidation`
       },
       { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
       ...historique.slice(-5),
@@ -2211,6 +2245,7 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
 
   let corps = adapterTexteGenre(corpsConsolide, user.nom);
   corps = nettoyerAppelsRepetitifs(corps, user.nom);
+  corps = nettoyerOuverturesDupliquees(corps);
   corps = supprimerDoublonsLignes(corps);
 
   const ouverture = adapterTexteGenre(
@@ -2335,7 +2370,10 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     texteMin.includes("communes") ||
     texteMin.includes("ville") ||
     texteMin.includes("villes") ||
-    texteMin.includes("province");
+    texteMin.includes("province") ||
+    texteMin.includes("histoire") ||
+    texteMin.includes("indépendance") ||
+    texteMin.includes("colonisation");
 
   if (besoinAnalyseIA) {
     analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
@@ -2354,6 +2392,8 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   if (analyse.intention === "geographie_rdc" || estQuestionGeographieRDC(texteUtilisateur, fiche)) {
     consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
   }
+
+  consigneFinale += `\nLa consolidation, la citation finale et l’ouverture finale doivent rester dans la matière principale de la question.`;
 
   if (antiBoucle.consigne) {
     consigneFinale += `\n${antiBoucle.consigne}`;
