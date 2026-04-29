@@ -181,6 +181,7 @@ const REGLE_CALCUL_INTELLIGENT = `RÈGLES SPÉCIALES POUR LES CALCULS :
 - N’invente jamais un chiffre, une unité ou une formule`;
 
 const SYSTEM_BASE = `Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
+
 MISSION :
 - Aider l'élève à comprendre
 - Guider sans faire le travail à sa place
@@ -188,6 +189,17 @@ MISSION :
 - Utiliser un ton humain, simple, motivant et respectueux
 - Adapter le niveau à la classe de l'élève
 - Te référer au contexte scolaire de la RDC lorsque c'est pertinent
+
+MODE HUMAIN NATUREL :
+- Avant de répondre, distingue toujours :
+  1) échange humain simple
+  2) réaction humaine ou doute
+  3) vraie demande pédagogique
+- Pour un échange humain simple, réponds comme une vraie personne : court, naturel, sans structure
+- Pour une réaction comme "c'est faux", "je ne crois pas", "justifie", "explique mieux", réponds humainement d'abord, puis justifie ou corrige clairement
+- N'utilise la structure 🔵🟡🔴❓ que si l'élève demande réellement une leçon, une explication scolaire ou un exercice
+- Si l'élève exprime un doute, ne sois pas défensif : vérifie, explique et reconnais si une correction est possible
+
 STYLE OBLIGATOIRE :
 - Réponse claire, naturelle et brève
 - Évite les répétitions
@@ -286,9 +298,7 @@ class TTLCache {
   cleanup() {
     const now = Date.now();
     for (const [key, entry] of this.store.entries()) {
-      if (entry.expiresAt <= now) {
-        this.store.delete(key);
-      }
+      if (entry.expiresAt <= now) this.store.delete(key);
     }
   }
 
@@ -301,9 +311,7 @@ class TTLCache {
         oldestKey = key;
       }
     }
-    if (oldestKey) {
-      this.store.delete(oldestKey);
-    }
+    if (oldestKey) this.store.delete(oldestKey);
   }
 }
 
@@ -335,22 +343,16 @@ const processingQueues = new Map();
 
 function runSequentialByKey(key, task) {
   const previous = processingQueues.get(key) || Promise.resolve();
-  const execution = previous
-    .catch(() => {})
-    .then(() => task());
-
+  const execution = previous.catch(() => {}).then(() => task());
   const tracked = execution.finally(() => {
-    if (processingQueues.get(key) === tracked) {
-      processingQueues.delete(key);
-    }
+    if (processingQueues.get(key) === tracked) processingQueues.delete(key);
   });
-
   processingQueues.set(key, tracked);
   return tracked;
 }
 
 /* =========================================================
-   6) OUTILS SIMPLES
+   6) OUTILS SIMPLES + MODE HUMAIN
 ========================================================= */
 function pick(arr = []) {
   if (!arr.length) return "";
@@ -411,7 +413,7 @@ function premierPrenom(nom = "") {
 
 function construireAppelNaturel(user = {}) {
   const prenom = premierPrenom(user?.nom || "");
-  return pick([prenom, `**${prenom}**`]);
+  return pick([prenom, `**${prenom}**`, ""]);
 }
 
 function construireAppel(user = {}) {
@@ -446,10 +448,9 @@ function normaliserTexteRelationnel(texte = "") {
     .replace(/\bsvp\b/g, " ")
     .replace(/\bstp\b/g, " ")
     .replace(/\beuh\b/g, " ")
-    .replace(/\bah\b/g, " ")
-    .replace(/\boh\b/g, " ")
-    .replace(/\bhum\b/g, " ")
-    .replace(/\bhein\b/g, " ")
+    .replace(/\boh\b/g, "oh")
+    .replace(/\bhum\b/g, "hum")
+    .replace(/\bhein\b/g, "hein")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -508,8 +509,9 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
 function estMessageSalutation(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t) return false;
+
   return (
-    /^(bonjour|bonsoir|salut|hello|coucou|bjr|mbote|yo|cc)$/.test(t) ||
+    /^(bonjour|bonsoir|salut|hello|coucou|bjr|mbote|yo|cc|allô|allo)$/.test(t) ||
     /^(bonne?\s+nuit)$/.test(t) ||
     /^(bonne?\s+soiree)$/.test(t) ||
     /^(bonne?\s+journee)$/.test(t) ||
@@ -527,48 +529,26 @@ function estMessageRemerciement(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t) return false;
 
-  const exacts = [
-    "merci",
-    "merci beaucoup",
-    "grand merci",
-    "mille mercis",
-    "merci infiniment",
-    "merci encore",
-    "merci bien",
-    "un grand merci",
-    "vraiment merci",
-    "ok merci",
-    "okay merci",
-    "d accord merci",
-    "merci pour tout",
-    "merci pour ton aide",
-    "merci pour votre aide",
-    "je te remercie",
-    "je vous remercie",
-    "je te dis merci",
-    "je vous dis merci"
-  ];
-
-  if (exacts.includes(t)) return true;
-
   return (
-    /^merci$/.test(t) ||
-    /^merci\s+beaucoup$/.test(t) ||
-    /^grand\s+merci$/.test(t) ||
-    /^mille\s+mercis$/.test(t) ||
-    /^merci\s+infiniment$/.test(t) ||
-    /^merci\s+encore$/.test(t) ||
-    /^merci\s+bien$/.test(t) ||
-    /^un\s+grand\s+merci$/.test(t) ||
-    /^vraiment\s+merci$/.test(t) ||
-    /^merci\s+pour\s+tout$/.test(t) ||
-    /^merci\s+pour\s+ton\s+aide$/.test(t) ||
-    /^merci\s+pour\s+votre\s+aide$/.test(t) ||
-    /^je\s+te\s+remercie$/.test(t) ||
-    /^je\s+vous\s+remercie$/.test(t) ||
-    /^je\s+te\s+dis\s+merci$/.test(t) ||
-    /^je\s+vous\s+dis\s+merci$/.test(t) ||
-    /^(ok|okay|d accord)\s+merci$/.test(t)
+    t === "merci" ||
+    t.includes("merci beaucoup") ||
+    t.includes("grand merci") ||
+    t.includes("merci infiniment") ||
+    t.includes("merci encore") ||
+    t.includes("merci bien") ||
+    t.includes("merci pour tout") ||
+    t.includes("merci pour ton aide") ||
+    t.includes("merci pour votre aide") ||
+    t.includes("merci pour l encouragement") ||
+    t.includes("merci pour encouragement") ||
+    t.includes("merci pour le conseil") ||
+    t.includes("merci pour les conseils") ||
+    t.includes("merci pour la correction") ||
+    t.includes("merci pour l explication") ||
+    t.includes("je te remercie") ||
+    t.includes("je vous remercie") ||
+    t.includes("c est gentil") ||
+    t.includes("c est encourageant")
   );
 }
 
@@ -590,16 +570,96 @@ function estMessageCourtHumain(texte = "") {
     "tres bien",
     "nickel",
     "ca marche",
-    "ca va merci"
+    "ca va merci",
+    "bon",
+    "hmm",
+    "hum",
+    "hein",
+    "ah",
+    "oh",
+    "vraiment",
+    "serieux",
+    "serieusement"
   ].includes(t);
+}
+
+function estMessageConversationSimple(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  const expressions = [
+    "ah", "oh", "hein", "hum", "hmm", "euh",
+    "ok", "okay", "d accord", "oui", "non",
+    "vraiment", "serieux", "serieusement",
+    "c est faux", "ce est faux", "faux",
+    "je ne crois pas", "je ne te crois pas",
+    "tu es sur", "es tu sur", "tu es sure", "es tu sure",
+    "peux tu justifier", "peux tu justifier ta reponse",
+    "justifie ta reponse", "justifie", "justification",
+    "pourquoi", "comment ca", "explique mieux",
+    "je n ai pas compris", "pas compris",
+    "c est bizarre", "ce n est pas clair",
+    "reprends", "reexplique", "tu t es trompe", "tu as tort",
+    "corrige", "verifie", "verifie encore"
+  ];
+
+  return expressions.some((e) => t === e || t.includes(e));
+}
+
+function estDemandeJustificationOuDoute(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  return (
+    t.includes("c est faux") ||
+    t === "faux" ||
+    t.includes("je ne crois pas") ||
+    t.includes("je ne te crois pas") ||
+    t.includes("tu es sur") ||
+    t.includes("es tu sur") ||
+    t.includes("justifie") ||
+    t.includes("justification") ||
+    t.includes("peux tu justifier") ||
+    t.includes("tu as tort") ||
+    t.includes("tu t es trompe") ||
+    t.includes("verifie") ||
+    t.includes("corrige") ||
+    t.includes("ce n est pas clair") ||
+    t.includes("explique mieux") ||
+    t.includes("pas compris") ||
+    t.includes("reprends")
+  );
 }
 
 function estMessageRelationnelSimple(texte = "") {
   return (
     estMessageSalutation(texte) ||
     estMessageRemerciement(texte) ||
-    estMessageCourtHumain(texte)
+    estMessageCourtHumain(texte) ||
+    estMessageConversationSimple(texte)
   );
+}
+
+function estDemandePedagogiqueReelle(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  if (estMessageSalutation(texte)) return false;
+  if (estMessageRemerciement(texte)) return false;
+  if (estMessageCourtHumain(texte) && !estDemandeJustificationOuDoute(texte)) return false;
+
+  if (estDemandeJustificationOuDoute(texte)) return false;
+
+  const motsPedagogiques = [
+    "explique", "definition", "définition", "c est quoi", "qu est ce que",
+    "calcule", "calculer", "resous", "résous", "exercice", "corrige cet exercice",
+    "droit", "histoire", "geographie", "géographie", "math", "maths",
+    "physique", "chimie", "francais", "français", "grammaire", "conjugaison",
+    "loi", "code", "article", "ohada", "territoire", "province", "commune",
+    "ville", "fraction", "equation", "équation", "racine", "vitesse", "force"
+  ];
+
+  return motsPedagogiques.some((m) => t.includes(normaliserTexteRelationnel(m)));
 }
 
 function estReponseRelationnelleSimpleIA(texte = "") {
@@ -607,7 +667,7 @@ function estReponseRelationnelleSimpleIA(texte = "") {
   const n = normaliserMessageCourt(t);
   if (!t) return false;
   if (/🔵\s*\[VÉCU\]|🟡\s*\[SAVOIR\]|🔴\s*\[INSPIRATION\]|❓\s*\[CONSOLIDATION\]/i.test(t)) return false;
-  if (t.length > 180) return false;
+  if (t.length > 350) return false;
   return (
     n.startsWith("je t en prie") ||
     n.startsWith("avec plaisir") ||
@@ -620,7 +680,10 @@ function estReponseRelationnelleSimpleIA(texte = "") {
     n.startsWith("d accord") ||
     n.startsWith("bonne journee") ||
     n.startsWith("bon apres midi") ||
-    n.startsWith("bon week end")
+    n.startsWith("bon week end") ||
+    n.startsWith("tu fais bien") ||
+    n.startsWith("bonne reaction") ||
+    n.startsWith("reprenons")
   );
 }
 
@@ -713,52 +776,41 @@ function detecterMatierePrincipale(question = "", corps = "") {
   };
 
   const ajouter = (theme, motsQuestion = [], motsCorps = [], poidsQuestion = 6, poidsCorps = 1) => {
-    for (const mot of motsQuestion) {
-      if (q.includes(mot)) scores[theme] += poidsQuestion;
-    }
-    for (const mot of motsCorps) {
-      if (c.includes(mot)) scores[theme] += poidsCorps;
-    }
+    for (const mot of motsQuestion) if (q.includes(mot)) scores[theme] += poidsQuestion;
+    for (const mot of motsCorps) if (c.includes(mot)) scores[theme] += poidsCorps;
   };
 
-  ajouter(
-    "droit",
+  ajouter("droit",
     ["droit", "droit positif", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"],
     ["droit", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"]
   );
 
-  ajouter(
-    "geographie",
+  ajouter("geographie",
     ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "subdivision administrative"],
     ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie"]
   );
 
-  ajouter(
-    "histoire",
+  ajouter("histoire",
     ["histoire", "passé", "passe", "événement passé", "evenement passe", "colonisation", "indépendance", "independance", "royaume", "date historique"],
     ["histoire", "passé", "passe", "colonisation", "indépendance", "independance", "royaume", "date"]
   );
 
-  ajouter(
-    "math",
+  ajouter("math",
     ["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance", "géométrie", "geometrie"],
     ["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance"]
   );
 
-  ajouter(
-    "physique",
+  ajouter("physique",
     ["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"],
     ["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"]
   );
 
-  ajouter(
-    "chimie",
+  ajouter("chimie",
     ["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"],
     ["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"]
   );
 
-  ajouter(
-    "francais",
+  ajouter("francais",
     ["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"],
     ["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"]
   );
@@ -781,7 +833,7 @@ function construireVecuNaturel(user = {}, question = "", historique = []) {
   const sujetMemoire = retrouverSujetProche(historique, question);
   const matiere = detecterMatierePrincipale(question, "");
 
-  if (estMessageRelationnelSimple(question)) {
+  if (estMessageRelationnelSimple(question) && !estDemandePedagogiqueReelle(question)) {
     return `🔵 [VÉCU] : Je te lis, ${prenom}.`;
   }
 
@@ -944,7 +996,7 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
 function choisirCitationContextuelle(reponse = "", question = "") {
   const matiere = detecterMatierePrincipale(question, reponse);
 
-  if (estMessageRelationnelSimple(question)) return "";
+  if (estMessageRelationnelSimple(question) && !estDemandePedagogiqueReelle(question)) return "";
 
   if (matiere === "droit") return pick(CITATIONS.civisme);
   if (matiere === "geographie") return pick(CITATIONS.geographie);
@@ -1079,19 +1131,11 @@ function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
   const matiere = detecterMatierePrincipale(question, reponse);
   const q = String(question || "").toLowerCase();
 
-  if (estMessageRelationnelSimple(q)) return "";
+  if (estMessageRelationnelSimple(q) && !estDemandePedagogiqueReelle(q)) return "";
 
-  if (matiere === "droit") {
-    return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
-  }
-
-  if (matiere === "geographie") {
-    return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
-  }
-
-  if (matiere === "histoire") {
-    return "👉 Si tu veux, nous pouvons prendre un autre point d’histoire ensuite.";
-  }
+  if (matiere === "droit") return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
+  if (matiere === "geographie") return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
+  if (matiere === "histoire") return "👉 Si tu veux, nous pouvons prendre un autre point d’histoire ensuite.";
 
   if (matiere === "math" || matiere === "physique" || matiere === "chimie") {
     return "👉 Essaie maintenant de reformuler l’idée ou de faire une étape, puis envoie-moi ta réponse.";
@@ -1104,7 +1148,7 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
   const corps = String(reponse || "").toLowerCase();
   const q = String(question || "").toLowerCase();
 
-  if (estMessageRelationnelSimple(question)) return "";
+  if (estMessageRelationnelSimple(question) && !estDemandePedagogiqueReelle(question)) return "";
 
   if (
     corps.includes("je n'arrive pas encore") ||
@@ -1141,46 +1185,78 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
 
 function construireReponseHumaineSimple(user = {}, texte = "") {
   const prenom = premierPrenom(user?.nom || "élève");
-  const appel = construireAppel({ nom: prenom });
+  const appel = pick([prenom, `**${prenom}**`, ""]);
   const t = normaliserTexteRelationnel(texte);
 
   if (estMessageRemerciement(t)) {
     return pick([
-      `Je t’en prie ${appel} 😊`,
-      `Avec plaisir ${appel} 😊`,
-      `C’est normal ${appel}`,
-      `Toujours là ${appel} 💪`,
-      `Avec joie ${appel} 😊`
+      `Je t’en prie ${appel} 😊`.trim(),
+      `Avec plaisir ${appel} 😊`.trim(),
+      `C’est normal ${appel}. Continue doucement, tu progresses.`.trim(),
+      `Toujours là pour t’accompagner ${appel} 💪`.trim(),
+      `Avec joie ${appel}. Garde ce bon état d’esprit.`.trim(),
+      `C’est gentil ${appel}. On avance ensemble.`.trim()
     ]);
   }
 
   if (estMessageSalutation(t)) {
-    if (t.includes("bonsoir")) return `Bonne soirée ${appel} 🌙`;
-    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌙`;
-    if (t.includes("journee")) return `Bonne journée ${appel} 😊`;
-    if (t.includes("matinee")) return `Bonne matinée ${appel} 😊`;
-    if (t.includes("apres midi")) return `Bon après-midi ${appel} 😊`;
-    if (t.includes("week end") || t.includes("weekend")) return `Bon week-end ${appel} 😄`;
-    if (t.includes("a demain")) return `À demain ${appel} 👋`;
+    if (t.includes("bonsoir")) return `Bonne soirée ${appel} 🌙`.trim();
+    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌙`.trim();
+    if (t.includes("journee")) return `Bonne journée ${appel} 😊`.trim();
+    if (t.includes("matinee")) return `Bonne matinée ${appel} 😊`.trim();
+    if (t.includes("apres midi")) return `Bon après-midi ${appel} 😊`.trim();
+    if (t.includes("week end") || t.includes("weekend")) return `Bon week-end ${appel} 😄`.trim();
+    if (t.includes("a demain")) return `À demain ${appel} 👋`.trim();
     return pick([
-      `Bonjour ${appel} 😊`,
-      `Salut ${appel} 👋`,
-      `Coucou ${appel} 👋`,
-      `Mbote ${appel} 😊`
+      `Oui, je suis là ${appel} 😊`.trim(),
+      `Bonjour ${appel} 😊`.trim(),
+      `Salut ${appel} 👋`.trim(),
+      `Mbote ${appel} 😊`.trim(),
+      `Heureux de te lire ${appel}.`.trim()
     ]);
   }
 
-  if (estMessageCourtHumain(t)) {
-    if (t === "ca va" || t === "ca va merci") {
+  if (estDemandeJustificationOuDoute(t)) {
+    if (t.includes("faux") || t.includes("tu as tort") || t.includes("tu t es trompe")) {
       return pick([
-        `Oui, ça va bien ${appel} 😊`,
-        `Ça va bien ${appel}, merci 😊`
+        `Tu as peut-être raison ${appel}. Vérifions ensemble calmement.`.trim(),
+        `D’accord ${appel}, reprenons étape par étape.`.trim(),
+        `Bien vu ${appel}. Vérifions le raisonnement.`.trim()
       ]);
     }
+
+    if (t.includes("je ne crois pas") || t.includes("tu es sur") || t.includes("es tu sur")) {
+      return pick([
+        `Bonne réaction ${appel}. Une réponse doit pouvoir être justifiée.`.trim(),
+        `Tu fais bien de douter ${appel}. Reprenons calmement.`.trim(),
+        `D’accord ${appel}, vérifions cela avec plus de précision.`.trim()
+      ]);
+    }
+
+    if (t.includes("justifie") || t.includes("justification")) {
+      return pick([
+        `Très bien ${appel}, je vais expliquer pourquoi.`.trim(),
+        `Bonne demande ${appel}, une réponse doit être justifiée.`.trim(),
+        `Exact ${appel}, reprenons la logique clairement.`.trim()
+      ]);
+    }
+
+    if (t.includes("pas compris") || t.includes("explique") || t.includes("reprends") || t.includes("ce n est pas clair")) {
+      return pick([
+        `Pas de souci ${appel}, je simplifie.`.trim(),
+        `D’accord ${appel}, reprenons doucement.`.trim(),
+        `Très bien ${appel}, on va clarifier.`.trim()
+      ]);
+    }
+  }
+
+  if (estMessageCourtHumain(t) || estMessageConversationSimple(t)) {
     return pick([
-      `D’accord ${appel} 👍`,
-      `Très bien ${appel} 👍`,
-      `Parfait ${appel} 👍`
+      `D’accord ${appel} 👍`.trim(),
+      `Très bien ${appel}.`.trim(),
+      `Je comprends ${appel}.`.trim(),
+      `Oui, je vois ${appel}.`.trim(),
+      `Prenons cela calmement ${appel}.`.trim()
     ]);
   }
 
@@ -1209,30 +1285,17 @@ function messageTypeLisible(msgType = "message") {
 ========================================================= */
 function estMimeImageSupporte(mimeType = "") {
   const allowed = [
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/webp",
-    "image/gif",
-    "image/bmp",
-    "image/heic",
-    "image/heif"
+    "image/jpeg", "image/jpg", "image/png", "image/webp",
+    "image/gif", "image/bmp", "image/heic", "image/heif"
   ];
   return allowed.includes(String(mimeType || "").toLowerCase());
 }
 
 function estMimeAudioSupporte(mimeType = "") {
   const allowed = [
-    "audio/ogg",
-    "audio/opus",
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/mp4",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/webm",
-    "audio/aac",
-    "audio/amr"
+    "audio/ogg", "audio/opus", "audio/mpeg", "audio/mp3",
+    "audio/mp4", "audio/wav", "audio/x-wav", "audio/webm",
+    "audio/aac", "audio/amr"
   ];
   return allowed.includes(String(mimeType || "").toLowerCase());
 }
@@ -1268,7 +1331,7 @@ function estQuestionGeographieRDC(question = "", fiche = null) {
 function fautChercherSurWeb(question = "", fiche = null) {
   const q = String(question || "").toLowerCase().trim();
   if (!q) return false;
-  if (estMessageRelationnelSimple(q)) return false;
+  if (estMessageRelationnelSimple(q) && !estDemandePedagogiqueReelle(q)) return false;
 
   if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
     return false;
@@ -1305,9 +1368,7 @@ function dedupeBlocFinal(texte = "") {
     const normalisee = ligne.trim().toLowerCase();
 
     if (!normalisee) {
-      if (resultat[resultat.length - 1] !== "") {
-        resultat.push("");
-      }
+      if (resultat[resultat.length - 1] !== "") resultat.push("");
       continue;
     }
 
@@ -1742,9 +1803,7 @@ async function envoyerIndicateurFrappe(messageId) {
         messaging_product: "whatsapp",
         status: "read",
         message_id: messageId,
-        typing_indicator: {
-          type: "text"
-        }
+        typing_indicator: { type: "text" }
       },
       {
         headers: {
@@ -1839,6 +1898,7 @@ function construireSystemPrompt(user) {
 ${SYSTEM_TUTORAT}
 ${SYSTEM_JURIDIQUE_WEB}
 ${SYSTEM_GEO_WEB}
+
 PERSONNALISATION :
 - Adresse l'élève naturellement ainsi : ${appelEleve}
 - N'utilise pas systématiquement "Ah, Prénom"
@@ -1966,13 +2026,13 @@ async function detecterIntentionIA(user, texte = "", historique = []) {
   const system = `${construireSystemPrompt(user)}
 MODE CLASSIFICATION STRICTE :
 - Réponds uniquement en JSON valide
-- intention possible : salutation, remerciement, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc
+- intention possible : salutation, remerciement, conversation_simple, doute_justification, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc
 - matiere possible : math, physique, chimie, general
 - besoinCorrectionRenforcee doit être true ou false
 - sujet doit être court`;
 
   const fallback = {
-    intention: "question_normale",
+    intention: estDemandeJustificationOuDoute(texte) ? "doute_justification" : "question_normale",
     matiere: detecterMatiereScientifique(texte, "", null),
     besoinCorrectionRenforcee: false,
     sujet: extraireSujetMemoire(texte) || "general"
@@ -1998,6 +2058,39 @@ MODE CLASSIFICATION STRICTE :
     logError("detecter_intention_ia", e);
     return fallback;
   }
+}
+
+async function construireReponseConversationnelleIA(user, texteUtilisateur = "", historique = []) {
+  const intro = construireReponseHumaineSimple(user, texteUtilisateur);
+  const system = `${construireSystemPrompt(user)}
+MODE CONVERSATION HUMAINE :
+- Réponds sans header Mwalimu
+- N'utilise pas la structure 🔵🟡🔴❓
+- Réponds comme une personne calme, claire et honnête
+- Si l'élève dit que c'est faux, vérifie et explique sans te défendre
+- Si l'élève demande une justification, justifie brièvement avec logique
+- Si le contexte précédent manque, demande la précision avec naturel
+- Ne génère pas de citation finale
+- Ne génère pas de mot d'encouragement final
+- Maximum 8 lignes`;
+
+  const reponse = await safeAI(
+    () => appelerChatCompletion([
+      { role: "system", content: system },
+      ...historique.slice(-6),
+      {
+        role: "user",
+        content: `Message de l'élève :
+${texteUtilisateur}
+
+Réponds humainement. Commence naturellement, puis justifie ou clarifie si nécessaire.
+${intro ? `Idée de ton d'ouverture : ${intro}` : ""}`
+      }
+    ]),
+    intro || "D’accord, reprenons calmement."
+  );
+
+  return nettoyerReponseIA(reponse);
 }
 
 async function construireConsigneAntiBoucle(user, texteUtilisateur = "", historique = []) {
@@ -2090,9 +2183,10 @@ async function analyserAudioCourt(user, audioBuffer, mimeType, historique = []) 
   const systemInstruction = `${construireSystemPrompt(user)}
 MODE ANALYSE AUDIO COURT :
 - Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide
-- Détecte si l'audio est un simple message social ou non
-- "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, bon apres-midi, bon après-midi, bonne journée, bon week-end, bon weekend, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va
-- "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.
+- Détecte si l'audio est un simple message social, une réaction humaine, un doute ou une vraie demande pédagogique
+- "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, bon après-midi, bonne journée, bon week-end, ok, d'accord, compris, oui, non, super, cool, ça va
+- "conversation" = allô, ah, oh, hein, c'est faux, je ne crois pas, justifie, explique mieux, je n'ai pas compris, tu es sûr, vérifie
+- "pedagogique" = vraie question, exercice, demande d'explication scolaire, correction, droit, géographie, histoire, maths, physique, chimie, etc.
 - Si l'audio est trop flou, mets "type":"incompris"
 - Réponds strictement en JSON`;
 
@@ -2107,9 +2201,7 @@ MODE ANALYSE AUDIO COURT :
       ]
     });
 
-    if (!parsed || typeof parsed !== "object") {
-      return { transcription: "", type: "incompris" };
-    }
+    if (!parsed || typeof parsed !== "object") return { transcription: "", type: "incompris" };
 
     return {
       transcription: String(parsed.transcription || "").trim(),
@@ -2117,10 +2209,7 @@ MODE ANALYSE AUDIO COURT :
     };
   } catch (e) {
     logError("analyser_audio_court", e);
-    return {
-      transcription: "",
-      type: "incompris"
-    };
+    return { transcription: "", type: "incompris" };
   }
 }
 
@@ -2142,13 +2231,8 @@ Aucune fiche locale fiable trouvée.`;
     systemInstruction: `${construireSystemPrompt(user)}
 MODE AUDIO :
 - Commence toujours par dire : "J'ai bien reçu ton audio." seulement si le message audio n'est pas juste un simple salut ou un simple remerciement
-- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va, bonne journée, bon après-midi, bon week-end ou autre message social très court :
-  - réponds avec UNE seule phrase naturelle et courte
-  - sans structure pédagogique
-  - sans header
-  - sans citation
-  - sans encouragement
-  - sans VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
+- Si l'audio est seulement un message social ou conversationnel très court, réponds avec UNE seule phrase naturelle et courte
+- Sans structure pédagogique pour les messages sociaux
 - Si le sujet demande une liste complète, sois exhaustif
 - Sois succinct quand c'est possible
 - Ne génère jamais la citation finale
@@ -2300,9 +2384,19 @@ function construireConsignePedagogique(texte = "", type = "text") {
   if (type === "audio") {
     return `MODE AUDIO :
 - Si c'est un simple remerciement, une simple salutation ou un court message social, réponds en une phrase courte naturelle sans structure
+- Si c'est une réaction humaine courte, réponds naturellement sans structure
 - Sinon, commence par dire que tu as bien reçu l'audio
 - Réponds avec chaleur et pédagogie
 - Sois bref et clair`;
+  }
+
+  if (estDemandeJustificationOuDoute(t)) {
+    return `MODE CONVERSATION :
+- L'élève doute, conteste ou demande une justification
+- Réponds humainement d'abord
+- Puis justifie clairement
+- N'utilise pas la structure pédagogique complète
+- Sois calme, honnête et précis`;
   }
 
   if (estSoumissionReponse(t)) {
@@ -2338,10 +2432,22 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     return { reponse: cached, fiche: null, bypassFormat: false };
   }
 
-  if (estMessageRelationnelSimple(texteUtilisateur)) {
-    const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
-    if (reponseSimple) {
-      return { reponse: reponseSimple, fiche: null, bypassFormat: true };
+  if (estDemandeJustificationOuDoute(texteUtilisateur)) {
+    const rep = await construireReponseConversationnelleIA(user, texteUtilisateur, historique);
+    return { reponse: rep, fiche: null, bypassFormat: true };
+  }
+
+  if (!estDemandePedagogiqueReelle(texteUtilisateur)) {
+    const rep = construireReponseHumaineSimple(user, texteUtilisateur);
+    if (rep) {
+      return { reponse: rep, fiche: null, bypassFormat: true };
+    }
+  }
+
+  if (estMessageRelationnelSimple(texteUtilisateur) && !estDemandePedagogiqueReelle(texteUtilisateur)) {
+    const rep = construireReponseHumaineSimple(user, texteUtilisateur);
+    if (rep) {
+      return { reponse: rep, fiche: null, bypassFormat: true };
     }
   }
 
@@ -2426,22 +2532,14 @@ async function traiterAudio(user, msg, historique) {
   const audioId = msg.audio?.id;
 
   if (!audioId) {
-    return {
-      reponse: "Je n'arrive pas à lire ton audio.",
-      fiche: null,
-      bypassFormat: true
-    };
+    return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true };
   }
 
   const { buffer, mimeType } = await telechargerMedia(audioId, 8 * 1024 * 1024);
   logInfo("audio_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeAudioSupporte(mimeType)) {
-    return {
-      reponse: "Format audio non supporté.",
-      fiche: null,
-      bypassFormat: true
-    };
+    return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true };
   }
 
   const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
@@ -2449,51 +2547,30 @@ async function traiterAudio(user, msg, historique) {
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
-  if (transcription && estMessageRelationnelSimple(transcription)) {
-    const rep = construireReponseHumaineSimple(user, transcription);
-    if (rep) {
-      return {
-        reponse: rep,
-        fiche: null,
-        bypassFormat: true
-      };
-    }
+  if (transcriptionBrute && estDemandeJustificationOuDoute(transcriptionBrute)) {
+    const rep = await construireReponseConversationnelleIA(user, transcriptionBrute, historique);
+    return { reponse: rep, fiche: null, bypassFormat: true };
   }
 
-  if (transcriptionBrute && estMessageRelationnelSimple(transcriptionBrute)) {
+  if (transcription && estMessageRelationnelSimple(transcription) && !estDemandePedagogiqueReelle(transcription)) {
+    const rep = construireReponseHumaineSimple(user, transcription);
+    if (rep) return { reponse: rep, fiche: null, bypassFormat: true };
+  }
+
+  if (transcriptionBrute && estMessageRelationnelSimple(transcriptionBrute) && !estDemandePedagogiqueReelle(transcriptionBrute)) {
     const rep = construireReponseHumaineSimple(user, transcriptionBrute);
-    if (rep) {
-      return {
-        reponse: rep,
-        fiche: null,
-        bypassFormat: true
-      };
-    }
+    if (rep) return { reponse: rep, fiche: null, bypassFormat: true };
   }
 
   const tMini = normaliserTexteRelationnel(transcriptionBrute);
-  if (
-    tMini &&
-    tMini.split(" ").length <= 5 &&
-    (
-      tMini.includes("merci") ||
-      estMessageSalutation(tMini) ||
-      estMessageCourtHumain(tMini)
-    )
-  ) {
-    return {
-      reponse: construireReponseHumaineSimple(user, tMini) || "Je t’en prie 😊",
-      fiche: null,
-      bypassFormat: true
-    };
+  if (tMini && tMini.split(" ").length <= 7 && !estDemandePedagogiqueReelle(tMini)) {
+    const rep = construireReponseHumaineSimple(user, tMini);
+    if (rep) return { reponse: rep, fiche: null, bypassFormat: true };
   }
 
-  if (typeAudio === "social") {
-    return {
-      reponse: construireReponseHumaineSimple(user, transcription || transcriptionBrute || "merci") || "Je t’en prie 😊",
-      fiche: null,
-      bypassFormat: true
-    };
+  if (typeAudio === "social" || typeAudio === "conversation") {
+    const rep = construireReponseHumaineSimple(user, transcription || transcriptionBrute || "ok");
+    return { reponse: rep || "D’accord 😊", fiche: null, bypassFormat: true };
   }
 
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
@@ -2501,8 +2578,7 @@ async function traiterAudio(user, msg, historique) {
 
   if (
     texteAudioNormalise.includes("merci") ||
-    estMessageSalutation(texteAudioNormalise) ||
-    estMessageCourtHumain(texteAudioNormalise)
+    (estMessageRelationnelSimple(texteAudioNormalise) && !estDemandePedagogiqueReelle(texteAudioNormalise))
   ) {
     return {
       reponse: construireReponseHumaineSimple(user, texteAudioNormalise) || "Je t’en prie 😊",
@@ -2512,9 +2588,8 @@ async function traiterAudio(user, msg, historique) {
   }
 
   if (!reponse || !reponse.trim()) {
-    reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
     return {
-      reponse,
+      reponse: "Je n'arrive pas encore à analyser ton audio correctement.",
       fiche: null,
       bypassFormat: true
     };
@@ -2522,11 +2597,7 @@ async function traiterAudio(user, msg, historique) {
 
   const bypassFormat = estReponseRelationnelleSimpleIA(reponse);
 
-  return {
-    reponse,
-    fiche: null,
-    bypassFormat
-  };
+  return { reponse, fiche: null, bypassFormat };
 }
 
 async function traiterImage(user, msg, historique) {
@@ -2653,8 +2724,66 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
 }
 
 /* =========================================================
-   15) CRON
+   15) RAPPELS VARIABLES
 ========================================================= */
+function construireRappelMatin(eleve = {}) {
+  const prenom = premierPrenom(eleve.nom || "élève");
+
+  const vecus = [
+    `Bonjour **${prenom}** 😊`,
+    `Mbote **${prenom}** 👋`,
+    `Bonjour **${prenom}**, nouvelle journée, nouveau pas.`,
+    `Courage **${prenom}**, on avance encore aujourd’hui.`,
+    `Bonjour **${prenom}**, j’espère que tu vas bien ce matin.`,
+    `Salut **${prenom}**, prêt pour une petite victoire aujourd’hui ?`
+  ];
+
+  const savoirs = [
+    "Aujourd’hui, choisis une petite chose à comprendre vraiment.",
+    "Même 20 minutes de concentration peuvent faire une différence.",
+    "Le progrès vient souvent des petits efforts répétés.",
+    "Avance calmement : comprendre vaut mieux que se presser.",
+    "Une leçon bien comprise aujourd’hui peut t’aider demain.",
+    "Commence petit, mais commence avec sérieux."
+  ];
+
+  const inspirations = [
+    "Chaque jour sérieux construit quelque chose en toi.",
+    "La régularité finit toujours par produire des résultats.",
+    "Tu n’as pas besoin d’être parfait, seulement constant.",
+    "Un petit effort bien fait vaut mieux qu’un grand effort abandonné.",
+    "Ce que tu apprends avec patience reste plus longtemps.",
+    "Les grandes réussites commencent souvent par une petite discipline."
+  ];
+
+  const consolidations = [
+    "Quelle matière veux-tu travailler aujourd’hui ?",
+    "Quel chapitre veux-tu mieux comprendre aujourd’hui ?",
+    "Quelle difficulté veux-tu régler aujourd’hui ?",
+    "Quelle petite victoire scolaire veux-tu viser aujourd’hui ?",
+    "Sur quoi veux-tu qu’on avance ensemble aujourd’hui ?",
+    "Quelle question veux-tu éclaircir aujourd’hui ?"
+  ];
+
+  const encouragements = [
+    "🌟 Mot d'encouragement : Avance doucement, mais avance.",
+    "🌟 Mot d'encouragement : Chaque effort compte.",
+    "🌟 Mot d'encouragement : Tu peux progresser pas à pas.",
+    "🌟 Mot d'encouragement : Reste constant, même quand c’est difficile.",
+    "🌟 Mot d'encouragement : Une journée bien utilisée peut changer beaucoup.",
+    "🌟 Mot d'encouragement : Garde confiance, le sérieux finit par payer."
+  ];
+
+  return `${HEADER_MWALIMU}
+────────────────
+🔵 [VÉCU] : ${pick(vecus)}
+🟡 [SAVOIR] : ${pick(savoirs)}
+🔴 [INSPIRATION] : ${pick(inspirations)}
+❓ [CONSOLIDATION] : ${pick(consolidations)}
+${pick(encouragements)}
+${pick(CITATIONS.patriotisme)}`.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 cron.schedule("0 7 * * *", async () => {
   try {
     logInfo("cron_morning_reminder_start");
@@ -2669,20 +2798,7 @@ cron.schedule("0 7 * * *", async () => {
 
     for (const eleve of rows) {
       try {
-        const appel = `${genreEleve(eleve.nom)} **${premierPrenom(eleve.nom)}**`;
-        const citation = pick(CITATIONS.patriotisme);
-
-        const messageRappel = `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : Bonjour ${appel}.
-🟡 [SAVOIR] : Petit rappel du matin : avance aujourd’hui avec calme et sérieux.
-🔴 [INSPIRATION] : Ton objectif n’est pas d’aller vite, mais de bien comprendre.
-❓ [CONSOLIDATION] : Quelle matière veux-tu travailler aujourd’hui ?
-👉 Je reste à tes côtés.
-🌟 Mot d'encouragement : Un élève constant progresse.
-${citation}`.replace(/\n{3,}/g, "\n\n").trim();
-
-        await envoyerWhatsApp(eleve.phone, messageRappel);
+        await envoyerWhatsApp(eleve.phone, construireRappelMatin(eleve));
       } catch (e) {
         logError("cron_morning_reminder_user", e, { phone: eleve?.phone || "" });
       }
@@ -2929,45 +3045,4 @@ app.post("/webhook", async (req, res) => {
             from,
             `${HEADER_MWALIMU}
 ────────────────
-🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(typeMessage(msg))}.
-🟡 [SAVOIR] : Je suis momentanément très sollicité.
-🔴 [INSPIRATION] : Ce petit contretemps n’empêche pas notre progression.
-❓ [CONSOLIDATION] : Réessaie dans une minute avec la même question.`
-          );
-          return;
-        }
-
-        await envoyerWhatsApp(from, messageSecours(user, typeMessage(msg)));
-      } catch (e2) {
-        logError("fallback_send_error", e2, { phone: from });
-      }
-    }
-  }).catch((e) => {
-    logError("queue_error", e, { phone: from });
-  });
-});
-
-/* =========================================================
-   18) VERIFY + HEALTHCHECK
-========================================================= */
-app.get("/", (_req, res) => {
-  res.send("Mwalimu EdTech Server: OK");
-});
-
-app.get("/webhook", (req, res) => {
-  if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
-    return res.send(req.query["hub.challenge"]);
-  }
-  return res.sendStatus(403);
-});
-
-/* =========================================================
-   19) DÉMARRAGE
-========================================================= */
-(async () => {
-  await initDB();
-  app.listen(PORT, () => {
-    logInfo("server_started", { port: PORT });
-    console.log(`✅ Mwalimu en marche sur le port ${PORT}`);
-  });
-})();
+🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(typeMessag…
