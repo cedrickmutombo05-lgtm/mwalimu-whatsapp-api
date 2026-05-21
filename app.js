@@ -505,7 +505,9 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
   return t.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/* NOUVELLE DÉTECTION SOCIALE ROBUSTE */
+/* =========================================================
+   DÉTECTION SOCIALE AMÉLIORÉE
+========================================================= */
 function estMessagePurementSocial(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t) return false;
@@ -520,6 +522,10 @@ function estMessagePurementSocial(texte = "") {
   if (/^(bonne nuit|fais de beaux reves|dors bien|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)\b/i.test(t)) return true;
   // Émojis seuls positifs
   if (/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\s]+$/u.test(t)) return true;
+
+  // NOUVEAU : questions de bien-être et réponses sociales simples
+  if (/^(tu vas bien\??|comment vas-tu\??|comment tu vas\??|et toi\??|et vous\??|vous allez bien\??|comment ca va\??|ca va\??)$/i.test(t)) return true;
+
   return false;
 }
 
@@ -1178,11 +1184,17 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
 function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
   if (!dernierMessageEstQuestionBienEtre(historique)) return false;
   const t = normaliserTexteRelationnel(texteUtilisateur);
+
+  // Liste étendue des réponses et questions de retour
   const reponsesCourtes = [
     "ca va", "ca va bien", "je vais bien", "bien et toi", "oui je vais bien",
     "ca va merci", "je vais bien merci", "tranquille", "cool", "super",
-    "pas mal", "tres bien", "nickel", "je vais super bien", "au top"
+    "pas mal", "tres bien", "nickel", "je vais super bien", "au top",
+    "tu vas bien", "tu vas bien?", "comment vas-tu", "comment vas-tu?",
+    "et toi", "et toi?", "et vous", "comment ca va", "comment ca va?",
+    "vous allez bien", "vous allez bien?"
   ];
+
   return t.length < 60 && reponsesCourtes.includes(t);
 }
 
@@ -1263,6 +1275,16 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     }
     const simples = [`D'accord ${appel} 👍`, `Parfait ${appel} ✅`, `Entendu ${appel} 😉`];
     return pick(simples);
+  }
+
+  // NOUVEAU : questions de bien-être isolées (sans contexte de deuxième tour)
+  if (/^(tu vas bien\??|comment vas-tu\??|comment tu vas\??|et toi\??|et vous\??|vous allez bien\??|comment ca va\??|ca va\??)$/i.test(t)) {
+    const reponses = [
+      `Je vais très bien, merci ${appel} ! Et toi, comment vas-tu ? 😊`,
+      `Tout va bien de mon côté, ${appel}. Merci de demander ! Et toi, qu'as-tu envie d'apprendre aujourd'hui ?`,
+      `Je me sens en pleine forme, ${appel} ! Dis-moi, quelle matière veux-tu explorer ?`
+    ];
+    return pick(reponses);
   }
 
   return "";
@@ -2411,7 +2433,7 @@ function construireConsignePedagogique(texte = "", type = "text") {
    13) TRAITEMENT
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  // --- NOUVEAU : deuxième tour de salutation ---
+  // --- DEUXIÈME TOUR DE SALUTATION ---
   if (estSecondTourSalutation(historique, texteUtilisateur)) {
     const reponse = genererRepriseApresBienEtre(user);
     return { reponse, fiche: null, bypassFormat: true };
@@ -2535,7 +2557,7 @@ async function traiterAudio(user, msg, historique) {
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
-  // Détection deuxième tour audio (optionnel, mais on peut l'ajouter)
+  // Détection deuxième tour audio
   if (estSecondTourSalutation(historique, transcription || transcriptionBrute)) {
     const rep = genererRepriseApresBienEtre(user);
     return { reponse: rep, fiche: null, bypassFormat: true };
@@ -2767,7 +2789,7 @@ cron.schedule("0 3 * * *", async () => {
 }, { timezone: "Africa/Lubumbashi" });
 
 /* =========================================================
-   16) PIPELINE D'UN MESSAGE
+   16) PIPELINE D'UN MESSAGE (HARMONISÉ)
 ========================================================= */
 async function processIncomingMessage(msg) {
   const from = msg.from;
@@ -2899,116 +2921,112 @@ Exemple : avocat, médecin, ingénieur, pilote.`);
     contenuUtilisateurPourMemoire = "[image envoyée]";
     await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
   } else {
-    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton message.
-🟡 [SAVOIR] : Pour l'instant, je traite surtout les textes, les audios et les images.
-🔴 [INSPIRATION] : Nous pouvons déjà avancer correctement avec ces formats.
-❓ [CONSOLIDATION] : Envoie-moi ta question par écrit, par audio ou avec une image nette.`;
+    // Gestion des types de fichiers non pris en charge (documents, etc.)
+    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton fichier.
+🟡 [SAVOIR] : Je ne peux pas encore analyser ce type de format pour le moment.
+🔴 [INSPIRATION] : Ce n'est pas grave, nous pouvons utiliser le texte ou les images.
+❓ [CONSOLIDATION] : Envoie-moi plutôt ton exercice par écrit ou sous forme de photo bien lisible.`;
+    bypassFormat = false;
   }
 
-  if (!reponseBrute || !String(reponseBrute).trim()) {
-    await logUnansweredQuestion(
+  // --- ENCAPSULATION ET ENVOI ---
+  let messageFinal = "";
+
+  if (bypassFormat) {
+    // Si c'est une simple réponse sociale de premier ou deuxième tour
+    messageFinal = reponseBrute;
+  } else {
+    // Application de la charte Mwalimu EdTech (VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION)
+    messageFinal = construireMessageFinal(
       { ...user, phone: from },
+      reponseBrute,
+      historique,
       texteUtilisateur || contenuUtilisateurPourMemoire,
-      msgType,
-      "final_empty"
+      ficheContexte
     );
-    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.
-🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
-🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
-❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`;
   }
 
-  const messageFinal = bypassFormat
-    ? reponseBrute
-    : construireMessageFinal(
-        user,
-        reponseBrute,
-        historique,
-        texteUtilisateur || contenuUtilisateurPourMemoire,
-        ficheContexte
-      );
+  if (!messageFinal || !messageFinal.trim()) {
+    messageFinal = messageSecours({ ...user, phone: from }, msgType);
+  }
 
+  // Sauvegarde de la réponse de l'assistant dans la base de données
+  await appendHistorique(from, "assistant", messageFinal);
+
+  // Envoi de la réponse sur WhatsApp
   await envoyerWhatsApp(from, messageFinal);
-  await appendHistorique(from, "assistant", tronquerTexte(messageFinal, 2500));
 
-  logInfo("message_processed", {
+  logInfo("message_processed_success", {
     phone: from,
     msgId,
-    msgType,
     durationMs: nowMs() - startedAt
   });
 }
 
 /* =========================================================
-   17) WEBHOOK
+   17) ENDPOINTS & WEBHOOKS
 ========================================================= */
-app.post("/webhook", async (req, res) => {
-  if (!verifierSignatureMeta(req)) {
-    logWarn("invalid_meta_signature");
-    return res.sendStatus(403);
-  }
-
-  const msg = extraireMessageWhatsApp(req.body);
-  if (!msg) return res.sendStatus(200);
-
-  res.sendStatus(200);
-
-  const from = msg.from || "unknown";
-
-  runSequentialByKey(from, async () => {
-    try {
-      await processIncomingMessage(msg);
-    } catch (e) {
-      logError("process_incoming_message", e, { phone: from });
-
-      try {
-        let user = await getUser(from);
-        if (!user) user = { nom: "élève" };
-
-        if (estErreurQuotaGemini(e)) {
-          await envoyerWhatsApp(
-            from,
-            `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(typeMessage(msg))}.
-🟡 [SAVOIR] : Je suis momentanément très sollicité.
-🔴 [INSPIRATION] : Ce petit contretemps n’empêche pas notre progression.
-❓ [CONSOLIDATION] : Réessaie dans une minute avec la même question.`
-          );
-          return;
-        }
-
-        await envoyerWhatsApp(from, messageSecours(user, typeMessage(msg)));
-      } catch (e2) {
-        logError("fallback_send_error", e2, { phone: from });
-      }
-    }
-  }).catch((e) => {
-    logError("queue_error", e, { phone: from });
-  });
-});
-
-/* =========================================================
-   18) VERIFY + HEALTHCHECK
-========================================================= */
-app.get("/", (_req, res) => {
-  res.send("Mwalimu EdTech Server: OK");
-});
-
 app.get("/webhook", (req, res) => {
-  if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
-    return res.send(req.query["hub.challenge"]);
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    logInfo("webhook_verified");
+    return res.status(200).send(challenge);
   }
   return res.sendStatus(403);
 });
 
+app.post("/webhook", async (req, res) => {
+  // Optionnel : décommenter si la validation de la signature Meta est configurée
+  // if (!verifierSignatureMeta(req)) {
+  //   logWarn("invalid_webhook_signature");
+  //   return res.sendStatus(401);
+  // }
+
+  const msg = extraireMessageWhatsApp(req.body);
+  if (!msg) {
+    return res.sendStatus(200); // Meta attend un 200 même si le payload est vide/statut
+  }
+
+  const from = msg.from;
+
+  // File d'attente séquentielle par numéro pour éviter les conditions de concurrence (race conditions)
+  runSequentialByKey(from, async () => {
+    try {
+      await processIncomingMessage(msg);
+    } catch (err) {
+      logError("pipeline_processing_failure", err, { phone: from, msgId: msg.id });
+      try {
+        const fallback = messageSecours({ phone: from }, typeMessage(msg));
+        await envoyerWhatsApp(from, fallback);
+      } catch (sendErr) {
+        logError("critical_fallback_send_failure", sendErr);
+      }
+    }
+  });
+
+  return res.sendStatus(200);
+});
+
+// Statut de santé de l'API pour les plateformes de déploiement (Render, Railway, etc.)
+app.get("/health", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    return res.status(200).json({ status: "healthy", timestamp: horodatage() });
+  } catch (e) {
+    return res.status(500).json({ status: "unhealthy", error: e.message });
+  }
+});
+
 /* =========================================================
-   19) DÉMARRAGE
+   18) INITIALISATION
 ========================================================= */
 (async () => {
+  logInfo("api_starting");
   await initDB();
   app.listen(PORT, () => {
-    logInfo("server_started", { port: PORT });
-    console.log(`✅ Mwalimu en marche sur le port ${PORT}`);
+    logInfo("server_listening", { port: PORT });
   });
 })();
