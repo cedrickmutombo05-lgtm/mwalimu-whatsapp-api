@@ -1209,7 +1209,7 @@ function genererRepriseApresBienEtre(user = {}) {
   return pick(accroches);
 }
 
-/* RÉPONSES SOCIALES ENRICHIES (premier tour uniquement question bien-être) */
+/* RÉPONSES SOCIALES ENRICHIES (interaction systématique après un vœu) */
 function construireReponseHumaineSimple(user = {}, texte = "") {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom ? `**${prenom}**` : "toi";
@@ -1259,10 +1259,12 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
       ]);
     }
 
+    // Vœux avec relance systématique
     if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌜 Fais de beaux rêves.`;
-    if (t.includes("bonne journee")) return `Bonne journée à toi aussi ${appel} ☀️`;
-    if (t.includes("bon apres midi")) return `Merci ${appel} ! Passe un bon après-midi 🌤`;
-    if (t.includes("bon week end") || t.includes("bon weekend")) return `Bon week-end ${appel} 😄 Profite bien !`;
+    if (t.includes("bonne journee")) return `Bonne journée à toi aussi ${appel} ☀️ Qu'as-tu envie de découvrir aujourd'hui ?`;
+    if (t.includes("bon apres midi")) return `Merci ${appel} ! Passe un bon après-midi 🌤 Et si tu veux, on peut revoir quelque chose ensemble.`;
+    if (t.includes("bonne soiree")) return `Bonne soirée ${appel} 🌙 Si tu veux revoir un point avant de dormir, je suis là.`;
+    if (t.includes("bon week end") || t.includes("bon weekend")) return `Bon week-end ${appel} 😄 Profite bien ! Si tu as un moment, on pourrait réviser une notion.`;
     if (t.includes("a demain")) return `À demain ${appel} 👋 J'ai hâte de continuer avec toi.`;
 
     return `Salut ${appel} 👋`;
