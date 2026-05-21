@@ -523,7 +523,6 @@ function estMessagePurementSocial(texte = "") {
   return false;
 }
 
-// Anciennes fonctions conservées pour compatibilité
 function estMessageRelationnelSimple(texte = "") {
   return estMessagePurementSocial(texte);
 }
@@ -1152,7 +1151,53 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
   return "🌟 Mot d'encouragement : Avance pas à pas ; comprendre calmement vaut mieux que se précipiter.";
 }
 
-/* RÉPONSES SOCIALES ENRICHIES (proposition d'apprentissage après salutation) */
+/* =========================================================
+   6b) LOGIQUE CONVERSATIONNELLE À DEUX TEMPS
+========================================================= */
+
+function dernierMessageEstQuestionBienEtre(historique = []) {
+  if (!historique.length) return false;
+  const dernierAssistant = [...historique].reverse().find(m => m.role === "assistant");
+  if (!dernierAssistant) return false;
+  const texte = normaliserTexteRelationnel(dernierAssistant.content || "");
+  const motifs = [
+    "comment vas-tu",
+    "comment te sens-tu",
+    "comment se passe ta journee",
+    "comment s'est passee ta journee",
+    "j'espere que tu as bien dormi",
+    "contente de te retrouver",
+    "ravie de te parler",
+    "est-ce que tout va bien pour toi",
+    "prete a te detendre",
+    "raconte-moi vite comment s'est passee ta journee"
+  ];
+  return motifs.some(motif => texte.includes(motif));
+}
+
+function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
+  if (!dernierMessageEstQuestionBienEtre(historique)) return false;
+  const t = normaliserTexteRelationnel(texteUtilisateur);
+  const reponsesCourtes = [
+    "ca va", "ca va bien", "je vais bien", "bien et toi", "oui je vais bien",
+    "ca va merci", "je vais bien merci", "tranquille", "cool", "super",
+    "pas mal", "tres bien", "nickel", "je vais super bien", "au top"
+  ];
+  return t.length < 60 && reponsesCourtes.includes(t);
+}
+
+function genererRepriseApresBienEtre(user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom ? `**${prenom}**` : "toi";
+  const accroches = [
+    `Tant mieux ${appel} ! 😊 Qu'est-ce que tu aimerais apprendre maintenant ?`,
+    `Je suis content de l'entendre ${appel}. Quelle matière te tente aujourd'hui ?`,
+    `Heureux de te voir en forme ${appel}. Dis-moi, que veux-tu réviser ?`
+  ];
+  return pick(accroches);
+}
+
+/* RÉPONSES SOCIALES ENRICHIES (premier tour uniquement question bien-être) */
 function construireReponseHumaineSimple(user = {}, texte = "") {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom ? `**${prenom}**` : "toi";
@@ -1170,19 +1215,44 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     return pick(formules);
   }
 
-  // Salutations -> on propose d'apprendre quelque chose
+  // Salutations -> question de bien-être UNIQUEMENT (premier tour)
   if (estMessageSalutation(t)) {
     if (/(bonjour|salut|bjr|mbote|yo|cc|slt)/i.test(t)) {
-      if (heure < 12) return `Bonjour ${appel} ☀️ Qu'est-ce que tu aimerais apprendre aujourd'hui ?`;
-      else if (heure < 18) return `Bon après-midi ${appel} 🌤 Quelle matière te tente cet après-midi ?`;
-      else return `Bonsoir ${appel} 🌙 Dis-moi, que veux-tu revoir ce soir ?`;
+      const questionsMatin = [
+        `Bonjour ${appel} ☀️ Comment vas-tu aujourd'hui ?`,
+        `Salut ${appel} 😊 J'espère que tu as bien dormi.`,
+        `Coucou ${appel} 👋 Contente de te retrouver. Comment te sens-tu ?`
+      ];
+      const questionsAprem = [
+        `Bon après-midi ${appel} 🌤 Comment se passe ta journée ?`,
+        `Salut ${appel} ☀️ Est-ce que tout va bien pour toi ?`
+      ];
+      const questionsSoir = [
+        `Bonsoir ${appel} 🌙 Comment s'est passée ta journée ?`,
+        `Salut ${appel} 🌆 Prêt·e à te détendre ? Raconte-moi vite comment s'est passée ta journée.`
+      ];
+
+      let question = "";
+      if (heure < 12) question = pick(questionsMatin);
+      else if (heure < 18) question = pick(questionsAprem);
+      else question = pick(questionsSoir);
+
+      return question; // pas de proposition académique
     }
-    if (t.includes("bonsoir")) return `Bonsoir ${appel} 🌙 J'espère que ta journée s'est bien passée. Qu'est-ce que tu veux apprendre maintenant ?`;
+
+    if (t.includes("bonsoir")) {
+      return pick([
+        `Bonsoir ${appel} 🌙 J'espère que ta journée s'est bien passée.`,
+        `Bonsoir ${appel} 😊 Contente de te retrouver en cette fin de journée.`
+      ]);
+    }
+
     if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌜 Fais de beaux rêves.`;
-    if (t.includes("bonne journee")) return `Bonne journée à toi aussi ${appel} ☀️ Qu'as-tu envie de découvrir ?`;
-    if (t.includes("bon apres midi")) return `Merci ${appel} ! Passe un bon après-midi 🌤 Et si tu veux, on peut revoir quelque chose ensemble.`;
+    if (t.includes("bonne journee")) return `Bonne journée à toi aussi ${appel} ☀️`;
+    if (t.includes("bon apres midi")) return `Merci ${appel} ! Passe un bon après-midi 🌤`;
     if (t.includes("bon week end") || t.includes("bon weekend")) return `Bon week-end ${appel} 😄 Profite bien !`;
     if (t.includes("a demain")) return `À demain ${appel} 👋 J'ai hâte de continuer avec toi.`;
+
     return `Salut ${appel} 👋`;
   }
 
@@ -2341,7 +2411,13 @@ function construireConsignePedagogique(texte = "", type = "text") {
    13) TRAITEMENT
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  // Court-circuit social : aucun appel IA
+  // --- NOUVEAU : deuxième tour de salutation ---
+  if (estSecondTourSalutation(historique, texteUtilisateur)) {
+    const reponse = genererRepriseApresBienEtre(user);
+    return { reponse, fiche: null, bypassFormat: true };
+  }
+
+  // Court-circuit social premier tour (ou autres messages purement sociaux)
   if (estMessagePurementSocial(texteUtilisateur)) {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
     if (reponseSimple) {
@@ -2458,6 +2534,12 @@ async function traiterAudio(user, msg, historique) {
   const transcriptionBrute = String(analyse?.transcription || "").trim();
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
+
+  // Détection deuxième tour audio (optionnel, mais on peut l'ajouter)
+  if (estSecondTourSalutation(historique, transcription || transcriptionBrute)) {
+    const rep = genererRepriseApresBienEtre(user);
+    return { reponse: rep, fiche: null, bypassFormat: true };
+  }
 
   // Détection sociale sur la transcription
   if (transcription && estMessagePurementSocial(transcription)) {
