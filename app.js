@@ -505,6 +505,29 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
   return t.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/* NOUVELLE DÉTECTION SOCIALE ROBUSTE */
+function estMessagePurementSocial(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  // Salutations
+  if (/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)\b/i.test(t)) return true;
+  // Remerciements
+  if (/^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|merci à toi|merci mwalimu|merci mon cher|je te remercie|je vous remercie|cimer|thanks|thx)\b/i.test(t)) return true;
+  // Messages courts courants
+  if (/^(ok|okay|d accord|dac|dacc|oui|non|ca va|bien|super|cool|entendu|compris|parfait|tres bien|nickel|ca marche|ca va merci|pas de souci|pas de problème|a plus|a tantot|a toute|bye|tchao)\b/i.test(t)) return true;
+  // Vœux et moments de la journée
+  if (/^(bonne nuit|fais de beaux reves|dors bien|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)\b/i.test(t)) return true;
+  // Émojis seuls positifs
+  if (/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\s]+$/u.test(t)) return true;
+  return false;
+}
+
+// Anciennes fonctions conservées pour compatibilité
+function estMessageRelationnelSimple(texte = "") {
+  return estMessagePurementSocial(texte);
+}
+
 function estMessageSalutation(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t) return false;
@@ -592,14 +615,6 @@ function estMessageCourtHumain(texte = "") {
     "ca marche",
     "ca va merci"
   ].includes(t);
-}
-
-function estMessageRelationnelSimple(texte = "") {
-  return (
-    estMessageSalutation(texte) ||
-    estMessageRemerciement(texte) ||
-    estMessageCourtHumain(texte)
-  );
 }
 
 function estReponseRelationnelleSimpleIA(texte = "") {
@@ -848,12 +863,10 @@ function nettoyerOuverturesDupliquees(texte = "") {
 
   for (const ligne of lignes) {
     const l = String(ligne || "").trim();
-
     if (l.startsWith("👉 ")) {
       if (ouvertureTrouvee) continue;
       ouvertureTrouvee = true;
     }
-
     resultat.push(ligne);
   }
 
@@ -1139,49 +1152,47 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
   return "🌟 Mot d'encouragement : Avance pas à pas ; comprendre calmement vaut mieux que se précipiter.";
 }
 
+/* RÉPONSES SOCIALES ENRICHIES (proposition d'apprentissage après salutation) */
 function construireReponseHumaineSimple(user = {}, texte = "") {
-  const prenom = premierPrenom(user?.nom || "élève");
-  const appel = construireAppel({ nom: prenom });
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom ? `**${prenom}**` : "toi";
   const t = normaliserTexteRelationnel(texte);
+  const heure = new Date().getHours();
 
+  // Remerciements
   if (estMessageRemerciement(t)) {
-    return pick([
-      `Je t’en prie ${appel} 😊`,
+    const formules = [
       `Avec plaisir ${appel} 😊`,
-      `C’est normal ${appel}`,
-      `Toujours là ${appel} 💪`,
-      `Avec joie ${appel} 😊`
-    ]);
+      `Je t'en prie ${appel} 🤗`,
+      `C'est normal ${appel}, je suis là pour ça 💪`,
+      `Heureux de t'aider ${appel} ✨`
+    ];
+    return pick(formules);
   }
 
+  // Salutations -> on propose d'apprendre quelque chose
   if (estMessageSalutation(t)) {
-    if (t.includes("bonsoir")) return `Bonne soirée ${appel} 🌙`;
-    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌙`;
-    if (t.includes("journee")) return `Bonne journée ${appel} 😊`;
-    if (t.includes("matinee")) return `Bonne matinée ${appel} 😊`;
-    if (t.includes("apres midi")) return `Bon après-midi ${appel} 😊`;
-    if (t.includes("week end") || t.includes("weekend")) return `Bon week-end ${appel} 😄`;
-    if (t.includes("a demain")) return `À demain ${appel} 👋`;
-    return pick([
-      `Bonjour ${appel} 😊`,
-      `Salut ${appel} 👋`,
-      `Coucou ${appel} 👋`,
-      `Mbote ${appel} 😊`
-    ]);
+    if (/(bonjour|salut|bjr|mbote|yo|cc|slt)/i.test(t)) {
+      if (heure < 12) return `Bonjour ${appel} ☀️ Qu'est-ce que tu aimerais apprendre aujourd'hui ?`;
+      else if (heure < 18) return `Bon après-midi ${appel} 🌤 Quelle matière te tente cet après-midi ?`;
+      else return `Bonsoir ${appel} 🌙 Dis-moi, que veux-tu revoir ce soir ?`;
+    }
+    if (t.includes("bonsoir")) return `Bonsoir ${appel} 🌙 J'espère que ta journée s'est bien passée. Qu'est-ce que tu veux apprendre maintenant ?`;
+    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌜 Fais de beaux rêves.`;
+    if (t.includes("bonne journee")) return `Bonne journée à toi aussi ${appel} ☀️ Qu'as-tu envie de découvrir ?`;
+    if (t.includes("bon apres midi")) return `Merci ${appel} ! Passe un bon après-midi 🌤 Et si tu veux, on peut revoir quelque chose ensemble.`;
+    if (t.includes("bon week end") || t.includes("bon weekend")) return `Bon week-end ${appel} 😄 Profite bien !`;
+    if (t.includes("a demain")) return `À demain ${appel} 👋 J'ai hâte de continuer avec toi.`;
+    return `Salut ${appel} 👋`;
   }
 
+  // Réponses courtes
   if (estMessageCourtHumain(t)) {
     if (t === "ca va" || t === "ca va merci") {
-      return pick([
-        `Oui, ça va bien ${appel} 😊`,
-        `Ça va bien ${appel}, merci 😊`
-      ]);
+      return `Oui, ça va très bien ${appel}, merci ! Et toi ? 😊 Si tu veux, on peut revoir une notion.`;
     }
-    return pick([
-      `D’accord ${appel} 👍`,
-      `Très bien ${appel} 👍`,
-      `Parfait ${appel} 👍`
-    ]);
+    const simples = [`D'accord ${appel} 👍`, `Parfait ${appel} ✅`, `Entendu ${appel} 😉`];
+    return pick(simples);
   }
 
   return "";
@@ -2330,19 +2341,19 @@ function construireConsignePedagogique(texte = "", type = "text") {
    13) TRAITEMENT
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  const cacheKey = makeCacheKey(user, texteUtilisateur);
-  const cached = getCache(cacheKey);
-
-  if (cached) {
-    logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
-    return { reponse: cached, fiche: null, bypassFormat: false };
-  }
-
-  if (estMessageRelationnelSimple(texteUtilisateur)) {
+  // Court-circuit social : aucun appel IA
+  if (estMessagePurementSocial(texteUtilisateur)) {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
     if (reponseSimple) {
       return { reponse: reponseSimple, fiche: null, bypassFormat: true };
     }
+  }
+
+  const cacheKey = makeCacheKey(user, texteUtilisateur);
+  const cached = getCache(cacheKey);
+  if (cached) {
+    logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
+    return { reponse: cached, fiche: null, bypassFormat: false };
   }
 
   let analyse = {
@@ -2424,7 +2435,6 @@ async function traiterTexte(user, texteUtilisateur, historique) {
 
 async function traiterAudio(user, msg, historique) {
   const audioId = msg.audio?.id;
-
   if (!audioId) {
     return {
       reponse: "Je n'arrive pas à lire ton audio.",
@@ -2449,38 +2459,23 @@ async function traiterAudio(user, msg, historique) {
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
-  if (transcription && estMessageRelationnelSimple(transcription)) {
+  // Détection sociale sur la transcription
+  if (transcription && estMessagePurementSocial(transcription)) {
     const rep = construireReponseHumaineSimple(user, transcription);
     if (rep) {
-      return {
-        reponse: rep,
-        fiche: null,
-        bypassFormat: true
-      };
+      return { reponse: rep, fiche: null, bypassFormat: true };
     }
   }
-
-  if (transcriptionBrute && estMessageRelationnelSimple(transcriptionBrute)) {
+  if (transcriptionBrute && estMessagePurementSocial(transcriptionBrute)) {
     const rep = construireReponseHumaineSimple(user, transcriptionBrute);
     if (rep) {
-      return {
-        reponse: rep,
-        fiche: null,
-        bypassFormat: true
-      };
+      return { reponse: rep, fiche: null, bypassFormat: true };
     }
   }
 
+  // Message très court social
   const tMini = normaliserTexteRelationnel(transcriptionBrute);
-  if (
-    tMini &&
-    tMini.split(" ").length <= 5 &&
-    (
-      tMini.includes("merci") ||
-      estMessageSalutation(tMini) ||
-      estMessageCourtHumain(tMini)
-    )
-  ) {
+  if (tMini && tMini.split(" ").length <= 5 && estMessagePurementSocial(tMini)) {
     return {
       reponse: construireReponseHumaineSimple(user, tMini) || "Je t’en prie 😊",
       fiche: null,
@@ -2499,39 +2494,25 @@ async function traiterAudio(user, msg, historique) {
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
   const texteAudioNormalise = normaliserTexteRelationnel(reponse);
 
-  if (
-    texteAudioNormalise.includes("merci") ||
-    estMessageSalutation(texteAudioNormalise) ||
-    estMessageCourtHumain(texteAudioNormalise)
-  ) {
-    return {
-      reponse: construireReponseHumaineSimple(user, texteAudioNormalise) || "Je t’en prie 😊",
-      fiche: null,
-      bypassFormat: true
-    };
+  // Après IA, si la réponse est elle-même sociale
+  if (texteAudioNormalise && estMessagePurementSocial(texteAudioNormalise)) {
+    const repSimple = construireReponseHumaineSimple(user, texteAudioNormalise);
+    if (repSimple) {
+      return { reponse: repSimple, fiche: null, bypassFormat: true };
+    }
   }
 
   if (!reponse || !reponse.trim()) {
     reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
-    return {
-      reponse,
-      fiche: null,
-      bypassFormat: true
-    };
+    return { reponse, fiche: null, bypassFormat: true };
   }
 
   const bypassFormat = estReponseRelationnelleSimpleIA(reponse);
-
-  return {
-    reponse,
-    fiche: null,
-    bypassFormat
-  };
+  return { reponse, fiche: null, bypassFormat };
 }
 
 async function traiterImage(user, msg, historique) {
   const imageId = msg.image?.id;
-
   if (!imageId) {
     return {
       reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
@@ -2747,75 +2728,54 @@ async function processIncomingMessage(msg) {
     return;
   }
 
+  // Pour les messages texte, vérifier d'abord les commandes
   if (msgType === "text") {
     const commandeTraitee = await traiterCommandeTexte(from, user, texteUtilisateur);
     if (commandeTraitee) return;
   }
 
+  // Gestion du profil
   if (!user.nom) {
     const nom = normaliserNom(nettoyer(texteUtilisateur));
     if (!nom) {
-      await envoyerWhatsApp(
-        from,
-        `${HEADER_MWALIMU}
+      await envoyerWhatsApp(from, `${HEADER_MWALIMU}
 ────────────────
-🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`
-      );
+🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`);
       return;
     }
-
     await updateUserField(from, "nom", nom);
-    await envoyerWhatsApp(
-      from,
-      `🤝 Enchanté *${nom}* !
-🟡 En quelle *classe* es-tu ?`
-    );
+    await envoyerWhatsApp(from, `🤝 Enchanté *${nom}* !
+🟡 En quelle *classe* es-tu ?`);
     return;
   }
 
   if (!user.classe) {
     const cl = normaliserNom(nettoyer(texteUtilisateur));
     if (!cl) {
-      await envoyerWhatsApp(
-        from,
-        `🟡 Écris-moi ta *classe* simplement.
-Exemple : 6e, 8e, Terminale, 1ère secondaire.`
-      );
+      await envoyerWhatsApp(from, `🟡 Écris-moi ta *classe* simplement.
+Exemple : 6e, 8e, Terminale, 1ère secondaire.`);
       return;
     }
-
     await updateUserField(from, "classe", cl);
     user = await getUser(from);
-
-    await envoyerWhatsApp(
-      from,
-      `🟡 C'est bien noté, *${user.nom}*.
-❓ Quel est ton plus grand *rêve* professionnel ?`
-    );
+    await envoyerWhatsApp(from, `🟡 C'est bien noté, *${user.nom}*.
+❓ Quel est ton plus grand *rêve* professionnel ?`);
     return;
   }
 
   if (!user.reve) {
     const rv = normaliserNom(nettoyer(texteUtilisateur));
     if (!rv) {
-      await envoyerWhatsApp(
-        from,
-        `❓ Dis-moi simplement ton *rêve* professionnel.
-Exemple : avocat, médecin, ingénieur, pilote.`
-      );
+      await envoyerWhatsApp(from, `❓ Dis-moi simplement ton *rêve* professionnel.
+Exemple : avocat, médecin, ingénieur, pilote.`);
       return;
     }
-
     await updateUserField(from, "reve", rv);
     user = await getUser(from);
-
-    await envoyerWhatsApp(
-      from,
-      `✨ *Quelle ambition magnifique !*
+    await envoyerWhatsApp(from, `✨ *Quelle ambition magnifique !*
 🔴 Devenir *${rv}* est un rêve noble, et je sais que tu en es capable.
 🔵 *Pour commencer notre parcours ensemble, dis-moi :*
-👉 Quelle matière ou quel chapitre te pose problème en ce moment ?`
-    );
+👉 Quelle matière ou quel chapitre te pose problème en ce moment ?`);
     return;
   }
 
@@ -2870,7 +2830,6 @@ Exemple : avocat, médecin, ingénieur, pilote.`
       msgType,
       "final_empty"
     );
-
     reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ta demande.
 🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
 🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
