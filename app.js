@@ -112,39 +112,39 @@ const HEADER_MWALIMU = "🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excelle
 
 const CITATIONS = {
   patriotisme: [
-    "***« Aimer sa patrie, c’est la servir avec intelligence, honnêteté et discipline. »***",
-    "***« Un bon élève d’aujourd’hui peut devenir un grand bâtisseur du Congo de demain. »***"
+    "***« Aimer sa patrie, c'est la servir avec intelligence, honnêteté et discipline. »***",
+    "***« Un bon élève d'aujourd'hui peut devenir un grand bâtisseur du Congo de demain. »***"
   ],
   geographie: [
-    "***« Connaître son pays, c’est déjà commencer à mieux l’aimer. »***",
+    "***« Connaître son pays, c'est déjà commencer à mieux l'aimer. »***",
     "***« La géographie aide à mieux comprendre le monde et à mieux servir sa patrie. »***"
   ],
   mathematiques: [
     "***« La rigueur dans le calcul forme aussi la rigueur dans la vie. »***",
-    "***« Un esprit qui raisonne bien peut mieux construire l’avenir. »***"
+    "***« Un esprit qui raisonne bien peut mieux construire l'avenir. »***"
   ],
   histoire: [
-    "***« Comprendre l’histoire aide à aimer sa patrie avec plus de conscience. »***",
+    "***« Comprendre l'histoire aide à aimer sa patrie avec plus de conscience. »***",
     "***« Un peuple qui connaît son histoire prépare mieux son avenir. »***"
   ],
   francais: [
     "***« Bien parler et bien écrire donnent de la force à la pensée. »***",
-    "***« La maîtrise des mots fortifie l’intelligence et la dignité. »***"
+    "***« La maîtrise des mots fortifie l'intelligence et la dignité. »***"
   ],
   sciences: [
     "***« La science bien apprise peut aider à résoudre les vrais problèmes du pays. »***",
-    "***« Étudier les sciences, c’est se préparer à être utile à sa nation. »***"
+    "***« Étudier les sciences, c'est se préparer à être utile à sa nation. »***"
   ],
   civisme: [
     "***« Le civisme commence par de petits actes honnêtes. »***",
-    "***« Respecter la loi, c’est aussi participer à la vie de la nation. »***"
+    "***« Respecter la loi, c'est aussi participer à la vie de la nation. »***"
   ],
   relationnel: [
     "***« La politesse et le respect élèvent aussi la personne. »***",
     "***« Un cœur discipliné honore sa famille et sa patrie. »***"
   ],
   general: [
-    "***« Apprendre avec sérieux aujourd’hui, c’est mieux servir le Congo demain. »***",
+    "***« Apprendre avec sérieux aujourd'hui, c'est mieux servir le Congo demain. »***",
     "***« Le savoir et la discipline font grandir la nation. »***"
   ]
 };
@@ -178,7 +178,7 @@ const REGLE_CALCUL_INTELLIGENT = `RÈGLES SPÉCIALES POUR LES CALCULS :
 - Vérifie chaque étape
 - Avance ligne par ligne
 - Explique la logique avant le résultat
-- N’invente jamais un chiffre, une unité ou une formule`;
+- N'invente jamais un chiffre, une unité ou une formule`;
 
 const SYSTEM_BASE = `Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
 MISSION :
@@ -216,9 +216,9 @@ const SYSTEM_TUTORAT = `RÈGLES DE TUTORAT :
 
 const SYSTEM_JURIDIQUE_WEB = `RÈGLES JURIDIQUES ET WEB :
 - Pour droit, loi, code, article, OHADA, fiscalité, procédure : utilise Google Search si nécessaire
-- N’invente jamais un article ou une source
-- Si un article exact est trouvé de manière fiable, recopie-le d’abord puis commente brièvement
-- Si le texte exact n’est pas certain, dis-le honnêtement`;
+- N'invente jamais un article ou une source
+- Si un article exact est trouvé de manière fiable, recopie-le d'abord puis commente brièvement
+- Si le texte exact n'est pas certain, dis-le honnêtement`;
 
 const SYSTEM_GEO_WEB = `RÈGLES GÉOGRAPHIE / ADMINISTRATION :
 - Pour province, territoire, commune, ville, secteur, chefferie, subdivision administrative : privilégie le web si nécessaire
@@ -421,7 +421,7 @@ function construireAppel(user = {}) {
 function normaliserMessageCourt(texte = "") {
   return String(texte || "")
     .toLowerCase()
-    .replace(/[.,!?;:()"'`´’]/g, " ")
+    .replace(/[.,!?;:()"'`´']/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -436,7 +436,7 @@ function normaliserTexteRelationnel(texte = "") {
   let t = retirerAccents(String(texte || "").toLowerCase());
   t = t
     .replace(/[-_]/g, " ")
-    .replace(/[.,!?;:()"`'’´]/g, " ")
+    .replace(/[.,!?;:()"`''´]/g, " ")
     .replace(/\bmwalimu\b/g, " ")
     .replace(/\bmon\s+cher\b/g, " ")
     .replace(/\bma\s+chere\b/g, " ")
@@ -506,25 +506,25 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
 }
 
 /* =========================================================
-   DÉTECTION SOCIALE AMÉLIORÉE
+   DÉTECTION SOCIALE AMÉLIORÉE (avec réponses de bien-être)
 ========================================================= */
 function estMessagePurementSocial(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t) return false;
 
-  // Salutations
   if (/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)\b/i.test(t)) return true;
-  // Remerciements
+
   if (/^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|merci à toi|merci mwalimu|merci mon cher|je te remercie|je vous remercie|cimer|thanks|thx)\b/i.test(t)) return true;
-  // Messages courts courants
+
   if (/^(ok|okay|d accord|dac|dacc|oui|non|ca va|bien|super|cool|entendu|compris|parfait|tres bien|nickel|ca marche|ca va merci|pas de souci|pas de problème|a plus|a tantot|a toute|bye|tchao)\b/i.test(t)) return true;
-  // Vœux et moments de la journée
+
   if (/^(bonne nuit|fais de beaux reves|dors bien|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)\b/i.test(t)) return true;
-  // Émojis seuls positifs
+
   if (/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\s]+$/u.test(t)) return true;
 
-  // NOUVEAU : questions de bien-être et réponses sociales simples
   if (/^(tu vas bien\??|comment vas-tu\??|comment tu vas\??|et toi\??|et vous\??|vous allez bien\??|comment ca va\??|ca va\??)$/i.test(t)) return true;
+
+  if (/^(je vais bien|je vais très bien|je vais tres bien|je vais super bien|je vais bien merci|je vais très bien merci|je vais tres bien merci|je vais super bien merci|je me porte bien|je me porte très bien|je me porte tres bien|je me porte super bien|je me porte bien merci|je me porte très bien merci|je me porte tres bien merci|je me sens bien|je me sens très bien|je me sens tres bien|je me sens super bien|je me sens bien merci|tranquille|tranquille merci|pas mal|pas mal merci|au top|au top merci|ça roule|ca roule|ça roule merci|ca roule merci|imboko|imboko merci|bien merci|bien et toi|bien et toi\?|je vais bien et toi|je vais bien et toi\?|je me porte bien et toi|je me porte bien et toi\?|je vais super bien et toi|je vais super bien et toi\?|oui je vais bien|oui je vais très bien|oui je vais tres bien|oui je me porte bien|oui ça va|oui ca va|oui ca va merci|oui ça va merci)$/i.test(t)) return true;
 
   return false;
 }
@@ -741,47 +741,13 @@ function detecterMatierePrincipale(question = "", corps = "") {
     }
   };
 
-  ajouter(
-    "droit",
-    ["droit", "droit positif", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"],
-    ["droit", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"]
-  );
-
-  ajouter(
-    "geographie",
-    ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "subdivision administrative"],
-    ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie"]
-  );
-
-  ajouter(
-    "histoire",
-    ["histoire", "passé", "passe", "événement passé", "evenement passe", "colonisation", "indépendance", "independance", "royaume", "date historique"],
-    ["histoire", "passé", "passe", "colonisation", "indépendance", "independance", "royaume", "date"]
-  );
-
-  ajouter(
-    "math",
-    ["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance", "géométrie", "geometrie"],
-    ["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance"]
-  );
-
-  ajouter(
-    "physique",
-    ["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"],
-    ["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"]
-  );
-
-  ajouter(
-    "chimie",
-    ["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"],
-    ["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"]
-  );
-
-  ajouter(
-    "francais",
-    ["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"],
-    ["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"]
-  );
+  ajouter("droit",["droit", "droit positif", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"],["droit", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"]);
+  ajouter("geographie",["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "subdivision administrative"],["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie"]);
+  ajouter("histoire",["histoire", "passé", "passe", "événement passé", "evenement passe", "colonisation", "indépendance", "independance", "royaume", "date historique"],["histoire", "passé", "passe", "colonisation", "indépendance", "independance", "royaume", "date"]);
+  ajouter("math",["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance", "géométrie", "geometrie"],["math", "maths", "équation", "equation", "fraction", "calcul", "racine", "puissance"]);
+  ajouter("physique",["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"],["physique", "force", "vitesse", "énergie", "energie", "masse", "pression", "mouvement"]);
+  ajouter("chimie",["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"],["chimie", "molécule", "molecule", "atome", "acide", "base", "solution", "réaction", "reaction"]);
+  ajouter("francais",["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"],["français", "francais", "grammaire", "orthographe", "conjugaison", "verbe", "phrase"]);
 
   let meilleur = "general";
   let meilleurScore = 0;
@@ -807,7 +773,7 @@ function construireVecuNaturel(user = {}, question = "", historique = []) {
 
   if (sujetMemoire) {
     return pick([
-      `🔵 [VÉCU] : D’accord ${prenom}, reprenons cela calmement.`,
+      `🔵 [VÉCU] : D'accord ${prenom}, reprenons cela calmement.`,
       `🔵 [VÉCU] : Très bien ${prenom}, nous revenons sur ce point.`,
       `🔵 [VÉCU] : Allons-y doucement ${prenom}, reprenons ensemble.`
     ]);
@@ -815,7 +781,7 @@ function construireVecuNaturel(user = {}, question = "", historique = []) {
 
   if (matiere === "droit") {
     return pick([
-      `🔵 [VÉCU] : D’accord ${prenom}, regardons cette notion de droit simplement.`,
+      `🔵 [VÉCU] : D'accord ${prenom}, regardons cette notion de droit simplement.`,
       `🔵 [VÉCU] : Très bien ${prenom}, prenons cette question juridique pas à pas.`,
       `🔵 [VÉCU] : Voyons cela clairement ${prenom}.`
     ]);
@@ -823,7 +789,7 @@ function construireVecuNaturel(user = {}, question = "", historique = []) {
 
   if (matiere === "geographie") {
     return pick([
-      `🔵 [VÉCU] : D’accord ${prenom}, regardons ce point de géographie calmement.`,
+      `🔵 [VÉCU] : D'accord ${prenom}, regardons ce point de géographie calmement.`,
       `🔵 [VÉCU] : Très bien ${prenom}, prenons cela pas à pas.`,
       `🔵 [VÉCU] : Voyons cela simplement ${prenom}.`
     ]);
@@ -831,17 +797,17 @@ function construireVecuNaturel(user = {}, question = "", historique = []) {
 
   if (matiere === "histoire") {
     return pick([
-      `🔵 [VÉCU] : D’accord ${prenom}, regardons cela comme un point d’histoire.`,
-      `🔵 [VÉCU] : Très bien ${prenom}, prenons ce sujet d’histoire simplement.`,
+      `🔵 [VÉCU] : D'accord ${prenom}, regardons cela comme un point d'histoire.`,
+      `🔵 [VÉCU] : Très bien ${prenom}, prenons ce sujet d'histoire simplement.`,
       `🔵 [VÉCU] : Voyons cela calmement ${prenom}.`
     ]);
   }
 
   return pick([
-    `🔵 [VÉCU] : D’accord ${prenom}, voyons cela simplement.`,
+    `🔵 [VÉCU] : D'accord ${prenom}, voyons cela simplement.`,
     `🔵 [VÉCU] : Très bien ${prenom}, prenons cette question pas à pas.`,
-    `🔵 [VÉCU] : Je t’accompagne ${prenom}. Regardons l’idée essentielle.`,
-    `🔵 [VÉCU] : Bien ${prenom}, allons à l’essentiel.`
+    `🔵 [VÉCU] : Je t'accompagne ${prenom}. Regardons l'idée essentielle.`,
+    `🔵 [VÉCU] : Bien ${prenom}, allons à l'essentiel.`
   ]);
 }
 
@@ -882,7 +848,7 @@ function nettoyerReponseIA(texte = "") {
   if (!texte) return "";
   let t = String(texte);
   t = t.replace(/🔴🟡🔵\s*\*?Mwalimu EdTech\s*:\s*Ton Mentor pour l'Excellence\*?\s*🇨🇩/gi, "");
-  t = t.replace(/^\s*🌟\s*Mot d['’]encouragement\s*:\s*.*$/gim, "");
+  t = t.replace(/^\s*🌟\s*Mot d['']encouragement\s*:\s*.*$/gim, "");
   t = t.replace(/^\s*👉\s*Je reste disponible.*$/gim, "");
   t = t.replace(/^\s*👉\s*Continue à me parler.*$/gim, "");
   return supprimerDoublonsLignes(t).replace(/\n{3,}/g, "\n\n").trim();
@@ -962,11 +928,6 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
 /* =========================================================
    FONCTIONS DE CONSOLIDATION (AMÉLIORÉES)
 ========================================================= */
-
-/**
- * Vérifie si le bloc de consolidation existant est pertinent
- * (au moins une question réelle, pas un simple QCM binaire préfabriqué)
- */
 function blocEstPertinent(bloc = "") {
   const lignes = bloc.split("\n").map(l => l.trim());
   const nbQuestions = lignes.filter(l => l.endsWith("?")).length;
@@ -975,9 +936,6 @@ function blocEstPertinent(bloc = "") {
   return lignesSignificatives.some(l => l.length > 5);
 }
 
-/**
- * Remplace le bloc de consolidation uniquement si nécessaire
- */
 function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
   let t = String(corps || "").trim();
   if (!t) return t;
@@ -1000,9 +958,6 @@ function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
   return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/**
- * Génère une consolidation de secours dynamique, centrée sur le sujet
- */
 function construireQuestionsConsolidationCiblee(question = "", corps = "", sujet = "") {
   const matiere = detecterMatierePrincipale(question, corps);
   const notion = sujet || extraireSujetMemoire(question) || "cette notion";
@@ -1027,21 +982,17 @@ ${questionReflexion}`;
 /* =========================================================
    FONCTIONS DE CONCLUSION PROFESSIONNELLE
 ========================================================= */
-
-/**
- * Retourne une citation unique qui mélange matière et citoyenneté.
- */
 function choisirCitationFinale(question = "", corps = "") {
   const matiere = detecterMatierePrincipale(question, corps);
   const citationsMixtes = {
     droit: "***« Un droit compris est un droit mieux défendu, pour soi et pour la nation. »***",
-    geographie: "***« Connaître les communes de sa ville, c’est déjà participer à la vie de la cité. »***",
-    histoire: "***« Comprendre le passé de son pays, c’est honorer ceux qui l’ont bâti. »***",
+    geographie: "***« Connaître les communes de sa ville, c'est déjà participer à la vie de la cité. »***",
+    histoire: "***« Comprendre le passé de son pays, c'est honorer ceux qui l'ont bâti. »***",
     math: "***« Un esprit rigoureux en mathématiques est un esprit prêt à servir avec précision. »***",
-    physique: "***« La physique nous apprend à observer le monde ; la citoyenneté, à l’améliorer. »***",
+    physique: "***« La physique nous apprend à observer le monde ; la citoyenneté, à l'améliorer. »***",
     chimie: "***« La chimie transforme la matière, la détermination transforme le pays. »***",
-    francais: "***« Maîtriser sa langue, c’est porter haut la culture de sa nation. »***",
-    general: "***« Apprendre aujourd’hui, c’est bâtir un Congo plus fort demain. »***"
+    francais: "***« Maîtriser sa langue, c'est porter haut la culture de sa nation. »***",
+    general: "***« Apprendre aujourd'hui, c'est bâtir un Congo plus fort demain. »***"
   };
   return citationsMixtes[matiere] || citationsMixtes.general;
 }
@@ -1051,16 +1002,13 @@ function choisirCitationFinale(question = "", corps = "") {
 ========================================================= */
 function choisirCitationContextuelle(reponse = "", question = "") {
   const matiere = detecterMatierePrincipale(question, reponse);
-
   if (estMessageRelationnelSimple(question)) return "";
-
   if (matiere === "droit") return pick(CITATIONS.civisme);
   if (matiere === "geographie") return pick(CITATIONS.geographie);
   if (matiere === "histoire") return pick(CITATIONS.histoire);
   if (matiere === "math") return pick(CITATIONS.mathematiques);
   if (matiere === "physique" || matiere === "chimie") return pick(CITATIONS.sciences);
   if (matiere === "francais") return pick(CITATIONS.francais);
-
   return pick(CITATIONS.general);
 }
 
@@ -1075,7 +1023,7 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
   if (aVecu && aSavoir && aInspiration && aConsolidation) return t;
 
   const vecu = aVecu ? "" : construireVecuNaturel(user, question, historique);
-  const savoir = aSavoir ? "" : "🟡 [SAVOIR] : Voici l’idée essentielle à retenir.";
+  const savoir = aSavoir ? "" : "🟡 [SAVOIR] : Voici l'idée essentielle à retenir.";
   const inspiration = aInspiration ? "" : "🔴 [INSPIRATION] : Une notion bien comprise te rend plus solide.";
   const consolidation = aConsolidation ? "" : "❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.";
 
@@ -1092,57 +1040,26 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
   const matiere = detecterMatierePrincipale(question, reponse);
   const q = String(question || "").toLowerCase();
-
   if (estMessageRelationnelSimple(q)) return "";
-
-  if (matiere === "droit") {
-    return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
-  }
-
-  if (matiere === "geographie") {
-    return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
-  }
-
-  if (matiere === "histoire") {
-    return "👉 Si tu veux, nous pouvons prendre un autre point d’histoire ensuite.";
-  }
-
-  if (matiere === "math" || matiere === "physique" || matiere === "chimie") {
-    return "👉 Essaie maintenant de reformuler l’idée ou de faire une étape, puis envoie-moi ta réponse.";
-  }
-
+  if (matiere === "droit") return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
+  if (matiere === "geographie") return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
+  if (matiere === "histoire") return "👉 Si tu veux, nous pouvons prendre un autre point d'histoire ensuite.";
+  if (matiere === "math" || matiere === "physique" || matiere === "chimie") return "👉 Essaie maintenant de reformuler l'idée ou de faire une étape, puis envoie-moi ta réponse.";
   return "👉 Dis-moi maintenant ce que tu retiens en une phrase simple.";
 }
 
 function choisirEncouragementContextuel(reponse = "", question = "") {
   const corps = String(reponse || "").toLowerCase();
   const q = String(question || "").toLowerCase();
-
   if (estMessageRelationnelSimple(question)) return "";
 
-  if (
-    corps.includes("je n'arrive pas encore") ||
-    corps.includes("petit souci technique") ||
-    corps.includes("réessaie") ||
-    corps.includes("image plus nette") ||
-    corps.includes("message vocal plus clair")
-  ) {
+  if (corps.includes("je n'arrive pas encore") || corps.includes("petit souci technique") || corps.includes("réessaie") || corps.includes("image plus nette") || corps.includes("message vocal plus clair")) {
     return "🌟 Mot d'encouragement : Ne te décourage pas ; nous pouvons reprendre calmement.";
   }
 
-  const vraieReussite =
-    q.includes("voici ma réponse") ||
-    q.includes("ma réponse") ||
-    q.includes("j'ai trouvé") ||
-    q.includes("j'ai obtenu") ||
-    q.includes("cela donne") ||
-    q.includes("ça donne") ||
-    q.includes("j'obtiens");
+  const vraieReussite = q.includes("voici ma réponse") || q.includes("ma réponse") || q.includes("j'ai trouvé") || q.includes("j'ai obtenu") || q.includes("cela donne") || q.includes("ça donne") || q.includes("j'obtiens");
 
-  if (
-    vraieReussite &&
-    (corps.includes("bonne réponse") || corps.includes("réponse correcte") || corps.includes("exact") || corps.includes("juste"))
-  ) {
+  if (vraieReussite && (corps.includes("bonne réponse") || corps.includes("réponse correcte") || corps.includes("exact") || corps.includes("juste"))) {
     return "🌟 Mot d'encouragement : Bon travail ; continue avec cette rigueur.";
   }
 
@@ -1156,7 +1073,6 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
 /* =========================================================
    6b) LOGIQUE CONVERSATIONNELLE À DEUX TEMPS
 ========================================================= */
-
 function dernierMessageEstQuestionBienEtre(historique = []) {
   if (!historique.length) return false;
   const dernierAssistant = [...historique].reverse().find(m => m.role === "assistant");
@@ -1187,10 +1103,19 @@ function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
     "pas mal", "tres bien", "nickel", "je vais super bien", "au top",
     "tu vas bien", "tu vas bien?", "comment vas-tu", "comment vas-tu?",
     "et toi", "et toi?", "et vous", "comment ca va", "comment ca va?",
-    "vous allez bien", "vous allez bien?"
+    "vous allez bien", "vous allez bien?",
+    "je vais bien", "je vais tres bien", "je vais bien merci", "je vais tres bien merci",
+    "je me sens bien", "je me sens tres bien", "je me sens super bien",
+    "je me porte bien", "je me porte tres bien", "je me porte super bien",
+    "je me porte bien merci", "je me porte tres bien merci",
+    "tranquille", "ca roule", "imboko", "bien merci",
+    "je vais bien et toi", "je vais bien et toi?", "je vais super bien et toi",
+    "je me porte bien et toi", "je me porte bien et toi?",
+    "oui je vais bien", "oui je vais tres bien", "oui je me porte bien",
+    "oui ca va", "oui ca va merci", "oui ça va", "oui ça va merci"
   ];
 
-  return t.length < 60 && reponsesCourtes.includes(t);
+  return t.length < 80 && reponsesCourtes.includes(t);
 }
 
 function genererRepriseApresBienEtre(user = {}) {
@@ -1204,7 +1129,6 @@ function genererRepriseApresBienEtre(user = {}) {
   return pick(accroches);
 }
 
-/* RÉPONSES SOCIALES ENRICHIES (chaque réponse contient une relance) */
 function construireReponseHumaineSimple(user = {}, texte = "") {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom ? `**${prenom}**` : "toi";
@@ -1241,7 +1165,6 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
       if (heure < 12) question = pick(questionsMatin);
       else if (heure < 18) question = pick(questionsAprem);
       else question = pick(questionsSoir);
-
       return question;
     }
 
@@ -1259,7 +1182,6 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     if (t.includes("bonne soiree")) return `Bonne soirée ${appel} 🌙 Si tu veux revoir un point avant de dormir, je suis là.`;
     if (t.includes("bon week end") || t.includes("bon weekend")) return `Bon week-end ${appel} 😄 Profite bien ! Si tu as un moment, on pourrait réviser une notion.`;
     if (t.includes("a demain")) return `À demain ${appel} 👋 J'ai hâte de continuer avec toi.`;
-
     return `Salut ${appel} 👋`;
   }
 
@@ -1500,10 +1422,7 @@ function extraireJsonGemini(brut = "") {
    8) DB
 ========================================================= */
 async function ensureBibliothequeSearchInfra() {
-  await pool.query(`
-    ALTER TABLE bibliotheque
-    ADD COLUMN IF NOT EXISTS search_vector tsvector;
-  `);
+  await pool.query(`ALTER TABLE bibliotheque ADD COLUMN IF NOT EXISTS search_vector tsvector;`);
 
   await pool.query(`
     CREATE OR REPLACE FUNCTION bibliotheque_search_vector_update()
@@ -1521,9 +1440,7 @@ async function ensureBibliothequeSearchInfra() {
     $$ LANGUAGE plpgsql;
   `);
 
-  await pool.query(`
-    DROP TRIGGER IF EXISTS trg_bibliotheque_search_vector_update ON bibliotheque;
-  `);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_bibliotheque_search_vector_update ON bibliotheque;`);
 
   await pool.query(`
     CREATE TRIGGER trg_bibliotheque_search_vector_update
@@ -1545,16 +1462,8 @@ async function ensureBibliothequeSearchInfra() {
     WHERE search_vector IS NULL;
   `);
 
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_bibliotheque_search_vector
-    ON bibliotheque
-    USING GIN (search_vector);
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_bibliotheque_updated_at
-    ON bibliotheque (updated_at DESC);
-  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bibliotheque_search_vector ON bibliotheque USING GIN (search_vector);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bibliotheque_updated_at ON bibliotheque (updated_at DESC);`);
 }
 
 async function initDB() {
@@ -1624,20 +1533,9 @@ async function initDB() {
       );
     `);
 
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at
-      ON processed_messages (created_at DESC);
-    `);
-
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_unanswered_questions_created_at
-      ON unanswered_questions (created_at DESC);
-    `);
-
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_student_attempts_phone_sujet_updated
-      ON student_attempts (phone, sujet, updated_at DESC);
-    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at ON processed_messages (created_at DESC);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_unanswered_questions_created_at ON unanswered_questions (created_at DESC);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_student_attempts_phone_sujet_updated ON student_attempts (phone, sujet, updated_at DESC);`);
 
     await ensureBibliothequeSearchInfra();
     logInfo("db_ready");
@@ -1952,10 +1850,10 @@ RÈGLE DE COHÉRENCE THÉMATIQUE :
 - Interdiction totale de mélanger deux matières différentes dans une même consolidation
 - Si la question porte sur le droit, la consolidation doit rester en droit
 - Si la question porte sur la géographie, la consolidation doit rester en géographie
-- Si la question porte sur l’histoire, la consolidation doit rester en histoire
+- Si la question porte sur l'histoire, la consolidation doit rester en histoire
 - La citation finale doit rester dans la même matière que la question
-- L’ouverture finale doit rester dans la même matière que la question
-- Ne bascule jamais du droit vers la géographie, de l’histoire vers la géographie, ou d’une matière vers une autre, sauf si l’élève le demande
+- L'ouverture finale doit rester dans la même matière que la question
+- Ne bascule jamais du droit vers la géographie, de l'histoire vers la géographie, ou d'une matière vers une autre, sauf si l'élève le demande
 
 RÈGLE POUR LA CONSOLIDATION :
 - Rédige EXACTEMENT une ou deux questions brèves qui testent la compréhension de la notion principale.
@@ -2172,7 +2070,7 @@ Aucune fiche locale disponible.`;
 - N'invente jamais un territoire, une commune, une ville ou un article
 - La matière de la CONSOLIDATION doit être strictement la même que celle de la question principale
 - La citation finale doit être strictement liée à la même matière
-- L’ouverture finale doit être strictement liée à la même matière
+- L'ouverture finale doit être strictement liée à la même matière
 - Interdiction de mélanger histoire, géographie, droit, sciences, mathématiques ou français dans la même consolidation`
       },
       { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
@@ -2188,7 +2086,7 @@ Donne maintenant la réponse finale de Mwalimu.`
     ]),
     `🔵 [VÉCU] : J'ai bien reçu ta demande.
 🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
-🔴 [INSPIRATION] : Ce n’est pas un problème ; nous pouvons reprendre plus simplement.
+🔴 [INSPIRATION] : Ce n'est pas un problème ; nous pouvons reprendre plus simplement.
 ❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`
   );
 }
@@ -2259,8 +2157,8 @@ MODE AUDIO :
 - Si le sujet demande une liste complète, sois exhaustif
 - Sois succinct quand c'est possible
 - Ne génère jamais la citation finale
-- Ne génère jamais l’ouverture finale
-- Ne génère jamais le mot d’encouragement final`,
+- Ne génère jamais l'ouverture finale
+- Ne génère jamais le mot d'encouragement final`,
     tools: [{ googleSearch: {} }]
   });
 
@@ -2300,8 +2198,8 @@ MODE IMAGE :
 - Si une partie est floue, dis-le honnêtement
 - Sois succinct
 - Ne génère jamais la citation finale
-- Ne génère jamais l’ouverture finale
-- Ne génère jamais le mot d’encouragement final`,
+- Ne génère jamais l'ouverture finale
+- Ne génère jamais le mot d'encouragement final`,
     tools: [{ googleSearch: {} }]
   });
 
@@ -2351,26 +2249,19 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
     question
   );
 
-  // --- CONSOLIDATION ---
   const sujetQuestion = extraireSujetMemoire(question);
   corps = remplacerBlocConsolidation(corps, question, sujetQuestion);
 
-  // --- NETTOYAGE AVANCÉ DU CORPS (citations parasites, encouragements, ouvertures) ---
   corps = corps.replace(/^\s*\*\*\*«[^»]+»\*\*\*\s*$/gm, "");
-  corps = corps.replace(/^🌟\s*Mot d['’]encouragement\s*:.*$/gim, "");
+  corps = corps.replace(/^🌟\s*Mot d['']encouragement\s*:.*$/gim, "");
   corps = corps.replace(/^👉\s*Je reste disponible.*$/gim, "");
   corps = corps.replace(/^👉\s*Continue à me parler.*$/gim, "");
   corps = corps.replace(/\n{3,}/g, "\n\n").trim();
 
-  // --- ÉLÉMENTS DE FIN ---
-  // Une seule citation (matière + citoyenneté)
   const citationUnique = choisirCitationFinale(question, corps);
-  // Une ouverture sobre
   const ouverture = choisirOuvertureContextuelle(corps, user, question);
-  // Un encouragement court, seulement s'il n'est pas déjà dans le corps
   const encouragement = !/🌟/.test(corps) ? choisirEncouragementContextuel(corps, question) : "";
 
-  // Assemblage
   const parties = [
     HEADER_MWALIMU,
     "────────────────",
@@ -2512,7 +2403,7 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
   }
 
-  consigneFinale += `\nLa consolidation, la citation finale et l’ouverture finale doivent rester dans la matière principale de la question.`;
+  consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
 
   if (antiBoucle.consigne) {
     consigneFinale += `\n${antiBoucle.consigne}`;
@@ -2588,7 +2479,7 @@ async function traiterAudio(user, msg, historique) {
   const tMini = normaliserTexteRelationnel(transcriptionBrute);
   if (tMini && tMini.split(" ").length <= 5 && estMessagePurementSocial(tMini)) {
     return {
-      reponse: construireReponseHumaineSimple(user, tMini) || "Je t’en prie 😊",
+      reponse: construireReponseHumaineSimple(user, tMini) || "Je t'en prie 😊",
       fiche: null,
       bypassFormat: true
     };
@@ -2596,7 +2487,7 @@ async function traiterAudio(user, msg, historique) {
 
   if (typeAudio === "social") {
     return {
-      reponse: construireReponseHumaineSimple(user, transcription || transcriptionBrute || "merci") || "Je t’en prie 😊",
+      reponse: construireReponseHumaineSimple(user, transcription || transcriptionBrute || "merci") || "Je t'en prie 😊",
       fiche: null,
       bypassFormat: true
     };
@@ -2640,8 +2531,8 @@ async function traiterImage(user, msg, historique) {
   if (!estMimeImageSupporte(mimeType)) {
     return {
       reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Le format d’image n'est pas encore supporté.
-🔴 [INSPIRATION] : Ce n’est pas grave.
+🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
+🔴 [INSPIRATION] : Ce n'est pas grave.
 ❓ [CONSOLIDATION] : Envoie-moi une image en JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
       fiche: null,
       bypassFormat: false
@@ -2674,7 +2565,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
 📘 *Commandes disponibles*
 /aide → voir les commandes
 /profil → refaire ton profil
-/reset → vider l’historique de l’échange
+/reset → vider l'historique de l'échange
 /stop → arrêter les rappels du matin
 /start → réactiver les rappels du matin`
     );
@@ -2719,7 +2610,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
 🔵 [VÉCU] : J'ai bien reçu ta demande.
 🟡 [SAVOIR] : L'historique a été remis à zéro.
 🔴 [INSPIRATION] : Repartir proprement peut aider.
-❓ [CONSOLIDATION] : Envoie-moi maintenant la question ou l’exercice que tu veux reprendre.`
+❓ [CONSOLIDATION] : Envoie-moi maintenant la question ou l'exercice que tu veux reprendre.`
     );
     return true;
   }
@@ -2766,9 +2657,9 @@ cron.schedule("0 7 * * *", async () => {
         const messageRappel = `${HEADER_MWALIMU}
 ────────────────
 🔵 [VÉCU] : Bonjour ${appel}.
-🟡 [SAVOIR] : Petit rappel du matin : avance aujourd’hui avec calme et sérieux.
-🔴 [INSPIRATION] : Ton objectif n’est pas d’aller vite, mais de bien comprendre.
-❓ [CONSOLIDATION] : Quelle matière veux-tu travailler aujourd’hui ?
+🟡 [SAVOIR] : Petit rappel du matin : avance aujourd'hui avec calme et sérieux.
+🔴 [INSPIRATION] : Ton objectif n'est pas d'aller vite, mais de bien comprendre.
+❓ [CONSOLIDATION] : Quelle matière veux-tu travailler aujourd'hui ?
 👉 Je reste à tes côtés.
 🌟 Mot d'encouragement : Un élève constant progresse.
 ${citation}`.replace(/\n{3,}/g, "\n\n").trim();
