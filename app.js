@@ -959,6 +959,96 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
   return { matiere, texte };
 }
 
+/* =========================================================
+   FONCTIONS DE CONSOLIDATION (AMÉLIORÉES)
+========================================================= */
+
+/**
+ * Vérifie si le bloc de consolidation existant est pertinent
+ * (au moins une question réelle, pas un simple QCM binaire préfabriqué)
+ */
+function blocEstPertinent(bloc = "") {
+  const lignes = bloc.split("\n").map(l => l.trim());
+  const nbQuestions = lignes.filter(l => l.endsWith("?")).length;
+  if (nbQuestions === 0) return false;
+  const lignesSignificatives = lignes.filter(l => l && !l.startsWith("A.") && !l.startsWith("B."));
+  return lignesSignificatives.some(l => l.length > 5);
+}
+
+/**
+ * Remplace le bloc de consolidation uniquement si nécessaire
+ */
+function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
+  let t = String(corps || "").trim();
+  if (!t) return t;
+
+  const blocRegex = /❓\s*\[CONSOLIDATION\][\s\S]*?(?=\n👉|\n🌟|\n\*\*\*«|$)/i;
+  const existingBloc = t.match(blocRegex)?.[0] || "";
+
+  if (existingBloc && blocEstPertinent(existingBloc)) {
+    return t;
+  }
+
+  const newBloc = construireQuestionsConsolidationCiblee(question, t, sujet);
+
+  if (existingBloc) {
+    t = t.replace(blocRegex, newBloc);
+  } else {
+    t = `${t}\n\n${newBloc}`;
+  }
+
+  return t.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Génère une consolidation de secours dynamique, centrée sur le sujet
+ */
+function construireQuestionsConsolidationCiblee(question = "", corps = "", sujet = "") {
+  const matiere = detecterMatierePrincipale(question, corps);
+  const notion = sujet || extraireSujetMemoire(question) || "cette notion";
+
+  const modeles = {
+    droit: `Pour t'assurer d'avoir bien compris : peux-tu m'expliquer en une phrase ce qu'est le/la ${notion} ?`,
+    geographie: `Si tu devais citer un exemple concret lié à ${notion}, lequel choisirais-tu ?`,
+    histoire: `Quelle est, selon toi, la conséquence la plus importante de ${notion} ?`,
+    math: `Essaie de m'expliquer la méthode que tu utiliserais pour résoudre un problème de type "${notion}".`,
+    physique: `Comment pourrais-tu vérifier expérimentalement la notion de ${notion} ?`,
+    chimie: `Quelle erreur fréquente un élève pourrait-il commettre en travaillant sur ${notion} ?`,
+    francais: `Donne-moi un autre exemple de phrase qui illustre la règle de ${notion}.`,
+    general: `Résume avec tes mots l'idée principale de ${notion}.`
+  };
+
+  const questionReflexion = modeles[matiere] || modeles.general;
+
+  return `❓ [CONSOLIDATION]
+${questionReflexion}`;
+}
+
+/* =========================================================
+   FONCTIONS DE CONCLUSION PROFESSIONNELLE
+========================================================= */
+
+/**
+ * Retourne une citation unique qui mélange matière et citoyenneté.
+ */
+function choisirCitationFinale(question = "", corps = "") {
+  const matiere = detecterMatierePrincipale(question, corps);
+  const citationsMixtes = {
+    droit: "***« Un droit compris est un droit mieux défendu, pour soi et pour la nation. »***",
+    geographie: "***« Connaître les communes de sa ville, c’est déjà participer à la vie de la cité. »***",
+    histoire: "***« Comprendre le passé de son pays, c’est honorer ceux qui l’ont bâti. »***",
+    math: "***« Un esprit rigoureux en mathématiques est un esprit prêt à servir avec précision. »***",
+    physique: "***« La physique nous apprend à observer le monde ; la citoyenneté, à l’améliorer. »***",
+    chimie: "***« La chimie transforme la matière, la détermination transforme le pays. »***",
+    francais: "***« Maîtriser sa langue, c’est porter haut la culture de sa nation. »***",
+    general: "***« Apprendre aujourd’hui, c’est bâtir un Congo plus fort demain. »***"
+  };
+  return citationsMixtes[matiere] || citationsMixtes.general;
+}
+
+/* =========================================================
+   AUTRES OUTILS DE FORMATAGE
+========================================================= */
 function choisirCitationContextuelle(reponse = "", question = "") {
   const matiere = detecterMatierePrincipale(question, reponse);
 
@@ -997,100 +1087,6 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
   if (!aConsolidation) morceaux.push(consolidation);
 
   return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function construireQuestionsConsolidationCiblee(question = "", corps = "") {
-  const q = String(question || "").trim().toLowerCase();
-  const matiere = detecterMatierePrincipale(question, corps);
-
-  if (q.includes("droit positif")) {
-    return `1) Question de réflexion : pourquoi dit-on que le droit positif regroupe les règles effectivement en vigueur ?
-2) Petite vérification rapide :
-A. Le droit positif correspond aux règles applicables actuellement
-B. Le droit positif correspond seulement à des règles idéales
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (matiere === "droit") {
-    return `1) Question de réflexion : quelle idée principale retiens-tu sur cette notion juridique ?
-2) Petite vérification rapide :
-A. Une règle de droit doit être applicable
-B. Une règle de droit peut rester floue sans importance
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (matiere === "geographie") {
-    return `1) Question de réflexion : quel élément de géographie retiens-tu dans cette réponse ?
-2) Petite vérification rapide :
-A. Une subdivision administrative doit être exacte
-B. Une subdivision administrative peut être approximative
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (matiere === "histoire") {
-    return `1) Question de réflexion : pourquoi l’étude du passé aide-t-elle à mieux comprendre le présent ?
-2) Petite vérification rapide :
-A. L’histoire aide à comprendre l’évolution des sociétés
-B. L’histoire ne sert qu’à mémoriser des dates
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (matiere === "math") {
-    return `1) Question de réflexion : pourquoi faut-il suivre une méthode avant de donner le résultat ?
-2) Petite vérification rapide :
-A. La méthode aide à vérifier la réponse
-B. Seule la réponse finale compte
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (matiere === "physique") {
-    return `1) Question de réflexion : pourquoi les unités sont-elles importantes en physique ?
-2) Petite vérification rapide :
-A. Les unités aident à vérifier le raisonnement
-B. Les unités ne sont pas importantes
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (matiere === "chimie") {
-    return `1) Question de réflexion : pourquoi faut-il écrire correctement les symboles et formules en chimie ?
-2) Petite vérification rapide :
-A. Une formule chimique doit être exacte
-B. Une formule chimique peut être approximative
-👉 Choisis la bonne réponse.`;
-  }
-
-  if (matiere === "francais") {
-    return `1) Question de réflexion : quelle règle de langue retiens-tu ici ?
-2) Petite vérification rapide :
-A. Il faut observer la règle avant d’écrire
-B. La règle n’est pas importante
-👉 Choisis la bonne réponse.`;
-  }
-
-  return `1) Question de réflexion : quelle idée principale retiens-tu ?
-2) Petite vérification rapide :
-A. Comprendre aide à mieux retenir
-B. Répéter sans comprendre suffit toujours
-👉 Choisis la bonne réponse.`;
-}
-
-function remplacerBlocConsolidation(corps = "", question = "") {
-  let t = String(corps || "").trim();
-  if (!t) return t;
-
-  const bloc = `❓ [CONSOLIDATION]
-${construireQuestionsConsolidationCiblee(question, t)}`;
-
-  if (/❓\s*\[CONSOLIDATION\]/i.test(t)) {
-    t = t.replace(
-      /❓\s*\[CONSOLIDATION\][\s\S]*?(?=\n👉|\n🌟|\n\*\*\*«|$)/i,
-      bloc
-    );
-  } else {
-    t = `${t}\n\n${bloc}`;
-  }
-
-  return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
@@ -1185,7 +1181,6 @@ function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
   if (!dernierMessageEstQuestionBienEtre(historique)) return false;
   const t = normaliserTexteRelationnel(texteUtilisateur);
 
-  // Liste étendue des réponses et questions de retour
   const reponsesCourtes = [
     "ca va", "ca va bien", "je vais bien", "bien et toi", "oui je vais bien",
     "ca va merci", "je vais bien merci", "tranquille", "cool", "super",
@@ -1209,25 +1204,23 @@ function genererRepriseApresBienEtre(user = {}) {
   return pick(accroches);
 }
 
-/* RÉPONSES SOCIALES ENRICHIES (interaction systématique après un vœu) */
+/* RÉPONSES SOCIALES ENRICHIES (chaque réponse contient une relance) */
 function construireReponseHumaineSimple(user = {}, texte = "") {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom ? `**${prenom}**` : "toi";
   const t = normaliserTexteRelationnel(texte);
   const heure = new Date().getHours();
 
-  // Remerciements
   if (estMessageRemerciement(t)) {
     const formules = [
-      `Avec plaisir ${appel} 😊`,
-      `Je t'en prie ${appel} 🤗`,
-      `C'est normal ${appel}, je suis là pour ça 💪`,
-      `Heureux de t'aider ${appel} ✨`
+      `Avec plaisir ${appel} 😊 Si tu as une question, je suis là.`,
+      `Je t'en prie ${appel} 🤗 Dis-moi si tu veux revoir quelque chose.`,
+      `C'est normal ${appel}, je suis là pour ça 💪 Une petite question à me poser ?`,
+      `Heureux de t'aider ${appel} ✨ N'hésite pas si tu as besoin d'explications.`
     ];
     return pick(formules);
   }
 
-  // Salutations -> question de bien-être UNIQUEMENT (premier tour)
   if (estMessageSalutation(t)) {
     if (/(bonjour|salut|bjr|mbote|yo|cc|slt)/i.test(t)) {
       const questionsMatin = [
@@ -1249,18 +1242,18 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
       else if (heure < 18) question = pick(questionsAprem);
       else question = pick(questionsSoir);
 
-      return question; // pas de proposition académique
+      return question;
     }
 
     if (t.includes("bonsoir")) {
-      return pick([
-        `Bonsoir ${appel} 🌙 J'espère que ta journée s'est bien passée.`,
-        `Bonsoir ${appel} 😊 Contente de te retrouver en cette fin de journée.`
-      ]);
+      const formules = [
+        `Bonsoir ${appel} 🌙 J'espère que ta journée s'est bien passée. As-tu une question ou une matière à revoir ?`,
+        `Bonsoir ${appel} 😊 Contente de te retrouver en cette fin de journée. Qu'est-ce que tu aimerais apprendre maintenant ?`
+      ];
+      return pick(formules);
     }
 
-    // Vœux avec relance systématique
-    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌜 Fais de beaux rêves.`;
+    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌜 Fais de beaux rêves. Si tu veux réviser quelque chose demain, n'hésite pas.`;
     if (t.includes("bonne journee")) return `Bonne journée à toi aussi ${appel} ☀️ Qu'as-tu envie de découvrir aujourd'hui ?`;
     if (t.includes("bon apres midi")) return `Merci ${appel} ! Passe un bon après-midi 🌤 Et si tu veux, on peut revoir quelque chose ensemble.`;
     if (t.includes("bonne soiree")) return `Bonne soirée ${appel} 🌙 Si tu veux revoir un point avant de dormir, je suis là.`;
@@ -1270,16 +1263,18 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     return `Salut ${appel} 👋`;
   }
 
-  // Réponses courtes
   if (estMessageCourtHumain(t)) {
     if (t === "ca va" || t === "ca va merci") {
       return `Oui, ça va très bien ${appel}, merci ! Et toi ? 😊 Si tu veux, on peut revoir une notion.`;
     }
-    const simples = [`D'accord ${appel} 👍`, `Parfait ${appel} ✅`, `Entendu ${appel} 😉`];
+    const simples = [
+      `D'accord ${appel} 👍 Tu as quelque chose à revoir ?`,
+      `Parfait ${appel} ✅ Dis-moi si tu veux travailler une matière.`,
+      `Entendu ${appel} 😉 Je suis prêt à t'aider si tu as une question.`
+    ];
     return pick(simples);
   }
 
-  // NOUVEAU : questions de bien-être isolées (sans contexte de deuxième tour)
   if (/^(tu vas bien\??|comment vas-tu\??|comment tu vas\??|et toi\??|et vous\??|vous allez bien\??|comment ca va\??|ca va\??)$/i.test(t)) {
     const reponses = [
       `Je vais très bien, merci ${appel} ! Et toi, comment vas-tu ? 😊`,
@@ -1962,6 +1957,13 @@ RÈGLE DE COHÉRENCE THÉMATIQUE :
 - L’ouverture finale doit rester dans la même matière que la question
 - Ne bascule jamais du droit vers la géographie, de l’histoire vers la géographie, ou d’une matière vers une autre, sauf si l’élève le demande
 
+RÈGLE POUR LA CONSOLIDATION :
+- Rédige EXACTEMENT une ou deux questions brèves qui testent la compréhension de la notion principale.
+- Les questions doivent être directement liées à la question de l'élève, pas à la matière en général.
+- Exemples acceptables : "Peux-tu m'expliquer avec tes mots pourquoi … ?", "Qu'arriverait-il si on changeait … ?", "Donne-moi un autre exemple qui illustre cette règle."
+- Pas de QCM automatique, sauf si la question s'y prête naturellement (par exemple pour un choix entre deux concepts).
+- Sois concis : maximum deux phrases pour l'ensemble du bloc.
+
 INTERDICTION :
 - Ne dis pas "mon élève"
 - Ne donne pas une réponse froide de moteur de recherche
@@ -2329,6 +2331,9 @@ MODE IMAGE :
   );
 }
 
+/* =========================================================
+   CONSTRUCTION FINALE DU MESSAGE (AVEC CONCLUSION PROFESSIONNELLE)
+========================================================= */
 function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
   const reponseNettoyee = nettoyerReponseIA(reponseBrute);
   const reponseSansAppelsLourds = supprimerFormulesLourdesDAppel(reponseNettoyee, user);
@@ -2339,36 +2344,41 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
     fiche
   );
 
-  const corpsAvecStructure = verifierStructureMwalimu(
+  let corps = verifierStructureMwalimu(
     sortieScientifique.texte,
     user,
     historique,
     question
   );
 
-  const corpsConsolide = remplacerBlocConsolidation(corpsAvecStructure, question);
+  // --- CONSOLIDATION ---
+  const sujetQuestion = extraireSujetMemoire(question);
+  corps = remplacerBlocConsolidation(corps, question, sujetQuestion);
 
-  let corps = adapterTexteGenre(corpsConsolide, user.nom);
-  corps = nettoyerAppelsRepetitifs(corps, user.nom);
-  corps = nettoyerOuverturesDupliquees(corps);
-  corps = supprimerDoublonsLignes(corps);
+  // --- NETTOYAGE AVANCÉ DU CORPS (citations parasites, encouragements, ouvertures) ---
+  corps = corps.replace(/^\s*\*\*\*«[^»]+»\*\*\*\s*$/gm, "");
+  corps = corps.replace(/^🌟\s*Mot d['’]encouragement\s*:.*$/gim, "");
+  corps = corps.replace(/^👉\s*Je reste disponible.*$/gim, "");
+  corps = corps.replace(/^👉\s*Continue à me parler.*$/gim, "");
+  corps = corps.replace(/\n{3,}/g, "\n\n").trim();
 
-  const ouverture = adapterTexteGenre(
-    choisirOuvertureContextuelle(corps, user, question),
-    user.nom
-  );
+  // --- ÉLÉMENTS DE FIN ---
+  // Une seule citation (matière + citoyenneté)
+  const citationUnique = choisirCitationFinale(question, corps);
+  // Une ouverture sobre
+  const ouverture = choisirOuvertureContextuelle(corps, user, question);
+  // Un encouragement court, seulement s'il n'est pas déjà dans le corps
+  const encouragement = !/🌟/.test(corps) ? choisirEncouragementContextuel(corps, question) : "";
 
-  const encouragement = choisirEncouragementContextuel(corps, question);
-  const citation = choisirCitationContextuelle(corps, question);
-
+  // Assemblage
   const parties = [
     HEADER_MWALIMU,
     "────────────────",
     corps,
+    citationUnique,
     ouverture,
-    encouragement,
-    citation
-  ].filter((v) => String(v || "").trim() !== "");
+    encouragement
+  ].filter(part => part && part.trim() !== "");
 
   return dedupeBlocFinal(parties.join("\n"));
 }
@@ -2435,13 +2445,11 @@ function construireConsignePedagogique(texte = "", type = "text") {
    13) TRAITEMENT
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  // --- DEUXIÈME TOUR DE SALUTATION ---
   if (estSecondTourSalutation(historique, texteUtilisateur)) {
     const reponse = genererRepriseApresBienEtre(user);
     return { reponse, fiche: null, bypassFormat: true };
   }
 
-  // Court-circuit social premier tour (ou autres messages purement sociaux)
   if (estMessagePurementSocial(texteUtilisateur)) {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
     if (reponseSimple) {
@@ -2559,13 +2567,11 @@ async function traiterAudio(user, msg, historique) {
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
-  // Détection deuxième tour audio
   if (estSecondTourSalutation(historique, transcription || transcriptionBrute)) {
     const rep = genererRepriseApresBienEtre(user);
     return { reponse: rep, fiche: null, bypassFormat: true };
   }
 
-  // Détection sociale sur la transcription
   if (transcription && estMessagePurementSocial(transcription)) {
     const rep = construireReponseHumaineSimple(user, transcription);
     if (rep) {
@@ -2579,7 +2585,6 @@ async function traiterAudio(user, msg, historique) {
     }
   }
 
-  // Message très court social
   const tMini = normaliserTexteRelationnel(transcriptionBrute);
   if (tMini && tMini.split(" ").length <= 5 && estMessagePurementSocial(tMini)) {
     return {
@@ -2600,7 +2605,6 @@ async function traiterAudio(user, msg, historique) {
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
   const texteAudioNormalise = normaliserTexteRelationnel(reponse);
 
-  // Après IA, si la réponse est elle-même sociale
   if (texteAudioNormalise && estMessagePurementSocial(texteAudioNormalise)) {
     const repSimple = construireReponseHumaineSimple(user, texteAudioNormalise);
     if (repSimple) {
@@ -2834,13 +2838,11 @@ async function processIncomingMessage(msg) {
     return;
   }
 
-  // Pour les messages texte, vérifier d'abord les commandes
   if (msgType === "text") {
     const commandeTraitee = await traiterCommandeTexte(from, user, texteUtilisateur);
     if (commandeTraitee) return;
   }
 
-  // Gestion du profil
   if (!user.nom) {
     const nom = normaliserNom(nettoyer(texteUtilisateur));
     if (!nom) {
@@ -2923,7 +2925,6 @@ Exemple : avocat, médecin, ingénieur, pilote.`);
     contenuUtilisateurPourMemoire = "[image envoyée]";
     await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
   } else {
-    // Gestion des types de fichiers non pris en charge (documents, etc.)
     reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton fichier.
 🟡 [SAVOIR] : Je ne peux pas encore analyser ce type de format pour le moment.
 🔴 [INSPIRATION] : Ce n'est pas grave, nous pouvons utiliser le texte ou les images.
@@ -2931,14 +2932,11 @@ Exemple : avocat, médecin, ingénieur, pilote.`);
     bypassFormat = false;
   }
 
-  // --- ENCAPSULATION ET ENVOI ---
   let messageFinal = "";
 
   if (bypassFormat) {
-    // Si c'est une simple réponse sociale de premier ou deuxième tour
     messageFinal = reponseBrute;
   } else {
-    // Application de la charte Mwalimu EdTech (VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION)
     messageFinal = construireMessageFinal(
       { ...user, phone: from },
       reponseBrute,
@@ -2952,10 +2950,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`);
     messageFinal = messageSecours({ ...user, phone: from }, msgType);
   }
 
-  // Sauvegarde de la réponse de l'assistant dans la base de données
   await appendHistorique(from, "assistant", messageFinal);
-
-  // Envoi de la réponse sur WhatsApp
   await envoyerWhatsApp(from, messageFinal);
 
   logInfo("message_processed_success", {
@@ -2981,20 +2976,13 @@ app.get("/webhook", (req, res) => {
 });
 
 app.post("/webhook", async (req, res) => {
-  // Optionnel : décommenter si la validation de la signature Meta est configurée
-  // if (!verifierSignatureMeta(req)) {
-  //   logWarn("invalid_webhook_signature");
-  //   return res.sendStatus(401);
-  // }
-
   const msg = extraireMessageWhatsApp(req.body);
   if (!msg) {
-    return res.sendStatus(200); // Meta attend un 200 même si le payload est vide/statut
+    return res.sendStatus(200);
   }
 
   const from = msg.from;
 
-  // File d'attente séquentielle par numéro pour éviter les conditions de concurrence (race conditions)
   runSequentialByKey(from, async () => {
     try {
       await processIncomingMessage(msg);
@@ -3012,7 +3000,6 @@ app.post("/webhook", async (req, res) => {
   return res.sendStatus(200);
 });
 
-// Statut de santé de l'API pour les plateformes de déploiement (Render, Railway, etc.)
 app.get("/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
