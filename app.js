@@ -1078,6 +1078,7 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
   const dernierAssistant = [...historique].reverse().find(m => m.role === "assistant");
   if (!dernierAssistant) return false;
   const texte = normaliserTexteRelationnel(dernierAssistant.content || "");
+  
   const motifs = [
     "comment vas-tu",
     "comment te sens-tu",
@@ -1090,7 +1091,16 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
     "prete a te detendre",
     "raconte-moi vite comment s'est passee ta journee"
   ];
-  return motifs.some(motif => texte.includes(motif));
+  
+  if (motifs.some(motif => texte.includes(motif))) return true;
+  
+  // Détection flexible avec regex
+  if (/comment\b.*\bvas\b.*\btu\b/i.test(texte)) return true;
+  if (/comment\b.*\bte\b.*\bsens\b/i.test(texte)) return true;
+  if (/comment\b.*\bse\b.*\bpasse\b/i.test(texte)) return true;
+  if (/est(\s|-)ce(\s|-)que\b.*\bva\b.*\bbien\b/i.test(texte)) return true;
+  
+  return false;
 }
 
 function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
@@ -1470,68 +1480,11 @@ async function initDB() {
   try {
     await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS processed_messages (
-        msg_id TEXT PRIMARY KEY,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS conversations (
-        phone TEXT PRIMARY KEY,
-        nom TEXT DEFAULT '',
-        classe TEXT DEFAULT '',
-        reve TEXT DEFAULT '',
-        historique JSONB DEFAULT '[]'::jsonb,
-        reminders_enabled BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS bibliotheque (
-        id SERIAL PRIMARY KEY,
-        titre TEXT,
-        matiere TEXT,
-        classe TEXT,
-        mots_cles TEXT,
-        contenu TEXT,
-        commentaire_ai TEXT DEFAULT '',
-        source_type TEXT DEFAULT 'db',
-        source_url TEXT DEFAULT '',
-        provenance TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS unanswered_questions (
-        id SERIAL PRIMARY KEY,
-        phone TEXT DEFAULT '',
-        question TEXT NOT NULL,
-        msg_type TEXT DEFAULT 'text',
-        classe TEXT DEFAULT '',
-        nom TEXT DEFAULT '',
-        reason TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS student_attempts (
-        id SERIAL PRIMARY KEY,
-        phone TEXT NOT NULL,
-        sujet TEXT DEFAULT '',
-        question TEXT DEFAULT '',
-        attempts_count INT DEFAULT 0,
-        last_user_answer TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+    await pool.query(`CREATE TABLE IF NOT EXISTS processed_messages (msg_id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS conversations (phone TEXT PRIMARY KEY, nom TEXT DEFAULT '', classe TEXT DEFAULT '', reve TEXT DEFAULT '', historique JSONB DEFAULT '[]'::jsonb, reminders_enabled BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS bibliotheque (id SERIAL PRIMARY KEY, titre TEXT, matiere TEXT, classe TEXT, mots_cles TEXT, contenu TEXT, commentaire_ai TEXT DEFAULT '', source_type TEXT DEFAULT 'db', source_url TEXT DEFAULT '', provenance TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS unanswered_questions (id SERIAL PRIMARY KEY, phone TEXT DEFAULT '', question TEXT NOT NULL, msg_type TEXT DEFAULT 'text', classe TEXT DEFAULT '', nom TEXT DEFAULT '', reason TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS student_attempts (id SERIAL PRIMARY KEY, phone TEXT NOT NULL, sujet TEXT DEFAULT '', question TEXT DEFAULT '', attempts_count INT DEFAULT 0, last_user_answer TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
 
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at ON processed_messages (created_at DESC);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_unanswered_questions_created_at ON unanswered_questions (created_at DESC);`);
@@ -1551,58 +1504,21 @@ async function getUser(phone) {
 }
 
 async function createUser(phone) {
-  await pool.query(
-    `INSERT INTO conversations (phone, nom, classe, reve, historique, reminders_enabled)
-     VALUES ($1, '', '', '', '[]'::jsonb, TRUE)
-     ON CONFLICT (phone) DO NOTHING`,
-    [phone]
-  );
+  await pool.query(`INSERT INTO conversations (phone, nom, classe, reve, historique, reminders_enabled) VALUES ($1, '', '', '', '[]'::jsonb, TRUE) ON CONFLICT (phone) DO NOTHING`, [phone]);
   return getUser(phone);
 }
 
 async function updateUserField(phone, field, value) {
-  const fieldMap = {
-    nom: "nom",
-    classe: "classe",
-    reve: "reve",
-    historique: "historique",
-    reminders_enabled: "reminders_enabled"
-  };
-
+  const fieldMap = { nom: "nom", classe: "classe", reve: "reve", historique: "historique", reminders_enabled: "reminders_enabled" };
   const safeField = fieldMap[field];
   if (!safeField) throw new Error("Champ non autorisé");
-
   const query = `UPDATE conversations SET ${safeField} = $1, updated_at = NOW() WHERE phone = $2`;
   await pool.query(query, [value, phone]);
 }
 
 async function appendHistorique(phone, role, content) {
-  const nouvelElement = {
-    role,
-    content: tronquerTexte(content, 2500),
-    ts: new Date().toISOString()
-  };
-
-  await pool.query(
-    `
-    UPDATE conversations
-    SET historique = (
-      SELECT COALESCE(jsonb_agg(value ORDER BY ord), '[]'::jsonb)
-      FROM (
-        SELECT value, ord
-        FROM jsonb_array_elements(
-          COALESCE(historique, '[]'::jsonb) || $1::jsonb
-        ) WITH ORDINALITY AS arr(value, ord)
-        ORDER BY ord DESC
-        LIMIT 12
-      ) t
-    ),
-    updated_at = NOW()
-    WHERE phone = $2
-    `,
-    [JSON.stringify([nouvelElement]), phone]
-  );
-
+  const nouvelElement = { role, content: tronquerTexte(content, 2500), ts: new Date().toISOString() };
+  await pool.query(`UPDATE conversations SET historique = (SELECT COALESCE(jsonb_agg(value ORDER BY ord), '[]'::jsonb) FROM (SELECT value, ord FROM jsonb_array_elements(COALESCE(historique, '[]'::jsonb) || $1::jsonb) WITH ORDINALITY AS arr(value, ord) ORDER BY ord DESC LIMIT 12) t), updated_at = NOW() WHERE phone = $2`, [JSON.stringify([nouvelElement]), phone]);
   const user = await getUser(phone);
   return Array.isArray(user?.historique) ? user.historique : safeJsonParse(user?.historique, []);
 }
@@ -1610,66 +1526,30 @@ async function appendHistorique(phone, role, content) {
 async function logUnansweredQuestion(user = {}, question = "", msgType = "text", reason = "") {
   try {
     if (!String(question || "").trim()) return;
-    await pool.query(
-      `INSERT INTO unanswered_questions (phone, question, msg_type, classe, nom, reason)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        user?.phone || "",
-        tronquerTexte(question, 2000),
-        msgType,
-        user?.classe || "",
-        user?.nom || "",
-        reason || ""
-      ]
-    );
+    await pool.query(`INSERT INTO unanswered_questions (phone, question, msg_type, classe, nom, reason) VALUES ($1, $2, $3, $4, $5, $6)`, [user?.phone || "", tronquerTexte(question, 2000), msgType, user?.classe || "", user?.nom || "", reason || ""]);
   } catch (e) {
     logError("log_unanswered_question", e);
   }
 }
 
 async function getStudentAttempt(phone, sujet = "") {
-  const { rows } = await pool.query(
-    `SELECT * FROM student_attempts
-     WHERE phone = $1 AND sujet = $2
-     ORDER BY updated_at DESC
-     LIMIT 1`,
-    [phone, sujet]
-  );
+  const { rows } = await pool.query(`SELECT * FROM student_attempts WHERE phone = $1 AND sujet = $2 ORDER BY updated_at DESC LIMIT 1`, [phone, sujet]);
   return rows[0] || null;
 }
 
 async function saveStudentAttempt(phone, sujet = "", question = "", lastUserAnswer = "") {
   const existing = await getStudentAttempt(phone, sujet);
-
   if (!existing) {
-    await pool.query(
-      `INSERT INTO student_attempts (phone, sujet, question, attempts_count, last_user_answer, updated_at)
-       VALUES ($1, $2, $3, 1, $4, NOW())`,
-      [phone, sujet, question, lastUserAnswer]
-    );
+    await pool.query(`INSERT INTO student_attempts (phone, sujet, question, attempts_count, last_user_answer, updated_at) VALUES ($1, $2, $3, 1, $4, NOW())`, [phone, sujet, question, lastUserAnswer]);
     return 1;
   }
-
   const nextCount = Number(existing.attempts_count || 0) + 1;
-
-  await pool.query(
-    `UPDATE student_attempts
-     SET attempts_count = $1,
-         question = $2,
-         last_user_answer = $3,
-         updated_at = NOW()
-     WHERE id = $4`,
-    [nextCount, question, lastUserAnswer, existing.id]
-  );
-
+  await pool.query(`UPDATE student_attempts SET attempts_count = $1, question = $2, last_user_answer = $3, updated_at = NOW() WHERE id = $4`, [nextCount, question, lastUserAnswer, existing.id]);
   return nextCount;
 }
 
 async function resetStudentAttempt(phone, sujet = "") {
-  await pool.query(
-    `DELETE FROM student_attempts WHERE phone = $1 AND sujet = $2`,
-    [phone, sujet]
-  );
+  await pool.query(`DELETE FROM student_attempts WHERE phone = $1 AND sujet = $2`, [phone, sujet]);
 }
 
 async function resetAllStudentAttempts(phone) {
@@ -1683,14 +1563,9 @@ function verifierSignatureMeta(req) {
   try {
     const signature = req.get("x-hub-signature-256");
     if (!APP_SECRET || !signature || !req.rawBody) return false;
-
-    const expectedSignature =
-      "sha256=" +
-      crypto.createHmac("sha256", APP_SECRET).update(req.rawBody).digest("hex");
-
+    const expectedSignature = "sha256=" + crypto.createHmac("sha256", APP_SECRET).update(req.rawBody).digest("hex");
     const sigBuf = Buffer.from(signature);
     const expBuf = Buffer.from(expectedSignature);
-
     if (sigBuf.length !== expBuf.length) return false;
     return crypto.timingSafeEqual(sigBuf, expBuf);
   } catch {
@@ -1709,22 +1584,7 @@ function extraireMessageWhatsApp(body) {
 ========================================================= */
 async function envoyerWhatsApp(to, texte) {
   try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to,
-        type: "text",
-        text: { body: tronquerTexte(texte, 3900) }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 15000
-      }
-    );
+    await axios.post(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, { messaging_product: "whatsapp", to, type: "text", text: { body: tronquerTexte(texte, 3900) } }, { headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" }, timeout: 15000 });
   } catch (e) {
     logError("whatsapp_send", e, { to });
   }
@@ -1733,41 +1593,14 @@ async function envoyerWhatsApp(to, texte) {
 async function envoyerIndicateurFrappe(messageId) {
   try {
     if (!messageId) return;
-
-    await axios.post(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        status: "read",
-        message_id: messageId,
-        typing_indicator: {
-          type: "text"
-        }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 15000
-      }
-    );
+    await axios.post(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, { messaging_product: "whatsapp", status: "read", message_id: messageId, typing_indicator: { type: "text" } }, { headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" }, timeout: 15000 });
   } catch (e) {
-    logWarn("typing_indicator_error", {
-      message: e?.message || "",
-      data: e?.response?.data || null
-    });
+    logWarn("typing_indicator_error", { message: e?.message || "", data: e?.response?.data || null });
   }
 }
 
 async function recupererMetaMediaInfo(mediaId) {
-  const r = await axios.get(
-    `https://graph.facebook.com/v18.0/${mediaId}`,
-    {
-      headers: { Authorization: `Bearer ${TOKEN}` },
-      timeout: 15000
-    }
-  );
+  const r = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, { headers: { Authorization: `Bearer ${TOKEN}` }, timeout: 15000 });
   return r.data || {};
 }
 
@@ -1775,27 +1608,11 @@ async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
   const mediaInfo = await recupererMetaMediaInfo(mediaId);
   const mediaUrl = mediaInfo?.url || null;
   if (!mediaUrl) throw new Error("URL média introuvable");
-
-  const response = await axios.get(mediaUrl, {
-    responseType: "arraybuffer",
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    timeout: 30000,
-    maxContentLength: maxBytes,
-    maxBodyLength: maxBytes,
-    validateStatus: (s) => s >= 200 && s < 300
-  });
-
-  const contentType = String(
-    response.headers["content-type"] || mediaInfo?.mime_type || "application/octet-stream"
-  ).toLowerCase();
-
+  const response = await axios.get(mediaUrl, { responseType: "arraybuffer", headers: { Authorization: `Bearer ${TOKEN}` }, timeout: 30000, maxContentLength: maxBytes, maxBodyLength: maxBytes, validateStatus: (s) => s >= 200 && s < 300 });
+  const contentType = String(response.headers["content-type"] || mediaInfo?.mime_type || "application/octet-stream").toLowerCase();
   const contentLength = Number(response.headers["content-length"] || response.data?.byteLength || 0);
   if (contentLength > maxBytes) throw new Error("Fichier trop volumineux");
-
-  return {
-    buffer: Buffer.from(response.data),
-    mimeType: contentType
-  };
+  return { buffer: Buffer.from(response.data), mimeType: contentType };
 }
 
 /* =========================================================
@@ -1805,22 +1622,8 @@ async function consulterBibliotheque(question = "", classe = "") {
   try {
     const termes = String(question || "").trim();
     if (!termes) return null;
-
-    const q = `
-      SELECT
-        id, titre, matiere, classe, mots_cles, contenu, commentaire_ai,
-        source_type, source_url, provenance, created_at, updated_at,
-        ts_rank(search_vector, plainto_tsquery('simple', unaccent($1))) AS score
-      FROM bibliotheque
-      WHERE
-        search_vector @@ plainto_tsquery('simple', unaccent($1))
-        AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
-      ORDER BY score DESC, updated_at DESC, id DESC
-      LIMIT 1
-    `;
-
     const motifClasse = `%${classe}%`;
-    const { rows } = await pool.query(q, [termes, classe || "", motifClasse]);
+    const { rows } = await pool.query(`SELECT id, titre, matiere, classe, mots_cles, contenu, commentaire_ai, source_type, source_url, provenance, created_at, updated_at, ts_rank(search_vector, plainto_tsquery('simple', unaccent($1))) AS score FROM bibliotheque WHERE search_vector @@ plainto_tsquery('simple', unaccent($1)) AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3))) ORDER BY score DESC, updated_at DESC, id DESC LIMIT 1`, [termes, classe || "", motifClasse]);
     return rows[0] || null;
   } catch (e) {
     logError("consulter_bibliotheque", e);
@@ -1872,133 +1675,36 @@ INTERDICTION :
 }
 
 function toGeminiContents(messages = []) {
-  return messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content) }]
-    }));
+  return messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: String(m.content) }] }));
 }
 
 async function appelerChatCompletion(messages) {
-  const systemMessages = messages
-    .filter((m) => m.role === "system")
-    .map((m) => m.content)
-    .join("\n\n");
-
+  const systemMessages = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
   const contents = toGeminiContents(messages);
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: systemMessages,
-    tools: [{ googleSearch: {} }]
-  });
-
-  const result = await genererAvecRetry(model, {
-    contents,
-    generationConfig: { temperature: 0.1 }
-  });
-
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", systemInstruction: systemMessages, tools: [{ googleSearch: {} }] });
+  const result = await genererAvecRetry(model, { contents, generationConfig: { temperature: 0.1 } });
   return result.response.text();
 }
 
-async function appelerJsonStrict({
-  systemInstruction = "",
-  prompt = "",
-  schema = null,
-  history = [],
-  inlineParts = []
-}) {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction
-  });
-
-  const result = await genererAvecRetry(model, {
-    contents: [
-      ...toGeminiContents(history),
-      {
-        role: "user",
-        parts: [
-          { text: prompt },
-          ...inlineParts
-        ]
-      }
-    ],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: "application/json",
-      ...(schema ? { responseSchema: schema } : {})
-    }
-  });
-
+async function appelerJsonStrict({ systemInstruction = "", prompt = "", schema = null, history = [], inlineParts = [] }) {
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", systemInstruction });
+  const result = await genererAvecRetry(model, { contents: [...toGeminiContents(history), { role: "user", parts: [{ text: prompt }, ...inlineParts] }], generationConfig: { temperature: 0, responseMimeType: "application/json", ...(schema ? { responseSchema: schema } : {}) } });
   return extraireJsonGemini(result.response.text());
 }
 
 async function chercherContexteWeb(question = "", user = {}, historique = []) {
   const system = construireSystemPrompt(user);
-
-  const reponse = await safeAI(
-    () => appelerChatCompletion([
-      { role: "system", content: system },
-      {
-        role: "system",
-        content: `MISSION WEB :
-- Utilise Google Search
-- Donne un CONTEXTE WEB BRUT, court, clair et factuel
-- Si la question concerne une province, une commune, une ville, un territoire ou une subdivision administrative, donne la liste complète trouvée
-- Pour une liste administrative, n'omets aucun élément trouvé
-- Si tu n'es pas sûr que la liste soit exhaustive, dis exactement : "Liste à confirmer"
-- Pas de structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
-- Pas de citation finale
-- Pas d'encouragement`
-      },
-      ...historique.slice(-4),
-      {
-        role: "user",
-        content: `QUESTION :
-${question}
-Donne un contexte web brut, précis et exhaustif si la question demande une liste.`
-      }
-    ]),
-    ""
-  );
-
+  const reponse = await safeAI(() => appelerChatCompletion([{ role: "system", content: system }, { role: "system", content: `MISSION WEB :\n- Utilise Google Search\n- Donne un CONTEXTE WEB BRUT, court, clair et factuel\n- Si la question concerne une province, une commune, une ville, un territoire ou une subdivision administrative, donne la liste complète trouvée\n- Pour une liste administrative, n'omets aucun élément trouvé\n- Si tu n'es pas sûr que la liste soit exhaustive, dis exactement : "Liste à confirmer"\n- Pas de structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION\n- Pas de citation finale\n- Pas d'encouragement` }, ...historique.slice(-4), { role: "user", content: `QUESTION :\n${question}\nDonne un contexte web brut, précis et exhaustif si la question demande une liste.` }]), "");
   return String(reponse || "").trim();
 }
 
 async function detecterIntentionIA(user, texte = "", historique = []) {
-  const system = `${construireSystemPrompt(user)}
-MODE CLASSIFICATION STRICTE :
-- Réponds uniquement en JSON valide
-- intention possible : salutation, remerciement, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc
-- matiere possible : math, physique, chimie, general
-- besoinCorrectionRenforcee doit être true ou false
-- sujet doit être court`;
-
-  const fallback = {
-    intention: "question_normale",
-    matiere: detecterMatiereScientifique(texte, "", null),
-    besoinCorrectionRenforcee: false,
-    sujet: extraireSujetMemoire(texte) || "general"
-  };
-
+  const system = `${construireSystemPrompt(user)}\nMODE CLASSIFICATION STRICTE :\n- Réponds uniquement en JSON valide\n- intention possible : salutation, remerciement, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc\n- matiere possible : math, physique, chimie, general\n- besoinCorrectionRenforcee doit être true ou false\n- sujet doit être court`;
+  const fallback = { intention: "question_normale", matiere: detecterMatiereScientifique(texte, "", null), besoinCorrectionRenforcee: false, sujet: extraireSujetMemoire(texte) || "general" };
   try {
-    const parsed = await appelerJsonStrict({
-      systemInstruction: system,
-      prompt: `Analyse ce message et classe-le.\n\nMESSAGE :\n${texte}`,
-      schema: JSON_SCHEMA_INTENTION,
-      history: historique.slice(-3)
-    });
-
+    const parsed = await appelerJsonStrict({ systemInstruction: system, prompt: `Analyse ce message et classe-le.\n\nMESSAGE :\n${texte}`, schema: JSON_SCHEMA_INTENTION, history: historique.slice(-3) });
     if (!parsed || typeof parsed !== "object") return fallback;
-
-    return {
-      intention: String(parsed.intention || fallback.intention),
-      matiere: String(parsed.matiere || fallback.matiere),
-      besoinCorrectionRenforcee: Boolean(parsed.besoinCorrectionRenforcee),
-      sujet: String(parsed.sujet || fallback.sujet)
-    };
+    return { intention: String(parsed.intention || fallback.intention), matiere: String(parsed.matiere || fallback.matiere), besoinCorrectionRenforcee: Boolean(parsed.besoinCorrectionRenforcee), sujet: String(parsed.sujet || fallback.sujet) };
   } catch (e) {
     logError("detecter_intention_ia", e);
     return fallback;
@@ -2008,225 +1714,58 @@ MODE CLASSIFICATION STRICTE :
 async function construireConsigneAntiBoucle(user, texteUtilisateur = "", historique = []) {
   const analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
   const sujet = analyse.sujet || extraireSujetMemoire(texteUtilisateur) || "general";
-
   if (analyse.intention !== "soumission_reponse" && !estSoumissionReponse(texteUtilisateur)) {
     return { sujet, tentative: 0, consigne: "" };
   }
-
   const tentative = await saveStudentAttempt(user.phone, sujet, texteUtilisateur, texteUtilisateur);
-
-  if (tentative < 3) {
-    return {
-      sujet,
-      tentative,
-      consigne: "L'élève a proposé une réponse. Corrige avec douceur sans donner tout de suite la solution complète."
-    };
-  }
-
-  return {
-    sujet,
-    tentative,
-    consigne: "L'élève s'est probablement trompé plusieurs fois. Simplifie davantage, découpe en très petites étapes et donne un indice plus fort."
-  };
+  if (tentative < 3) return { sujet, tentative, consigne: "L'élève a proposé une réponse. Corrige avec douceur sans donner tout de suite la solution complète." };
+  return { sujet, tentative, consigne: "L'élève s'est probablement trompé plusieurs fois. Simplifie davantage, découpe en très petites étapes et donne un indice plus fort." };
 }
 
 async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
   let contexteWeb = "";
   const utiliserWeb = fautChercherSurWeb(questionEleve, fiche);
+  if (utiliserWeb) contexteWeb = await chercherContexteWeb(questionEleve, user, historique);
+  const blocWeb = contexteWeb ? `CONTEXTE WEB (SOURCE PRINCIPALE) :\n${contexteWeb}` : `CONTEXTE WEB :\nAucune information web utile trouvée.`;
+  const blocDB = fiche ? `CONTEXTE DB (SECONDAIRE) :\nTitre : ${fiche?.titre || "Sans titre"}\nMatière : ${fiche?.matiere || "Non précisée"}\nClasse : ${fiche?.classe || "Non précisée"}\nContenu :\n${fiche?.contenu || ""}\nCommentaire IA :\n${fiche?.commentaire_ai || ""}` : `CONTEXTE DB :\nAucune fiche locale disponible.`;
 
-  if (utiliserWeb) {
-    contexteWeb = await chercherContexteWeb(questionEleve, user, historique);
-  }
-
-  const blocWeb = contexteWeb
-    ? `CONTEXTE WEB (SOURCE PRINCIPALE) :
-${contexteWeb}`
-    : `CONTEXTE WEB :
-Aucune information web utile trouvée.`;
-
-  const blocDB = fiche
-    ? `CONTEXTE DB (SECONDAIRE) :
-Titre : ${fiche?.titre || "Sans titre"}
-Matière : ${fiche?.matiere || "Non précisée"}
-Classe : ${fiche?.classe || "Non précisée"}
-Contenu :
-${fiche?.contenu || ""}
-Commentaire IA :
-${fiche?.commentaire_ai || ""}`
-    : `CONTEXTE DB :
-Aucune fiche locale disponible.`;
-
-  return await safeAI(
-    () => appelerChatCompletion([
-      { role: "system", content: construireSystemPrompt(user) },
-      {
-        role: "system",
-        content: `RÈGLE FONDAMENTALE :
-- Utilise d'abord le WEB si disponible
-- Utilise la DB comme appui
-- Ne réponds jamais comme un moteur de recherche
-- Si la question demande une liste administrative complète, recopie la liste complète trouvée
-- Si tu n'es pas sûr d'une liste complète, dis-le honnêtement
-- N'invente jamais un territoire, une commune, une ville ou un article
-- La matière de la CONSOLIDATION doit être strictement la même que celle de la question principale
-- La citation finale doit être strictement liée à la même matière
-- L'ouverture finale doit être strictement liée à la même matière
-- Interdiction de mélanger histoire, géographie, droit, sciences, mathématiques ou français dans la même consolidation`
-      },
-      { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
-      ...historique.slice(-5),
-      {
-        role: "user",
-        content: `QUESTION :
-${questionEleve}
-${blocWeb}
-${blocDB}
-Donne maintenant la réponse finale de Mwalimu.`
-      }
-    ]),
-    `🔵 [VÉCU] : J'ai bien reçu ta demande.
-🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
-🔴 [INSPIRATION] : Ce n'est pas un problème ; nous pouvons reprendre plus simplement.
-❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`
-  );
+  return await safeAI(() => appelerChatCompletion([
+    { role: "system", content: construireSystemPrompt(user) },
+    { role: "system", content: `RÈGLE FONDAMENTALE :\n- Utilise d'abord le WEB si disponible\n- Utilise la DB comme appui\n- Ne réponds jamais comme un moteur de recherche\n- Si la question demande une liste administrative complète, recopie la liste complète trouvée\n- Si tu n'es pas sûr d'une liste complète, dis-le honnêtement\n- N'invente jamais un territoire, une commune, une ville ou un article\n- La matière de la CONSOLIDATION doit être strictement la même que celle de la question principale\n- La citation finale doit être strictement liée à la même matière\n- L'ouverture finale doit être strictement liée à la même matière\n- Interdiction de mélanger histoire, géographie, droit, sciences, mathématiques ou français dans la même consolidation` },
+    { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
+    ...historique.slice(-5),
+    { role: "user", content: `QUESTION :\n${questionEleve}\n${blocWeb}\n${blocDB}\nDonne maintenant la réponse finale de Mwalimu.` }
+  ]), `🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.\n🔴 [INSPIRATION] : Ce n'est pas un problème ; nous pouvons reprendre plus simplement.\n❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`);
 }
 
 async function analyserAudioCourt(user, audioBuffer, mimeType, historique = []) {
-  const systemInstruction = `${construireSystemPrompt(user)}
-MODE ANALYSE AUDIO COURT :
-- Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide
-- Détecte si l'audio est un simple message social ou non
-- "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, bon apres-midi, bon après-midi, bonne journée, bon week-end, bon weekend, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va
-- "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.
-- Si l'audio est trop flou, mets "type":"incompris"
-- Réponds strictement en JSON`;
-
+  const systemInstruction = `${construireSystemPrompt(user)}\nMODE ANALYSE AUDIO COURT :\n- Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide\n- Détecte si l'audio est un simple message social ou non\n- "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, bon apres-midi, bon après-midi, bonne journée, bon week-end, bon weekend, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va\n- "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.\n- Si l'audio est trop flou, mets "type":"incompris"\n- Réponds strictement en JSON`;
   try {
-    const parsed = await appelerJsonStrict({
-      systemInstruction,
-      prompt: "Analyse cet audio et renvoie uniquement le JSON demandé.",
-      schema: JSON_SCHEMA_AUDIO,
-      history: historique.slice(-2),
-      inlineParts: [
-        { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
-      ]
-    });
-
-    if (!parsed || typeof parsed !== "object") {
-      return { transcription: "", type: "incompris" };
-    }
-
-    return {
-      transcription: String(parsed.transcription || "").trim(),
-      type: String(parsed.type || "incompris").trim().toLowerCase()
-    };
+    const parsed = await appelerJsonStrict({ systemInstruction, prompt: "Analyse cet audio et renvoie uniquement le JSON demandé.", schema: JSON_SCHEMA_AUDIO, history: historique.slice(-2), inlineParts: [{ inlineData: { mimeType, data: audioBuffer.toString("base64") } }] });
+    if (!parsed || typeof parsed !== "object") return { transcription: "", type: "incompris" };
+    return { transcription: String(parsed.transcription || "").trim(), type: String(parsed.type || "incompris").trim().toLowerCase() };
   } catch (e) {
     logError("analyser_audio_court", e);
-    return {
-      transcription: "",
-      type: "incompris"
-    };
+    return { transcription: "", type: "incompris" };
   }
 }
 
 async function reponseAudioUneSeulePasse(user, audioBuffer, mimeType, historique = [], fiche = null) {
-  const blocDB = fiche
-    ? `CONTEXTE DB :
-Titre : ${fiche?.titre || "Sans titre"}
-Matière : ${fiche?.matiere || "Non précisée"}
-Classe : ${fiche?.classe || "Non précisée"}
-Contenu DB :
-${tronquerTexte(fiche?.contenu || "", 3000)}
-Commentaire IA :
-${tronquerTexte(fiche?.commentaire_ai || "Aucun commentaire IA.", 1200)}`
-    : `CONTEXTE DB :
-Aucune fiche locale fiable trouvée.`;
+  const blocDB = fiche ? `CONTEXTE DB :\nTitre : ${fiche?.titre || "Sans titre"}\nMatière : ${fiche?.matiere || "Non précisée"}\nClasse : ${fiche?.classe || "Non précisée"}\nContenu DB :\n${tronquerTexte(fiche?.contenu || "", 3000)}\nCommentaire IA :\n${tronquerTexte(fiche?.commentaire_ai || "Aucun commentaire IA.", 1200)}` : `CONTEXTE DB :\nAucune fiche locale fiable trouvée.`;
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: `${construireSystemPrompt(user)}
-MODE AUDIO :
-- Commence toujours par dire : "J'ai bien reçu ton audio." seulement si le message audio n'est pas juste un simple salut ou un simple remerciement
-- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va, bonne journée, bon après-midi, bon week-end ou autre message social très court :
-  - réponds avec UNE seule phrase naturelle et courte
-  - sans structure pédagogique
-  - sans header
-  - sans citation
-  - sans encouragement
-  - sans VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
-- Si le sujet demande une liste complète, sois exhaustif
-- Sois succinct quand c'est possible
-- Ne génère jamais la citation finale
-- Ne génère jamais l'ouverture finale
-- Ne génère jamais le mot d'encouragement final`,
-    tools: [{ googleSearch: {} }]
-  });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", systemInstruction: `${construireSystemPrompt(user)}\nMODE AUDIO :\n- Commence toujours par dire : "J'ai bien reçu ton audio." seulement si le message audio n'est pas juste un simple salut ou un simple remerciement\n- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va, bonne journée, bon après-midi, bon week-end ou autre message social très court :\n  - réponds avec UNE seule phrase naturelle et courte\n  - sans structure pédagogique\n  - sans header\n  - sans citation\n  - sans encouragement\n  - sans VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION\n- Si le sujet demande une liste complète, sois exhaustif\n- Sois succinct quand c'est possible\n- Ne génère jamais la citation finale\n- Ne génère jamais l'ouverture finale\n- Ne génère jamais le mot d'encouragement final`, tools: [{ googleSearch: {} }] });
 
-  const formattedHistory = historique.slice(-4).map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: String(m.content) }]
-  }));
+  const formattedHistory = historique.slice(-4).map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: String(m.content) }] }));
 
-  return await safeAI(
-    async () => {
-      const r = await genererAvecRetry(model, {
-        contents: [
-          ...formattedHistory,
-          {
-            role: "user",
-            parts: [
-              { text: `${blocDB}\nConsigne pédagogique :\n${construireConsignePedagogique("", "audio")}` },
-              { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
-            ]
-          }
-        ],
-        generationConfig: { temperature: 0.2 }
-      });
-      return r.response.text();
-    },
-    ""
-  );
+  return await safeAI(async () => { const r = await genererAvecRetry(model, { contents: [...formattedHistory, { role: "user", parts: [{ text: `${blocDB}\nConsigne pédagogique :\n${construireConsignePedagogique("", "audio")}` }, { inlineData: { mimeType, data: audioBuffer.toString("base64") } }] }], generationConfig: { temperature: 0.2 } }); return r.response.text(); }, "");
 }
 
 async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: `${construireSystemPrompt(user)}
-MODE IMAGE :
-- Commence toujours par dire : "J'ai bien reçu ton image."
-- Recopie ce qui est visible
-- Si une partie est floue, dis-le honnêtement
-- Sois succinct
-- Ne génère jamais la citation finale
-- Ne génère jamais l'ouverture finale
-- Ne génère jamais le mot d'encouragement final`,
-    tools: [{ googleSearch: {} }]
-  });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", systemInstruction: `${construireSystemPrompt(user)}\nMODE IMAGE :\n- Commence toujours par dire : "J'ai bien reçu ton image."\n- Recopie ce qui est visible\n- Si une partie est floue, dis-le honnêtement\n- Sois succinct\n- Ne génère jamais la citation finale\n- Ne génère jamais l'ouverture finale\n- Ne génère jamais le mot d'encouragement final`, tools: [{ googleSearch: {} }] });
 
-  const contents = [
-    ...historique.slice(-4).map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content) }]
-    })),
-    {
-      role: "user",
-      parts: [
-        { text: "Analyse cette image. Commence par : J'ai bien reçu ton image. Puis recopie ce qui est visible et explique." },
-        { inlineData: { mimeType, data: base64Image } }
-      ]
-    }
-  ];
+  const contents = [...historique.slice(-4).map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: String(m.content) }] })), { role: "user", parts: [{ text: "Analyse cette image. Commence par : J'ai bien reçu ton image. Puis recopie ce qui est visible et explique." }, { inlineData: { mimeType, data: base64Image } }] }];
 
-  return await safeAI(
-    async () => {
-      const r = await genererAvecRetry(model, {
-        contents,
-        generationConfig: { temperature: 0.2 }
-      });
-      return r.response.text();
-    },
-    ""
-  );
+  return await safeAI(async () => { const r = await genererAvecRetry(model, { contents, generationConfig: { temperature: 0.2 } }); return r.response.text(); }, "");
 }
 
 /* =========================================================
@@ -2236,18 +1775,9 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
   const reponseNettoyee = nettoyerReponseIA(reponseBrute);
   const reponseSansAppelsLourds = supprimerFormulesLourdesDAppel(reponseNettoyee, user);
 
-  const sortieScientifique = appliquerLes4EtapesScientifiques(
-    reponseSansAppelsLourds,
-    question,
-    fiche
-  );
+  const sortieScientifique = appliquerLes4EtapesScientifiques(reponseSansAppelsLourds, question, fiche);
 
-  let corps = verifierStructureMwalimu(
-    sortieScientifique.texte,
-    user,
-    historique,
-    question
-  );
+  let corps = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
 
   const sujetQuestion = extraireSujetMemoire(question);
   corps = remplacerBlocConsolidation(corps, question, sujetQuestion);
@@ -2262,29 +1792,14 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
   const ouverture = choisirOuvertureContextuelle(corps, user, question);
   const encouragement = !/🌟/.test(corps) ? choisirEncouragementContextuel(corps, question) : "";
 
-  const parties = [
-    HEADER_MWALIMU,
-    "────────────────",
-    corps,
-    citationUnique,
-    ouverture,
-    encouragement
-  ].filter(part => part && part.trim() !== "");
+  const parties = [HEADER_MWALIMU, "────────────────", corps, citationUnique, ouverture, encouragement].filter(part => part && part.trim() !== "");
 
   return dedupeBlocFinal(parties.join("\n"));
 }
 
 function messageSecours(user, msgType = "message") {
   const appel = construireAppel({ nom: user?.nom || "élève" });
-  return `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}, ${appel}.
-🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
-🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.
-❓ [CONSOLIDATION] : Réessaie dans un instant, ou reformule ta question plus simplement.
-👉 Je reste à tes côtés.
-🌟 Mot d'encouragement : Nous pouvons reprendre calmement.
-${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
+  return `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}, ${appel}.\n🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.\n🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.\n❓ [CONSOLIDATION] : Réessaie dans un instant, ou reformule ta question plus simplement.\n👉 Je reste à tes côtés.\n🌟 Mot d'encouragement : Nous pouvons reprendre calmement.\n${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /* =========================================================
@@ -2292,55 +1807,48 @@ ${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 ========================================================= */
 function construireConsignePedagogique(texte = "", type = "text") {
   const t = String(texte || "");
-
-  if (type === "image") {
-    return `MODE IMAGE :
-- Commence par dire que tu as bien reçu l'image
-- Recopie d'abord ce qui est visible
-- Si une partie est floue, dis-le honnêtement
-- Explique la démarche
-- Ne résous pas tout à la place de l'élève
-- Sois bref et clair`;
-  }
-
-  if (type === "audio") {
-    return `MODE AUDIO :
-- Si c'est un simple remerciement, une simple salutation ou un court message social, réponds en une phrase courte naturelle sans structure
-- Sinon, commence par dire que tu as bien reçu l'audio
-- Réponds avec chaleur et pédagogie
-- Sois bref et clair`;
-  }
-
-  if (estSoumissionReponse(t)) {
-    return `MODE CORRECTION :
-- L'élève soumet probablement sa réponse
-- Corrige avec douceur
-- N'écris pas "bravo" sauf si la réponse est réellement correcte
-- Sois bref et clair`;
-  }
-
-  if (estQuestionTechnique(t)) {
-    return `MODE EXERCICE :
-- Explique la méthode
-- Montre le démarrage utile
-- Ne donne pas toute la réponse finale d'un coup
-- Sois bref et clair`;
-  }
-
-  return `MODE NORMAL :
-- Réponds naturellement
-- Sois humain, utile et succinct`;
+  if (type === "image") return `MODE IMAGE :\n- Commence par dire que tu as bien reçu l'image\n- Recopie d'abord ce qui est visible\n- Si une partie est floue, dis-le honnêtement\n- Explique la démarche\n- Ne résous pas tout à la place de l'élève\n- Sois bref et clair`;
+  if (type === "audio") return `MODE AUDIO :\n- Si c'est un simple remerciement, une simple salutation ou un court message social, réponds en une phrase courte naturelle sans structure\n- Sinon, commence par dire que tu as bien reçu l'audio\n- Réponds avec chaleur et pédagogie\n- Sois bref et clair`;
+  if (estSoumissionReponse(t)) return `MODE CORRECTION :\n- L'élève soumet probablement sa réponse\n- Corrige avec douceur\n- N'écris pas "bravo" sauf si la réponse est réellement correcte\n- Sois bref et clair`;
+  if (estQuestionTechnique(t)) return `MODE EXERCICE :\n- Explique la méthode\n- Montre le démarrage utile\n- Ne donne pas toute la réponse finale d'un coup\n- Sois bref et clair`;
+  return `MODE NORMAL :\n- Réponds naturellement\n- Sois humain, utile et succinct`;
 }
 
 /* =========================================================
    13) TRAITEMENT
 ========================================================= */
+
+/**
+ * ✅ NOUVEAU : Détecte si le message est une vraie question académique
+ */
+function estQuestionAcademique(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t || t.length < 10) return false;
+  if (estMessagePurementSocial(texte)) return false;
+  
+  const motsAcademiques = [
+    "explique", "c'est quoi", "qu'est-ce que", "comment", "pourquoi",
+    "quand", "ou", "qui", "combien", "quelle", "quel", "quels", "quelles",
+    "math", "maths", "equation", "calcul", "physique", "chimie",
+    "histoire", "geographie", "francais", "grammaire", "conjugaison",
+    "droit", "loi", "article", "constitution", "province", "territoire",
+    "exercice", "probleme", "aide", "comprendre", "apprendre",
+    "cours", "lecon", "chapitre", "matiere", "examen", "revision",
+    "peux-tu", "peux tu", "dis-moi", "dis moi", "j'aimerais", "je voudrais",
+    "explique-moi", "explique moi", "c'est quoi", "c quoi"
+  ];
+  
+  return motsAcademiques.some(mot => t.includes(mot));
+}
+
 async function traiterTexte(user, texteUtilisateur, historique) {
+  // 1. Deuxième tour de salutation
   if (estSecondTourSalutation(historique, texteUtilisateur)) {
     const reponse = genererRepriseApresBienEtre(user);
     return { reponse, fiche: null, bypassFormat: true };
   }
 
+  // 2. Message social
   if (estMessagePurementSocial(texteUtilisateur)) {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
     if (reponseSimple) {
@@ -2348,6 +1856,23 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     }
   }
 
+  // ✅ 3. Si la conversation n'a pas encore démarré académiquement
+  const conversationDemarree = historique.some(m => 
+    m.role === "user" && estQuestionAcademique(m.content || "")
+  );
+  
+  if (!conversationDemarree && !estQuestionAcademique(texteUtilisateur)) {
+    const prenom = premierPrenom(user?.nom || "");
+    const relances = [
+      `Je suis là pour t'aider **${prenom}** 😊 Dis-moi, quelle matière ou quel exercice veux-tu travailler ?`,
+      `N'hésite pas **${prenom}** ! Tu peux me parler de maths, physique, histoire, géographie, droit... Qu'est-ce qui t'intéresse ?`,
+      `**${prenom}**, je suis prêt à t'expliquer ce que tu veux. Quelle notion veux-tu comprendre aujourd'hui ?`,
+      `Alors **${prenom}**, par quoi veux-tu commencer ? Un exercice ? Une leçon ? Dis-moi ce qui te tient à cœur.`
+    ];
+    return { reponse: pick(relances), fiche: null, bypassFormat: true };
+  }
+
+  // 4. Suite normale
   const cacheKey = makeCacheKey(user, texteUtilisateur);
   const cached = getCache(cacheKey);
   if (cached) {
@@ -2363,7 +1888,6 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   };
 
   const texteMin = String(texteUtilisateur || "").toLowerCase();
-
   const besoinAnalyseIA =
     estSoumissionReponse(texteUtilisateur) ||
     estQuestionTechnique(texteUtilisateur) ||
@@ -2409,13 +1933,7 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     consigneFinale += `\n${antiBoucle.consigne}`;
   }
 
-  const reponse = await construireReponseDbWebIa(
-    user,
-    texteUtilisateur,
-    historique,
-    fiche,
-    consigneFinale
-  );
+  const reponse = await construireReponseDbWebIa(user, texteUtilisateur, historique, fiche, consigneFinale);
 
   if (reponse && String(reponse).trim()) {
     setCache(cacheKey, reponse);
@@ -2435,22 +1953,14 @@ async function traiterTexte(user, texteUtilisateur, historique) {
 async function traiterAudio(user, msg, historique) {
   const audioId = msg.audio?.id;
   if (!audioId) {
-    return {
-      reponse: "Je n'arrive pas à lire ton audio.",
-      fiche: null,
-      bypassFormat: true
-    };
+    return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true };
   }
 
   const { buffer, mimeType } = await telechargerMedia(audioId, 8 * 1024 * 1024);
   logInfo("audio_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeAudioSupporte(mimeType)) {
-    return {
-      reponse: "Format audio non supporté.",
-      fiche: null,
-      bypassFormat: true
-    };
+    return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true };
   }
 
   const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
@@ -2465,32 +1975,20 @@ async function traiterAudio(user, msg, historique) {
 
   if (transcription && estMessagePurementSocial(transcription)) {
     const rep = construireReponseHumaineSimple(user, transcription);
-    if (rep) {
-      return { reponse: rep, fiche: null, bypassFormat: true };
-    }
+    if (rep) return { reponse: rep, fiche: null, bypassFormat: true };
   }
   if (transcriptionBrute && estMessagePurementSocial(transcriptionBrute)) {
     const rep = construireReponseHumaineSimple(user, transcriptionBrute);
-    if (rep) {
-      return { reponse: rep, fiche: null, bypassFormat: true };
-    }
+    if (rep) return { reponse: rep, fiche: null, bypassFormat: true };
   }
 
   const tMini = normaliserTexteRelationnel(transcriptionBrute);
   if (tMini && tMini.split(" ").length <= 5 && estMessagePurementSocial(tMini)) {
-    return {
-      reponse: construireReponseHumaineSimple(user, tMini) || "Je t'en prie 😊",
-      fiche: null,
-      bypassFormat: true
-    };
+    return { reponse: construireReponseHumaineSimple(user, tMini) || "Je t'en prie 😊", fiche: null, bypassFormat: true };
   }
 
   if (typeAudio === "social") {
-    return {
-      reponse: construireReponseHumaineSimple(user, transcription || transcriptionBrute || "merci") || "Je t'en prie 😊",
-      fiche: null,
-      bypassFormat: true
-    };
+    return { reponse: construireReponseHumaineSimple(user, transcription || transcriptionBrute || "merci") || "Je t'en prie 😊", fiche: null, bypassFormat: true };
   }
 
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
@@ -2498,9 +1996,7 @@ async function traiterAudio(user, msg, historique) {
 
   if (texteAudioNormalise && estMessagePurementSocial(texteAudioNormalise)) {
     const repSimple = construireReponseHumaineSimple(user, texteAudioNormalise);
-    if (repSimple) {
-      return { reponse: repSimple, fiche: null, bypassFormat: true };
-    }
+    if (repSimple) return { reponse: repSimple, fiche: null, bypassFormat: true };
   }
 
   if (!reponse || !reponse.trim()) {
@@ -2515,38 +2011,21 @@ async function traiterAudio(user, msg, historique) {
 async function traiterImage(user, msg, historique) {
   const imageId = msg.image?.id;
   if (!imageId) {
-    return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
-🔴 [INSPIRATION] : Nous allons y arriver.
-❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`,
-      fiche: null,
-      bypassFormat: false
-    };
+    return { reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.\n🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.\n🔴 [INSPIRATION] : Nous allons y arriver.\n❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`, fiche: null, bypassFormat: false };
   }
 
   const { buffer, mimeType } = await telechargerMedia(imageId, 8 * 1024 * 1024);
   logInfo("image_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeImageSupporte(mimeType)) {
-    return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
-🔴 [INSPIRATION] : Ce n'est pas grave.
-❓ [CONSOLIDATION] : Envoie-moi une image en JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
-      fiche: null,
-      bypassFormat: false
-    };
+    return { reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.\n🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.\n🔴 [INSPIRATION] : Ce n'est pas grave.\n❓ [CONSOLIDATION] : Envoie-moi une image en JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`, fiche: null, bypassFormat: false };
   }
 
   const base64Image = buffer.toString("base64");
   let reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
 
   if (!reponse || !String(reponse).trim()) {
-    reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.
-🔴 [INSPIRATION] : Nous pouvons reprendre calmement.
-❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`;
+    reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.\n🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.\n🔴 [INSPIRATION] : Nous pouvons reprendre calmement.\n❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`;
   }
 
   return { reponse, fiche: null, bypassFormat: false };
@@ -2559,75 +2038,33 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
   const cmd = String(texteUtilisateur || "").trim().toLowerCase();
 
   if (cmd === "/aide") {
-    await envoyerWhatsApp(
-      from,
-      `${HEADER_MWALIMU}
-📘 *Commandes disponibles*
-/aide → voir les commandes
-/profil → refaire ton profil
-/reset → vider l'historique de l'échange
-/stop → arrêter les rappels du matin
-/start → réactiver les rappels du matin`
-    );
+    await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n📘 *Commandes disponibles*\n/aide → voir les commandes\n/profil → refaire ton profil\n/reset → vider l'historique de l'échange\n/stop → arrêter les rappels du matin\n/start → réactiver les rappels du matin`);
     return true;
   }
 
   if (cmd === "/stop") {
     await updateUserField(from, "reminders_enabled", false);
-    await envoyerWhatsApp(
-      from,
-      `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : J'ai bien reçu ta demande.
-🟡 [SAVOIR] : Les rappels du matin sont maintenant arrêtés.
-🔴 [INSPIRATION] : Tu gardes le contrôle de ton rythme.
-❓ [CONSOLIDATION] : Si tu veux les réactiver, envoie /start.`
-    );
+    await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : Les rappels du matin sont maintenant arrêtés.\n🔴 [INSPIRATION] : Tu gardes le contrôle de ton rythme.\n❓ [CONSOLIDATION] : Si tu veux les réactiver, envoie /start.`);
     return true;
   }
 
   if (cmd === "/start") {
     await updateUserField(from, "reminders_enabled", true);
-    await envoyerWhatsApp(
-      from,
-      `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : J'ai bien reçu ta demande.
-🟡 [SAVOIR] : Les rappels du matin sont maintenant réactivés.
-🔴 [INSPIRATION] : Une bonne régularité aide à progresser.
-❓ [CONSOLIDATION] : Nous continuerons ensemble pas à pas.`
-    );
+    await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : Les rappels du matin sont maintenant réactivés.\n🔴 [INSPIRATION] : Une bonne régularité aide à progresser.\n❓ [CONSOLIDATION] : Nous continuerons ensemble pas à pas.`);
     return true;
   }
 
   if (cmd === "/reset") {
     await updateUserField(from, "historique", JSON.stringify([]));
     await resetAllStudentAttempts(from);
-    await envoyerWhatsApp(
-      from,
-      `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : J'ai bien reçu ta demande.
-🟡 [SAVOIR] : L'historique a été remis à zéro.
-🔴 [INSPIRATION] : Repartir proprement peut aider.
-❓ [CONSOLIDATION] : Envoie-moi maintenant la question ou l'exercice que tu veux reprendre.`
-    );
+    await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : L'historique a été remis à zéro.\n🔴 [INSPIRATION] : Repartir proprement peut aider.\n❓ [CONSOLIDATION] : Envoie-moi maintenant la question ou l'exercice que tu veux reprendre.`);
     return true;
   }
 
   if (cmd === "/profil") {
-    await pool.query(
-      "UPDATE conversations SET nom = '', classe = '', reve = '', historique = '[]'::jsonb, updated_at = NOW() WHERE phone = $1",
-      [from]
-    );
+    await pool.query("UPDATE conversations SET nom = '', classe = '', reve = '', historique = '[]'::jsonb, updated_at = NOW() WHERE phone = $1", [from]);
     await resetAllStudentAttempts(from);
-    await envoyerWhatsApp(
-      from,
-      `${HEADER_MWALIMU}
-────────────────
-🔄 *Mise à jour de ton profil*
-🟡 Quel est ton *prénom* ?`
-    );
+    await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n────────────────\n🔄 *Mise à jour de ton profil*\n🟡 Quel est ton *prénom* ?`);
     return true;
   }
 
@@ -2640,36 +2077,17 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
 cron.schedule("0 7 * * *", async () => {
   try {
     logInfo("cron_morning_reminder_start");
-
-    const { rows } = await pool.query(`
-      SELECT phone, nom
-      FROM conversations
-      WHERE coalesce(phone, '') <> ''
-        AND coalesce(nom, '') <> ''
-        AND coalesce(reminders_enabled, TRUE) = TRUE
-    `);
-
+    const { rows } = await pool.query(`SELECT phone, nom FROM conversations WHERE coalesce(phone, '') <> '' AND coalesce(nom, '') <> '' AND coalesce(reminders_enabled, TRUE) = TRUE`);
     for (const eleve of rows) {
       try {
         const appel = `${genreEleve(eleve.nom)} **${premierPrenom(eleve.nom)}**`;
         const citation = pick(CITATIONS.patriotisme);
-
-        const messageRappel = `${HEADER_MWALIMU}
-────────────────
-🔵 [VÉCU] : Bonjour ${appel}.
-🟡 [SAVOIR] : Petit rappel du matin : avance aujourd'hui avec calme et sérieux.
-🔴 [INSPIRATION] : Ton objectif n'est pas d'aller vite, mais de bien comprendre.
-❓ [CONSOLIDATION] : Quelle matière veux-tu travailler aujourd'hui ?
-👉 Je reste à tes côtés.
-🌟 Mot d'encouragement : Un élève constant progresse.
-${citation}`.replace(/\n{3,}/g, "\n\n").trim();
-
+        const messageRappel = `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : Bonjour ${appel}.\n🟡 [SAVOIR] : Petit rappel du matin : avance aujourd'hui avec calme et sérieux.\n🔴 [INSPIRATION] : Ton objectif n'est pas d'aller vite, mais de bien comprendre.\n❓ [CONSOLIDATION] : Quelle matière veux-tu travailler aujourd'hui ?\n👉 Je reste à tes côtés.\n🌟 Mot d'encouragement : Un élève constant progresse.\n${citation}`.replace(/\n{3,}/g, "\n\n").trim();
         await envoyerWhatsApp(eleve.phone, messageRappel);
       } catch (e) {
         logError("cron_morning_reminder_user", e, { phone: eleve?.phone || "" });
       }
     }
-
     logInfo("cron_morning_reminder_done", { count: rows.length });
   } catch (e) {
     logError("cron_morning_reminder", e);
@@ -2695,18 +2113,9 @@ async function processIncomingMessage(msg) {
   const msgType = typeMessage(msg);
   const startedAt = nowMs();
 
-  logInfo("incoming_message", {
-    phone: from,
-    msgId,
-    msgType,
-    preview: texteUtilisateur.slice(0, 80)
-  });
+  logInfo("incoming_message", { phone: from, msgId, msgType, preview: texteUtilisateur.slice(0, 80) });
 
-  const check = await pool.query(
-    "INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING",
-    [msgId]
-  );
-
+  const check = await pool.query("INSERT INTO processed_messages (msg_id) VALUES ($1) ON CONFLICT DO NOTHING", [msgId]);
   if (check.rowCount === 0) {
     logWarn("duplicate_message_ignored", { phone: from, msgId });
     return;
@@ -2719,13 +2128,7 @@ async function processIncomingMessage(msg) {
   if (!user) {
     await createUser(from);
     user = await getUser(from);
-    await envoyerWhatsApp(
-      from,
-      `${HEADER_MWALIMU}
-────────────────
-🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.
-🟡 Quel est ton *prénom* ?`
-    );
+    await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n────────────────\n🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.\n🟡 Quel est ton *prénom* ?`);
     return;
   }
 
@@ -2737,59 +2140,46 @@ async function processIncomingMessage(msg) {
   if (!user.nom) {
     const nom = normaliserNom(nettoyer(texteUtilisateur));
     if (!nom) {
-      await envoyerWhatsApp(from, `${HEADER_MWALIMU}
-────────────────
-🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`);
+      await envoyerWhatsApp(from, `${HEADER_MWALIMU}\n────────────────\n🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`);
       return;
     }
     await updateUserField(from, "nom", nom);
-    await envoyerWhatsApp(from, `🤝 Enchanté *${nom}* !
-🟡 En quelle *classe* es-tu ?`);
+    await envoyerWhatsApp(from, `🤝 Enchanté *${nom}* !\n🟡 En quelle *classe* es-tu ?`);
     return;
   }
 
   if (!user.classe) {
     const cl = normaliserNom(nettoyer(texteUtilisateur));
     if (!cl) {
-      await envoyerWhatsApp(from, `🟡 Écris-moi ta *classe* simplement.
-Exemple : 6e, 8e, Terminale, 1ère secondaire.`);
+      await envoyerWhatsApp(from, `🟡 Écris-moi ta *classe* simplement.\nExemple : 6e, 8e, Terminale, 1ère secondaire.`);
       return;
     }
     await updateUserField(from, "classe", cl);
     user = await getUser(from);
-    await envoyerWhatsApp(from, `🟡 C'est bien noté, *${user.nom}*.
-❓ Quel est ton plus grand *rêve* professionnel ?`);
+    await envoyerWhatsApp(from, `🟡 C'est bien noté, *${user.nom}*.\n❓ Quel est ton plus grand *rêve* professionnel ?`);
     return;
   }
 
   if (!user.reve) {
     const rv = normaliserNom(nettoyer(texteUtilisateur));
     if (!rv) {
-      await envoyerWhatsApp(from, `❓ Dis-moi simplement ton *rêve* professionnel.
-Exemple : avocat, médecin, ingénieur, pilote.`);
+      await envoyerWhatsApp(from, `❓ Dis-moi simplement ton *rêve* professionnel.\nExemple : avocat, médecin, ingénieur, pilote.`);
       return;
     }
     await updateUserField(from, "reve", rv);
     user = await getUser(from);
-    await envoyerWhatsApp(from, `✨ *Quelle ambition magnifique !*
-🔴 Devenir *${rv}* est un rêve noble, et je sais que tu en es capable.
-🔵 *Pour commencer notre parcours ensemble, dis-moi :*
-👉 Quelle matière ou quel chapitre te pose problème en ce moment ?`);
+    await envoyerWhatsApp(from, `✨ *Quelle ambition magnifique !*\n🔴 Devenir *${rv}* est un rêve noble, et je sais que tu en es capable.\n🔵 *Pour commencer notre parcours ensemble, dis-moi :*\n👉 Quelle matière ou quel chapitre te pose problème en ce moment ?`);
     return;
   }
 
-  let historique = Array.isArray(user.historique)
-    ? user.historique
-    : safeJsonParse(user.historique, []);
+  let historique = Array.isArray(user.historique) ? user.historique : safeJsonParse(user.historique, []);
 
   let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
   if (msgType === "text" && texteUtilisateur) {
     await appendHistorique(from, "user", texteUtilisateur);
     const userFresh = await getUser(from);
-    historique = Array.isArray(userFresh?.historique)
-      ? userFresh.historique
-      : safeJsonParse(userFresh?.historique, []);
+    historique = Array.isArray(userFresh?.historique) ? userFresh.historique : safeJsonParse(userFresh?.historique, []);
   }
 
   let reponseBrute = "";
@@ -2816,10 +2206,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`);
     contenuUtilisateurPourMemoire = "[image envoyée]";
     await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
   } else {
-    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton fichier.
-🟡 [SAVOIR] : Je ne peux pas encore analyser ce type de format pour le moment.
-🔴 [INSPIRATION] : Ce n'est pas grave, nous pouvons utiliser le texte ou les images.
-❓ [CONSOLIDATION] : Envoie-moi plutôt ton exercice par écrit ou sous forme de photo bien lisible.`;
+    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton fichier.\n🟡 [SAVOIR] : Je ne peux pas encore analyser ce type de format pour le moment.\n🔴 [INSPIRATION] : Ce n'est pas grave, nous pouvons utiliser le texte ou les images.\n❓ [CONSOLIDATION] : Envoie-moi plutôt ton exercice par écrit ou sous forme de photo bien lisible.`;
     bypassFormat = false;
   }
 
@@ -2828,13 +2215,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`);
   if (bypassFormat) {
     messageFinal = reponseBrute;
   } else {
-    messageFinal = construireMessageFinal(
-      { ...user, phone: from },
-      reponseBrute,
-      historique,
-      texteUtilisateur || contenuUtilisateurPourMemoire,
-      ficheContexte
-    );
+    messageFinal = construireMessageFinal({ ...user, phone: from }, reponseBrute, historique, texteUtilisateur || contenuUtilisateurPourMemoire, ficheContexte);
   }
 
   if (!messageFinal || !messageFinal.trim()) {
@@ -2844,11 +2225,7 @@ Exemple : avocat, médecin, ingénieur, pilote.`);
   await appendHistorique(from, "assistant", messageFinal);
   await envoyerWhatsApp(from, messageFinal);
 
-  logInfo("message_processed_success", {
-    phone: from,
-    msgId,
-    durationMs: nowMs() - startedAt
-  });
+  logInfo("message_processed_success", { phone: from, msgId, durationMs: nowMs() - startedAt });
 }
 
 /* =========================================================
@@ -2868,9 +2245,7 @@ app.get("/webhook", (req, res) => {
 
 app.post("/webhook", async (req, res) => {
   const msg = extraireMessageWhatsApp(req.body);
-  if (!msg) {
-    return res.sendStatus(200);
-  }
+  if (!msg) return res.sendStatus(200);
 
   const from = msg.from;
 
