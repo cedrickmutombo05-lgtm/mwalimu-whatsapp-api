@@ -1,7 +1,7 @@
 
 
 
-require("dotenv").config();
+require("();
 const express = require("express");
 const axios = require("axios");
 const { Pool } = require("pg");
@@ -2286,6 +2286,7 @@ app.get("/health", async (_req, res) => {
     logInfo("server_listening", { port: PORT });
   });
 })();
+
 
 
 
