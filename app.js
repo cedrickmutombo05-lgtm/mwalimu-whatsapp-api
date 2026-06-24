@@ -29,6 +29,34 @@ const {
   APP_SECRET
 } = require("./src/config");
 
+const {
+  logInfo,
+  logWarn,
+  logError,
+  nowMs,
+  makeCacheKey,
+  getCache,
+  setCache,
+  runSequentialByKey,
+  pick,
+  safeJsonParse,
+  attendre,
+  tronquerTexte,
+  estErreurQuotaGemini,
+  normaliserNom,
+  premierPrenom,
+  nettoyer,
+  retirerAccents,
+  normaliserMessageCourt,
+  normaliserTexteRelationnel,
+  construireAppel,
+  adapterTexteGenre,
+  nettoyerAppelsRepetitifs,
+  supprimerFormulesLourdesDAppel,
+  supprimerDoublonsLignes,
+  simplifierNotationMath,
+  simplifierPresentationScientifique
+} = require("./src/utils");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const pool = new Pool({
@@ -54,38 +82,6 @@ app.use(rateLimit({
   message: "Too many requests"
 }));
 
-/* =========================================================
-   2) LOGS
-========================================================= */
-function horodatage() {
-  return new Date().toISOString();
-}
-
-function logInfo(event, meta = {}) {
-  console.log(JSON.stringify({ level: "info", event, ts: horodatage(), ...meta }));
-}
-
-function logWarn(event, meta = {}) {
-  console.warn(JSON.stringify({ level: "warn", event, ts: horodatage(), ...meta }));
-}
-
-function logError(event, error, meta = {}) {
-  console.error(JSON.stringify({
-    level: "error",
-    event,
-    ts: horodatage(),
-    message: error?.message || String(error || ""),
-    stack: error?.stack || null,
-    data: error?.response?.data || null,
-    ...meta
-  }));
-}
-
-function nowMs() {
-  return Date.now();
-}
-
-pool.on("error", (err) => logError("postgres_idle", err));
 
 /* =========================================================
    3) CONSTANTES
@@ -106,185 +102,6 @@ const {
   JSON_SCHEMA_INTENTION,
   JSON_SCHEMA_AUDIO
 } = require("./src/constants");
-
-/* =========================================================
-   4) CACHE + QUEUE
-========================================================= */
-class TTLCache {
-  constructor({ ttlMs = 60000, maxEntries = 1000, cleanupIntervalMs = 120000 } = {}) {
-    this.ttlMs = ttlMs;
-    this.maxEntries = maxEntries;
-    this.store = new Map();
-    this.timer = setInterval(() => this.cleanup(), cleanupIntervalMs);
-    if (typeof this.timer.unref === "function") this.timer.unref();
-  }
-
-  get(key) {
-    const entry = this.store.get(key);
-    if (!entry) return null;
-    if (entry.expiresAt <= Date.now()) {
-      this.store.delete(key);
-      return null;
-    }
-    entry.lastAccess = Date.now();
-    return entry.value;
-  }
-
-  set(key, value, ttlMs = this.ttlMs) {
-    if (this.store.size >= this.maxEntries) this.evictOldest();
-    this.store.set(key, {
-      value,
-      createdAt: Date.now(),
-      lastAccess: Date.now(),
-      expiresAt: Date.now() + ttlMs
-    });
-  }
-
-  cleanup() {
-    const now = Date.now();
-    for (const [key, entry] of this.store.entries()) {
-      if (entry.expiresAt <= now) this.store.delete(key);
-    }
-  }
-
-  evictOldest() {
-    let oldestKey = null;
-    let oldestAccess = Infinity;
-    for (const [key, entry] of this.store.entries()) {
-      if (entry.lastAccess < oldestAccess) {
-        oldestAccess = entry.lastAccess;
-        oldestKey = key;
-      }
-    }
-    if (oldestKey) this.store.delete(oldestKey);
-  }
-}
-
-const cache = new TTLCache();
-const processingQueues = new Map();
-
-function runSequentialByKey(key, task) {
-  const previous = processingQueues.get(key) || Promise.resolve();
-  const execution = previous.catch(() => {}).then(() => task());
-  const tracked = execution.finally(() => {
-    if (processingQueues.get(key) === tracked) processingQueues.delete(key);
-  });
-  processingQueues.set(key, tracked);
-  return tracked;
-}
-
-function makeCacheKey(user = {}, texte = "") {
-  return [
-    String(user?.nom || "").toLowerCase().trim(),
-    String(user?.classe || "").toLowerCase().trim(),
-    String(texte || "").toLowerCase().trim()
-  ].join("|");
-}
-
-/* =========================================================
-   5) OUTILS TEXTE
-========================================================= */
-function pick(arr = []) {
-  return arr.length ? arr[Math.floor(Math.random() * arr.length)] : "";
-}
-
-function safeJsonParse(v, fallback = []) {
-  try {
-    return JSON.parse(v);
-  } catch {
-    return fallback;
-  }
-}
-
-function attendre(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function tronquerTexte(texte = "", max = 3500) {
-  const t = String(texte || "").trim();
-  return t.length <= max ? t : `${t.slice(0, max)}...`;
-}
-
-function normaliserNom(nom = "") {
-  return String(nom || "").trim().replace(/\s+/g, " ");
-}
-
-function premierPrenom(nom = "") {
-  return normaliserNom(nom).split(" ")[0] || "élève";
-}
-
-function nettoyer(texte = "") {
-  return String(texte || "")
-    .replace(/je m'appelle|mon nom est|mon prénom est|je suis en|ma classe est|mon rêve est|je veux devenir/gi, "")
-    .replace(/^devenir\s+/i, "")
-    .replace(/^être\s+/i, "")
-    .replace(/[.,!?;: ]+/g, " ")
-    .trim();
-}
-
-function retirerAccents(texte = "") {
-  return String(texte || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
-function normaliserTexteRelationnel(texte = "") {
-  let t = retirerAccents(String(texte || "").toLowerCase());
-  t = t
-    .replace(/[-_]/g, " ")
-    .replace(/[.,!?;:()"`'’´]/g, " ")
-    .replace(/\bmwalimu\b/g, " ")
-    .replace(/\bmon\s+cher\b/g, " ")
-    .replace(/\bma\s+chere\b/g, " ")
-    .replace(/\bsvp\b/g, " ")
-    .replace(/\bstp\b/g, " ")
-    .replace(/\bs il te plait\b/g, " ")
-    .replace(/\beuh|ah|oh|hum|hein\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  t = t
-    .replace(/^mercii+$/i, "merci")
-    .replace(/^mersi$/i, "merci")
-    .replace(/^mercie$/i, "merci")
-    .replace(/^okai$/i, "okay")
-    .replace(/^okey$/i, "okay")
-    .replace(/^dac$/i, "d accord")
-    .replace(/^dacc$/i, "d accord")
-    .replace(/^sa va$/i, "ca va")
-    .replace(/^ça va$/i, "ca va")
-    .trim();
-
-  return t;
-}
-
-function genreEleve(nom = "") {
-  const prenom = premierPrenom(nom).toLowerCase();
-  const feminins = [
-    "dora", "marie", "anne", "anna", "annie", "ruth", "grace",
-    "esther", "sarah", "sara", "debora", "chantal", "nadine",
-    "joyce", "mireille", "rebecca", "prisca", "gloria", "divine"
-  ];
-  return feminins.includes(prenom) ? "ma chère" : "mon cher";
-}
-
-function construireAppel(user = {}) {
-  const prenom = premierPrenom(user?.nom || "");
-  return pick([prenom, `**${prenom}**`]);
-}
-
-function supprimerDoublonsLignes(texte = "") {
-  const lignes = String(texte || "").split("\n");
-  const resultat = [];
-  let precedent = "";
-
-  for (const ligne of lignes) {
-    const n = ligne.trim().toLowerCase();
-    if (n && n === precedent) continue;
-    resultat.push(ligne.trimEnd());
-    precedent = n;
-  }
-
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
 
 /* =========================================================
    6) SOCIAL
