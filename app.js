@@ -563,15 +563,7 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
 /* =========================================================
    9) DB
 ========================================================= */
-async function ensureBibliothequeSearchInfra() {
-  await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
-
-  await pool.query(`
-    ALTER TABLE bibliotheque
-    ADD COLUMN IF NOT EXISTS search_vector tsvector;
-  `);
-
-  await pool.query(`
+ await pool.query(`
     CREATE OR REPLACE FUNCTION bibliotheque_search_vector_update()
     RETURNS trigger AS $$
     BEGIN
@@ -622,47 +614,6 @@ async function ensureBibliothequeSearchInfra() {
     [value, phone]
   );
 }
-
-
-async function getStudentAttempt(phone, sujet = "") {
-  const { rows } = await pool.query(`
-    SELECT *
-    FROM student_attempts
-    WHERE phone = $1 AND sujet = $2
-    ORDER BY updated_at DESC
-    LIMIT 1
-  `, [phone, sujet]);
-
-  return rows[0] || null;
-}
-
-async function saveStudentAttempt(phone, sujet = "", question = "", lastUserAnswer = "") {
-  const existing = await getStudentAttempt(phone, sujet);
-
-  if (!existing) {
-    await pool.query(`
-      INSERT INTO student_attempts (phone, sujet, question, attempts_count, last_user_answer, updated_at)
-      VALUES ($1, $2, $3, 1, $4, NOW())
-    `, [phone, sujet, question, lastUserAnswer]);
-
-    return 1;
-  }
-
-  const nextCount = Number(existing.attempts_count || 0) + 1;
-
-  await pool.query(`
-    UPDATE student_attempts
-    SET attempts_count = $1,
-        question = $2,
-        last_user_answer = $3,
-        updated_at = NOW()
-    WHERE id = $4
-  `, [nextCount, question, lastUserAnswer, existing.id]);
-
-  return nextCount;
-}
-
-
 
 /* =========================================================
    10) WHATSAPP + SÉCURITÉ
