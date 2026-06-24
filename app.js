@@ -57,6 +57,23 @@ const {
   simplifierNotationMath,
   simplifierPresentationScientifique
 } = require("./src/utils");
+
+const {
+  pool,
+  initDB,
+  getUser,
+  createUser,
+  updateUserField,
+  appendHistorique,
+  isDuplicate,
+  cleanOldProcessed,
+  logUnansweredQuestion,
+  getStudentAttempt,
+  saveStudentAttempt,
+  resetStudentAttempt,
+  resetAllStudentAttempts,
+  consulterBibliotheque
+} = require("./src/db");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const pool = new Pool({
