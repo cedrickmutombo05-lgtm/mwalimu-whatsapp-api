@@ -167,9 +167,8 @@ function dernierAssistantQuestionBienEtre(historique = []) {
       `Tout va bien de mon côté ${appel}. Quelle matière veux-tu explorer aujourd'hui ?`,
       `Je suis prêt à t'aider ${appel} 😊 Qu'aimerais-tu apprendre ?`
     ]);
-  }
-
-  if (t.includes("a demain")) {
+  
+ if (t.includes("a demain")) {
       return `À demain ${appel} 👋 Nous continuerons calmement.`;
     }
 
