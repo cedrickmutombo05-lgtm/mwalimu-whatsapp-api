@@ -136,61 +136,7 @@ const {
   JSON_SCHEMA_AUDIO
 } = require("./src/constants");
 
-/* =========================================================
-   6) SOCIAL
-========================================================= */
-function estQuestionBienEtre(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  return /^(tu vas bien|comment vas tu|comment tu vas|et toi|et vous|vous allez bien|comment ca va|ca va)$/.test(t);
-}
 
-function estReponseBienEtre(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  return /^(je vais bien|je vais tres bien|je vais bien merci|je me porte bien|je me sens bien|bien merci|ca va|ca va bien|ca va merci|tranquille|super|cool|pas mal|au top|oui ca va|oui je vais bien)( et toi)?$/.test(t);
-}
-
-function dernierAssistantQuestionBienEtre(historique = []) {
-  const dernier = [...historique].reverse().find((m) => m.role === "assistant");
-  if (!dernier) return false;
-  const t = normaliserTexteRelationnel(dernier.content || "");
-  return (
-    t.includes("comment vas tu") ||
-    t.includes("comment te sens tu") ||
-    t.includes("comment se passe ta journee") ||
-    t.includes("comment s est passee ta journee") ||
-    t.includes("est ce que tout va bien")
-  );
-}
-
- return pick([
-      `Je vais très bien, merci ${appel} 😊 Et toi, comment vas-tu ?`,
-      `Tout va bien de mon côté ${appel}. Quelle matière veux-tu explorer aujourd'hui ?`,
-      `Je suis prêt à t'aider ${appel} 😊 Qu'aimerais-tu apprendre ?`
-    ]);
-  
- if (t.includes("a demain")) {
-      return `À demain ${appel} 👋 Nous continuerons calmement.`;
-    }
-
-    if (heure < 12) {
-      return pick([
-        `Bonjour ${appel} ☀️ Comment vas-tu aujourd'hui ?`,
-        `Salut ${appel} 😊 J'espère que tu vas bien. Quelle matière veux-tu travailler ?`
-      ]);
-    }
-
-    if (heure < 18) {
-      return pick([
-        `Bon après-midi ${appel} 🌤 Comment se passe ta journée ?`,
-        `Salut ${appel} 😊 Quelle notion veux-tu revoir ?`
-      ]);
-    }
-
-    return pick([
-      `Bonsoir ${appel} 🌙 Comment s'est passée ta journée ?`,
-      `Bonsoir ${appel} 😊 Qu'aimerais-tu apprendre maintenant ?`
-    ]);
-  
 /* =========================================================
    7) DÉTECTION PÉDAGOGIQUE
 ========================================================= */
