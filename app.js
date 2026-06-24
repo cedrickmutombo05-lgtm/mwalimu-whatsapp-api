@@ -563,57 +563,7 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
 /* =========================================================
    9) DB
 ========================================================= */
- await pool.query(`
-    CREATE OR REPLACE FUNCTION bibliotheque_search_vector_update()
-    RETURNS trigger AS $$
-    BEGIN
-      NEW.search_vector :=
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.titre, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.matiere, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.classe, ''))), 'B') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.mots_cles, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.contenu, ''))), 'B') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.commentaire_ai, ''))), 'C');
-      RETURN NEW;
-    END
-    $$ LANGUAGE plpgsql;
-  `);
 
-  await pool.query("DROP TRIGGER IF EXISTS trg_bibliotheque_search_vector_update ON bibliotheque;");
-
-  await pool.query(`
-    CREATE TRIGGER trg_bibliotheque_search_vector_update
-    BEFORE INSERT OR UPDATE OF titre, matiere, classe, mots_cles, contenu, commentaire_ai
-    ON bibliotheque
-    FOR EACH ROW
-    EXECUTE FUNCTION bibliotheque_search_vector_update();
-  `);
-
-  await pool.query(`
-    UPDATE bibliotheque
-    SET search_vector =
-      setweight(to_tsvector('simple', unaccent(coalesce(titre, ''))), 'A') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(matiere, ''))), 'A') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(classe, ''))), 'B') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(mots_cles, ''))), 'A') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(contenu, ''))), 'B') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(commentaire_ai, ''))), 'C')
-    WHERE search_vector IS NULL;
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_bibliotheque_search_vector
-    ON bibliotheque USING GIN (search_vector);
-  `);
-
- const safeField = fields[field];
-  if (!safeField) throw new Error("Champ non autorisé");
-
-  await pool.query(
-    `UPDATE conversations SET ${safeField} = $1, updated_at = NOW() WHERE phone = $2`,
-    [value, phone]
-  );
-}
 
 /* =========================================================
    10) WHATSAPP + SÉCURITÉ
