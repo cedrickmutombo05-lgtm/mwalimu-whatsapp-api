@@ -85,6 +85,19 @@ const {
   typeMessage,
   messageTypeLisible
 } = require("./src/whatsapp");
+
+const {
+  estMessagePurementSocial,
+  estMessageRelationnelSimple,
+  estMessageSalutation,
+  estMessageRemerciement,
+  estMessageCourtHumain,
+  estReponseRelationnelleSimpleIA,
+  dernierMessageEstQuestionBienEtre,
+  estSecondTourSalutation,
+  genererRepriseApresBienEtre,
+  construireReponseHumaineSimple
+} = require("./src/social");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 app.use(express.json({
@@ -126,25 +139,6 @@ const {
 /* =========================================================
    6) SOCIAL
 ========================================================= */
-function estMessageSalutation(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  return /^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt|bonne nuit|bonne soiree|bonne journee|bon apres midi|bon week end|bon weekend|a demain)$/.test(t);
-}
-
-function estMessageRemerciement(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  return /^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|ok merci|okay merci|je te remercie|je vous remercie|merci pour tout|merci pour ton aide|merci pour votre aide)$/.test(t);
-}
-
-function estMessageCourtHumain(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  return [
-    "ok", "okay", "d accord", "oui", "non", "ca va", "ca va merci",
-    "bien", "super", "cool", "entendu", "compris", "parfait",
-    "tres bien", "nickel", "ca marche", "pas mal", "tranquille"
-  ].includes(t);
-}
-
 function estQuestionBienEtre(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   return /^(tu vas bien|comment vas tu|comment tu vas|et toi|et vous|vous allez bien|comment ca va|ca va)$/.test(t);
@@ -153,18 +147,6 @@ function estQuestionBienEtre(texte = "") {
 function estReponseBienEtre(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   return /^(je vais bien|je vais tres bien|je vais bien merci|je me porte bien|je me sens bien|bien merci|ca va|ca va bien|ca va merci|tranquille|super|cool|pas mal|au top|oui ca va|oui je vais bien)( et toi)?$/.test(t);
-}
-
-function estMessagePurementSocial(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  if (!t) return false;
-  if (estMessageSalutation(t)) return true;
-  if (estMessageRemerciement(t)) return true;
-  if (estMessageCourtHumain(t)) return true;
-  if (estQuestionBienEtre(t)) return true;
-  if (estReponseBienEtre(t)) return true;
-  if (/^[\u{1F300}-\u{1FAFF}\s]+$/u.test(t)) return true;
-  return false;
 }
 
 function dernierAssistantQuestionBienEtre(historique = []) {
@@ -180,12 +162,7 @@ function dernierAssistantQuestionBienEtre(historique = []) {
   );
 }
 
-function construireReponseHumaineSimple(user = {}, texte = "", historique = []) {
-  const appel = construireAppel(user);
-  const t = normaliserTexteRelationnel(texte);
-  const heure = new Date().getHours();
-
-  if (dernierAssistantQuestionBienEtre(historique) && estReponseBienEtre(t)) {
+if (dernierAssistantQuestionBienEtre(historique) && estReponseBienEtre(t)) {
     return pick([
       `Tant mieux ${appel} 😊 Quelle matière veux-tu travailler maintenant ?`,
       `Je suis content de l'entendre ${appel}. Dis-moi ce que tu veux réviser.`,
@@ -193,15 +170,7 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
     ]);
   }
 
-  if (estMessageRemerciement(t)) {
-    return pick([
-      `Avec plaisir ${appel} 😊 Dis-moi si tu veux revoir quelque chose.`,
-      `Je t'en prie ${appel} 🤗 Une autre question ?`,
-      `C'est normal ${appel}, je suis là pour t'aider 💪`
-    ]);
-  }
-
-  if (estQuestionBienEtre(t)) {
+if (estQuestionBienEtre(t)) {
     return pick([
       `Je vais très bien, merci ${appel} 😊 Et toi, comment vas-tu ?`,
       `Tout va bien de mon côté ${appel}. Quelle matière veux-tu explorer aujourd'hui ?`,
@@ -209,19 +178,7 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
     ]);
   }
 
-  if (estMessageSalutation(t)) {
-    if (t.includes("bonsoir")) {
-      return pick([
-        `Bonsoir ${appel} 🌙 Comment s'est passée ta journée ?`,
-        `Bonsoir ${appel} 😊 As-tu une matière ou un exercice à revoir ?`
-      ]);
-    }
-
-    if (t.includes("bonne nuit")) {
-      return `Bonne nuit ${appel} 🌙 Repose-toi bien.`;
-    }
-
-    if (t.includes("a demain")) {
+  if (t.includes("a demain")) {
       return `À demain ${appel} 👋 Nous continuerons calmement.`;
     }
 
@@ -244,17 +201,6 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
       `Bonsoir ${appel} 😊 Qu'aimerais-tu apprendre maintenant ?`
     ]);
   }
-
-  if (estMessageCourtHumain(t)) {
-    return pick([
-      `D'accord ${appel} 👍 Tu as une matière à revoir ?`,
-      `Parfait ${appel} ✅ Envoie-moi ta question.`,
-      `Entendu ${appel} 😉 Je suis prêt à t'aider.`
-    ]);
-  }
-
-  return "";
-}
 
 /* =========================================================
    7) DÉTECTION PÉDAGOGIQUE
