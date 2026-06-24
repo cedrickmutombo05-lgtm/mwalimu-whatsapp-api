@@ -18,21 +18,16 @@ app.set("trust proxy", 1);
 /* =========================================================
    1) CONFIG
 ========================================================= */
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value || !String(value).trim()) {
-    throw new Error(`Variable d'environnement manquante : ${name}`);
-  }
-  return value;
-}
 
-const PORT = process.env.PORT || 10000;
-const GEMINI_API_KEY = requireEnv("GEMINI_API_KEY");
-const DATABASE_URL = requireEnv("DATABASE_URL");
-const TOKEN = requireEnv("TOKEN");
-const PHONE_NUMBER_ID = requireEnv("PHONE_NUMBER_ID");
-const VERIFY_TOKEN = requireEnv("VERIFY_TOKEN");
-const APP_SECRET = requireEnv("APP_SECRET");
+const {
+  PORT,
+  GEMINI_API_KEY,
+  DATABASE_URL,
+  TOKEN,
+  PHONE_NUMBER_ID,
+  VERIFY_TOKEN,
+  APP_SECRET
+} = require("./src/config");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
