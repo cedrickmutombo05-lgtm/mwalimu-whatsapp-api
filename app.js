@@ -596,16 +596,6 @@ function verifierSignatureMeta(req) {
   }
 }
 
- const mimeType = String(response.headers["content-type"] || mediaInfo?.mime_type || "application/octet-stream").toLowerCase();
-  const contentLength = Number(response.headers["content-length"] || response.data?.byteLength || 0);
-
-  if (contentLength > maxBytes) throw new Error("Fichier trop volumineux");
-
-  return {
-    buffer: Buffer.from(response.data),
-    mimeType
-  };
-
 /* =========================================================
    11) IA
 ========================================================= */
