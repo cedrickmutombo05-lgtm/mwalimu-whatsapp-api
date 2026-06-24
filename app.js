@@ -200,8 +200,7 @@ if (estQuestionBienEtre(t)) {
       `Bonsoir ${appel} 🌙 Comment s'est passée ta journée ?`,
       `Bonsoir ${appel} 😊 Qu'aimerais-tu apprendre maintenant ?`
     ]);
-  }
-
+  
 /* =========================================================
    7) DÉTECTION PÉDAGOGIQUE
 ========================================================= */
