@@ -614,26 +614,7 @@ async function ensureBibliothequeSearchInfra() {
     ON bibliotheque USING GIN (search_vector);
   `);
 
-
-async function createUser(phone) {
-  await pool.query(`
-    INSERT INTO conversations (phone, nom, classe, reve, historique, reminders_enabled)
-    VALUES ($1, '', '', '', '[]'::jsonb, TRUE)
-    ON CONFLICT (phone) DO NOTHING
-  `, [phone]);
-  return getUser(phone);
-}
-
-async function updateUserField(phone, field, value) {
-  const fields = {
-    nom: "nom",
-    classe: "classe",
-    reve: "reve",
-    historique: "historique",
-    reminders_enabled: "reminders_enabled"
-  };
-
-  const safeField = fields[field];
+ const safeField = fields[field];
   if (!safeField) throw new Error("Champ non autorisé");
 
   await pool.query(
@@ -642,12 +623,6 @@ async function updateUserField(phone, field, value) {
   );
 }
 
-async function appendHistorique(phone, role, content) {
-  const element = {
-    role,
-    content: tronquerTexte(content, 2500),
-    ts: new Date().toISOString()
-  };
 
   await pool.query(`
     UPDATE conversations
