@@ -4,7 +4,6 @@ require("dotenv").config();
 
 const express = require("express");
 const axios = require("axios");
-const { Pool } = require("pg");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cron = require("node-cron");
 const crypto = require("crypto");
