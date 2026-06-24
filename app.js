@@ -1,15 +1,5 @@
 
 
-const {
-  PORT,
-  GEMINI_API_KEY,
-  DATABASE_URL,
-  TOKEN,
-  PHONE_NUMBER_ID,
-  VERIFY_TOKEN,
-  APP_SECRET
-} = require("./src/config");
-
 const express = require("express");
 const axios = require("axios");
 const { Pool } = require("pg");
