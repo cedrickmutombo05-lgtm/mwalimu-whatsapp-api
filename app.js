@@ -613,11 +613,7 @@ async function ensureBibliothequeSearchInfra() {
     CREATE INDEX IF NOT EXISTS idx_bibliotheque_search_vector
     ON bibliotheque USING GIN (search_vector);
   `);
-}
-async function getUser(phone) {
-  const { rows } = await pool.query("SELECT * FROM conversations WHERE phone = $1", [phone]);
-  return rows[0] || null;
-}
+
 
 async function createUser(phone) {
   await pool.query(`
