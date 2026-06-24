@@ -988,12 +988,6 @@ function estMimeAudioSupporte(mimeType = "") {
 /* =========================================================
    11) IA
 ========================================================= */
-function estErreurQuotaGemini(err) {
-  const msg = String(err?.message || "").toLowerCase();
-  const data = String(err?.response?.data ? JSON.stringify(err.response.data) : "").toLowerCase();
-  return msg.includes("429") || msg.includes("quota") || data.includes("429") || data.includes("quota");
-}
-
 async function attendreAvecBackoff(tentative = 0) {
   await attendre(1200 + tentative * 1200);
 }
