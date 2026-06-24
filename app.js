@@ -370,22 +370,6 @@ function detecterMatiereScientifique(question = "", reponse = "", fiche = null) 
 /* =========================================================
    8) NETTOYAGE FINAL
 ========================================================= */
-function simplifierNotationMath(texte = "") {
-  let t = String(texte || "");
-  t = t.replace(/\\times/g, "×");
-  t = t.replace(/\\div/g, "/");
-  t = t.replace(/\\pm/g, "±");
-  t = t.replace(/\\cdot/g, "×");
-  t = t.replace(/\\sqrt\{([^}]+)\}/g, "√$1");
-  t = t.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "$1 / $2");
-  t = t.replace(/\^2/g, "²");
-  t = t.replace(/\^3/g, "³");
-  t = t.replace(/[{}]/g, "");
-  t = t.replace(/\bH2O\b/g, "H₂O");
-  t = t.replace(/\bCO2\b/g, "CO₂");
-  t = t.replace(/\bO2\b/g, "O₂");
-  return t.replace(/\n{3,}/g, "\n\n").trim();
-}
 
 function nettoyerReponseIA(texte = "") {
   let t = String(texte || "");
