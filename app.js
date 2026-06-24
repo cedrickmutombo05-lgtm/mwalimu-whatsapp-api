@@ -59,7 +59,7 @@ const {
 
 const {
   pool,
-  initDB,
+  initDB, 
   getUser,
   createUser,
   updateUserField,
@@ -615,43 +615,8 @@ async function ensureBibliothequeSearchInfra() {
   `);
 }
 
-async function initDB() {
-  try {
-    await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS processed_messages (
-        msg_id TEXT PRIMARY KEY,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS conversations (
-        phone TEXT PRIMARY KEY,
-        nom TEXT DEFAULT '',
-        classe TEXT DEFAULT '',
-        reve TEXT DEFAULT '',
-        historique JSONB DEFAULT '[]'::jsonb,
-        reminders_enabled BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS bibliotheque (
-        id SERIAL PRIMARY KEY,
-        titre TEXT,
-        matiere TEXT,
-        classe TEXT,
-        mots_cles TEXT,
-        contenu TEXT,
-        commentaire_ai TEXT DEFAULT '',
-        source_type TEXT DEFAULT 'db',
-        source_url TEXT DEFAULT '',
-        provenance TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -669,33 +634,7 @@ async function initDB() {
       );
     `);
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS student_attempts (
-        id SERIAL PRIMARY KEY,
-        phone TEXT NOT NULL,
-        sujet TEXT DEFAULT '',
-        question TEXT DEFAULT '',
-        attempts_count INT DEFAULT 0,
-        last_user_answer TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await pool.query("CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at ON processed_messages (created_at DESC);");
-    await pool.query("CREATE INDEX IF NOT EXISTS idx_unanswered_questions_created_at ON unanswered_questions (created_at DESC);");
-    await pool.query("CREATE INDEX IF NOT EXISTS idx_student_attempts_phone_sujet_updated ON student_attempts (phone, sujet, updated_at DESC);");
-
-    await ensureBibliothequeSearchInfra();
-
-    logInfo("db_ready");
-  } catch (e) {
-    logError("init_db", e);
-    process.exit(1);
-  }
-}
-
-async function getUser(phone) {
+    async function getUser(phone) {
   const { rows } = await pool.query("SELECT * FROM conversations WHERE phone = $1", [phone]);
   return rows[0] || null;
 }
