@@ -162,16 +162,7 @@ function dernierAssistantQuestionBienEtre(historique = []) {
   );
 }
 
-if (dernierAssistantQuestionBienEtre(historique) && estReponseBienEtre(t)) {
-    return pick([
-      `Tant mieux ${appel} 😊 Quelle matière veux-tu travailler maintenant ?`,
-      `Je suis content de l'entendre ${appel}. Dis-moi ce que tu veux réviser.`,
-      `Très bien ${appel} 😊 On peut maintenant passer à une leçon ou un exercice.`
-    ]);
-  }
-
-if (estQuestionBienEtre(t)) {
-    return pick([
+ return pick([
       `Je vais très bien, merci ${appel} 😊 Et toi, comment vas-tu ?`,
       `Tout va bien de mon côté ${appel}. Quelle matière veux-tu explorer aujourd'hui ?`,
       `Je suis prêt à t'aider ${appel} 😊 Qu'aimerais-tu apprendre ?`
