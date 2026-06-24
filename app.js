@@ -75,13 +75,6 @@ const {
 } = require("./src/db");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-  connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  connectionTimeoutMillis: 10000,
-  idleTimeoutMillis: 30000,
-  max: 20
-});
-
 app.use(express.json({
   limit: "2mb",
   verify: (req, _res, buf) => {
