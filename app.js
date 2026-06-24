@@ -624,26 +624,6 @@ async function ensureBibliothequeSearchInfra() {
 }
 
 
-  await pool.query(`
-    UPDATE conversations
-    SET historique = (
-      SELECT COALESCE(jsonb_agg(value ORDER BY ord), '[]'::jsonb)
-      FROM (
-        SELECT value, ord
-        FROM jsonb_array_elements(COALESCE(historique, '[]'::jsonb) || $1::jsonb)
-        WITH ORDINALITY AS arr(value, ord)
-        ORDER BY ord DESC
-        LIMIT 12
-      ) t
-    ),
-    updated_at = NOW()
-    WHERE phone = $2
-  `, [JSON.stringify([element]), phone]);
-
-  const user = await getUser(phone);
-  return Array.isArray(user?.historique) ? user.historique : safeJsonParse(user?.historique, []);
-}
-
 async function logUnansweredQuestion(user = {}, question = "", msgType = "text", reason = "") {
   try {
     if (!String(question || "").trim()) return;
