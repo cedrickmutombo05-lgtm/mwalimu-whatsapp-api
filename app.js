@@ -76,7 +76,6 @@ const {
 } = require("./src/db");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 10000,
