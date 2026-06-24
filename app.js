@@ -1,5 +1,7 @@
 
 
+require("dotenv").config();
+
 const express = require("express");
 const axios = require("axios");
 const { Pool } = require("pg");
@@ -13,6 +15,49 @@ axios.defaults.timeout = 15000;
 const app = express();
 app.set("trust proxy", 1);
 
+/* =========================================================
+   1) CONFIG
+========================================================= */
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value || !String(value).trim()) {
+    throw new Error(`Variable d'environnement manquante : ${name}`);
+  }
+  return value;
+}
+
+const PORT = process.env.PORT || 10000;
+const GEMINI_API_KEY = requireEnv("GEMINI_API_KEY");
+const DATABASE_URL = requireEnv("DATABASE_URL");
+const TOKEN = requireEnv("TOKEN");
+const PHONE_NUMBER_ID = requireEnv("PHONE_NUMBER_ID");
+const VERIFY_TOKEN = requireEnv("VERIFY_TOKEN");
+const APP_SECRET = requireEnv("APP_SECRET");
+
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  max: 20
+});
+
+app.use(express.json({
+  limit: "2mb",
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many requests"
+}));
 
 /* =========================================================
    2) LOGS
