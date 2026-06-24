@@ -624,26 +624,6 @@ async function ensureBibliothequeSearchInfra() {
 }
 
 
-async function logUnansweredQuestion(user = {}, question = "", msgType = "text", reason = "") {
-  try {
-    if (!String(question || "").trim()) return;
-
-    await pool.query(`
-      INSERT INTO unanswered_questions (phone, question, msg_type, classe, nom, reason)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `, [
-      user?.phone || "",
-      tronquerTexte(question, 2000),
-      msgType,
-      user?.classe || "",
-      user?.nom || "",
-      reason || ""
-    ]);
-  } catch (e) {
-    logError("log_unanswered_question", e);
-  }
-}
-
 async function getStudentAttempt(phone, sujet = "") {
   const { rows } = await pool.query(`
     SELECT *
@@ -682,36 +662,7 @@ async function saveStudentAttempt(phone, sujet = "", question = "", lastUserAnsw
   return nextCount;
 }
 
-async function resetStudentAttempt(phone, sujet = "") {
-  await pool.query("DELETE FROM student_attempts WHERE phone = $1 AND sujet = $2", [phone, sujet]);
-}
 
-async function resetAllStudentAttempts(phone) {
-  await pool.query("DELETE FROM student_attempts WHERE phone = $1", [phone]);
-}
-
-async function consulterBibliotheque(question = "", classe = "") {
-  try {
-    const termes = String(question || "").trim();
-    if (!termes) return null;
-
-    const { rows } = await pool.query(`
-      SELECT id, titre, matiere, classe, mots_cles, contenu, commentaire_ai,
-             source_type, source_url, provenance, created_at, updated_at,
-             ts_rank(search_vector, plainto_tsquery('simple', unaccent($1))) AS score
-      FROM bibliotheque
-      WHERE search_vector @@ plainto_tsquery('simple', unaccent($1))
-        AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
-      ORDER BY score DESC, updated_at DESC, id DESC
-      LIMIT 1
-    `, [termes, classe || "", `%${classe}%`]);
-
-    return rows[0] || null;
-  } catch (e) {
-    logError("consulter_bibliotheque", e);
-    return null;
-  }
-}
 
 /* =========================================================
    10) WHATSAPP + SÉCURITÉ
