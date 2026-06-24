@@ -605,9 +605,6 @@ function verifierSignatureMeta(req) {
     buffer: Buffer.from(response.data),
     mimeType
   };
-}
-
-
 
 /* =========================================================
    11) IA
