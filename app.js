@@ -614,27 +614,7 @@ async function ensureBibliothequeSearchInfra() {
     ON bibliotheque USING GIN (search_vector);
   `);
 }
-
-
-
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS unanswered_questions (
-        id SERIAL PRIMARY KEY,
-        phone TEXT DEFAULT '',
-        question TEXT NOT NULL,
-        msg_type TEXT DEFAULT 'text',
-        classe TEXT DEFAULT '',
-        nom TEXT DEFAULT '',
-        reason TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    async function getUser(phone) {
+async function getUser(phone) {
   const { rows } = await pool.query("SELECT * FROM conversations WHERE phone = $1", [phone]);
   return rows[0] || null;
 }
