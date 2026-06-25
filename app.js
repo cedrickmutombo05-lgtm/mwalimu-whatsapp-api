@@ -1197,19 +1197,7 @@ ${SEPARATOR}
 🌟 Mot d'encouragement : Un élève constant progresse.
 ${pick(CITATIONS.patriotisme)}`;
 
-        await envoyerWhatsApp(eleve.phone, message);
-        await attendre(800);
-      } catch (e) {
-        logError("cron_morning_reminder_user", e, { phone: eleve?.phone || "" });
-      }
-    }
-
-    logInfo("cron_morning_reminder_done", { count: rows.length });
-  } catch (e) {
-    logError("cron_morning_reminder", e);
-  }
-}, { timezone: "Africa/Lubumbashi" });
-
+       
 
 
 /* =========================================================
