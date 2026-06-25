@@ -493,7 +493,12 @@ async function genererAvecRetry(model, payload, maxRetries = 2) {
       return await model.generateContent(payload);
     } catch (e) {
       lastError = e;
-      logError("gemini_retry", e, { tentative: tentative + 1 });
+      
+logError("gemini_retry", e, {
+  tentative: tentative + 1,
+  message: e?.message,
+  data: e?.response?.data || null
+});
 
       if (estErreurQuotaGemini(e) && tentative < maxRetries) {
         await attendre(4000 + tentative * 3000);
