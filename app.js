@@ -1,5 +1,6 @@
 
 
+
 require("dotenv").config();
 
 const express = require("express");
@@ -625,7 +626,41 @@ async function appelerJsonStrict({
   return extraireJsonGemini(result.response.text());
 }
 
+function ficheEstFaible(fiche = null) {
+  if (!fiche) return true;
+  const contenu = String(fiche?.contenu || "").trim();
+  const commentaire = String(fiche?.commentaire_ai || "").trim();
+  return !contenu && !commentaire;
+}
 
+function estQuestionGeographieRDC(question = "", fiche = null) {
+  const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
+  return [
+    "rdc", "congo", "province", "territoire", "territoires",
+    "commune", "communes", "ville", "villes", "haut-katanga",
+    "haut katanga", "géographie", "geographie"
+  ].some((m) => t.includes(m));
+}
+
+function fautChercherSurWeb(question = "", fiche = null) {
+  const q = String(question || "").toLowerCase().trim();
+  if (!q) return false;
+  if (estMessagePurementSocial(q)) return false;
+
+  if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
+    return false;
+  }
+
+  return [
+    "loi", "code", "article", "constitution", "juridique", "droit",
+    "ohada", "impôt", "impot", "taxe", "tribunal",
+    "géographie", "geographie", "rdc", "congo", "province",
+    "territoire", "commune", "ville", "haut-katanga", "haut katanga",
+    "actualité", "actualite", "récent", "recent", "actuel",
+    "histoire", "date", "indépendance", "independance",
+    "qui", "quand", "où", "ou", "combien"
+  ].some((m) => q.includes(m));
+}
 
 async function chercherContexteWeb(question = "", user = {}, historique = []) {
   return await safeAI(
@@ -707,7 +742,7 @@ async function construireConsigneAntiBoucle(user, texteUtilisateur = "", histori
 }
 
  return "MODE NORMAL : réponds naturellement, clairement et brièvement.";
-
+}
 
 async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
   let contexteWeb = "";
