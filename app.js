@@ -1184,19 +1184,7 @@ ${SEPARATOR}
 ${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-cron.schedule("0 7 * * *", async () => {
-  try {
-    logInfo("cron_morning_reminder_start");
-
-    const { rows } = await pool.query(`
-      SELECT phone, nom
-      FROM conversations
-      WHERE coalesce(phone, '') <> ''
-        AND coalesce(nom, '') <> ''
-        AND coalesce(reminders_enabled, TRUE) = TRUE
-    `);
-
-    for (const eleve of rows) {
+ for (const eleve of rows) {
       try {
         const appel = `${genreEleve(eleve.nom)} **${premierPrenom(eleve.nom)}**`;
         const message = `${HEADER_MWALIMU}
@@ -1222,14 +1210,7 @@ ${pick(CITATIONS.patriotisme)}`;
   }
 }, { timezone: "Africa/Lubumbashi" });
 
-cron.schedule("0 3 * * *", async () => {
-  try {
-    await pool.query("DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '2 days'");
-    logInfo("cron_cleanup_processed_messages_done");
-  } catch (e) {
-    logError("cron_cleanup_processed_messages", e);
-  }
-}, { timezone: "Africa/Lubumbashi" });
+
 
 /* =========================================================
    15) PIPELINE
