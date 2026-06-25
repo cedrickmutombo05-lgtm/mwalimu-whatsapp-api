@@ -1184,22 +1184,6 @@ ${SEPARATOR}
 ${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
- for (const eleve of rows) {
-      try {
-        const appel = `${genreEleve(eleve.nom)} **${premierPrenom(eleve.nom)}**`;
-        const message = `${HEADER_MWALIMU}
-${SEPARATOR}
-🔵 [VÉCU] : Bonjour ${appel}.
-🟡 [SAVOIR] : Petit rappel du matin : avance aujourd'hui avec calme et sérieux.
-🔴 [INSPIRATION] : Ton objectif n'est pas d'aller vite, mais de bien comprendre.
-❓ [CONSOLIDATION] : Quelle matière veux-tu travailler aujourd'hui ?
-👉 Je reste à tes côtés.
-🌟 Mot d'encouragement : Un élève constant progresse.
-${pick(CITATIONS.patriotisme)}`;
-
-       
-
-
 /* =========================================================
    15) PIPELINE
 ========================================================= */
