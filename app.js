@@ -980,7 +980,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   }
 
   const cacheKey = makeCacheKey(user, texteUtilisateur);
-  const cached = cache.get(cacheKey);
+  const cached = getCache(cacheKey);
 
   if (cached) {
     logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
@@ -1006,7 +1006,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   const reponse = await construireReponseDbWebIa(user, texteUtilisateur, historique, fiche, consigne);
 
   if (reponse && String(reponse).trim()) {
-    cache.set(cacheKey, reponse);
+    setCache(cacheKey, reponse);
   } else {
     await logUnansweredQuestion(user, texteUtilisateur, "text", "traiterTexte_empty");
   }
