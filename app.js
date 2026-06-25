@@ -626,12 +626,6 @@ async function appelerJsonStrict({
   return extraireJsonGemini(result.response.text());
 }
 
-function ficheEstFaible(fiche = null) {
-  if (!fiche) return true;
-  const contenu = String(fiche?.contenu || "").trim();
-  const commentaire = String(fiche?.commentaire_ai || "").trim();
-  return !contenu && !commentaire;
-}
 
 function estQuestionGeographieRDC(question = "", fiche = null) {
   const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
