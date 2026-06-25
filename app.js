@@ -103,6 +103,7 @@ const {
 
 
 const {
+construireSystemPrompt,
   ficheEstFaible,
   estQuestionGeographieRDC,
   fautChercherSurWeb,
