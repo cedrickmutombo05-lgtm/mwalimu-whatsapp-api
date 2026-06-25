@@ -563,28 +563,6 @@ function toGeminiContents(messages = []) {
     }));
 }
 
-function construireSystemPrompt(user = {}) {
-  const appel = construireAppel(user);
-  const classe = user?.classe ? `Classe de l'élève : ${user.classe}` : "Classe non précisée";
-  const reve = user?.reve ? `Rêve de l'élève : ${user.reve}` : "Rêve non précisé";
-
-  return `${SYSTEM_BASE}
-
-PERSONNALISATION :
-- Adresse l'élève naturellement : ${appel}
-- ${classe}
-- ${reve}
-- Ne répète jamais le header.
-- Ne génère jamais la citation finale.
-- Ne génère jamais l'ouverture finale.
-- Ne génère jamais le mot d'encouragement final.
-
-COHÉRENCE :
-- La consolidation reste dans la même matière que la question.
-- Ne mélange pas droit, géographie, histoire, sciences, maths et français.
-`;
-}
-
 async function appelerChatCompletion(messages) {
   const systemMessages = messages
     .filter((m) => m.role === "system")
