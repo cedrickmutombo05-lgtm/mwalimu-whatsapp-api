@@ -627,14 +627,6 @@ async function appelerJsonStrict({
 }
 
 
-function estQuestionGeographieRDC(question = "", fiche = null) {
-  const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
-  return [
-    "rdc", "congo", "province", "territoire", "territoires",
-    "commune", "communes", "ville", "villes", "haut-katanga",
-    "haut katanga", "géographie", "geographie"
-  ].some((m) => t.includes(m));
-}
 
 function fautChercherSurWeb(question = "", fiche = null) {
   const q = String(question || "").toLowerCase().trim();
