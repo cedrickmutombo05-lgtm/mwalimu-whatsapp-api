@@ -626,18 +626,7 @@ async function appelerJsonStrict({
   return extraireJsonGemini(result.response.text());
 }
 
-
-
-function fautChercherSurWeb(question = "", fiche = null) {
-  const q = String(question || "").toLowerCase().trim();
-  if (!q) return false;
-  if (estMessagePurementSocial(q)) return false;
-
-  if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
-    return false;
-  }
-
-  return [
+ return [
     "loi", "code", "article", "constitution", "juridique", "droit",
     "ohada", "impôt", "impot", "taxe", "tribunal",
     "géographie", "geographie", "rdc", "congo", "province",
