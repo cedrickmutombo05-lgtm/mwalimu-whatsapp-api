@@ -100,6 +100,13 @@ const {
   construireReponseHumaineSimple
 } = require("./src/social");
 
+const {
+  ficheEstFaible,
+  estQuestionGeographieRDC,
+  fautChercherSurWeb,
+  construireConsignePedagogique
+} = require("./src/ai");
+
 const { demarrerCron } = require("./src/cron");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
@@ -733,45 +740,7 @@ async function construireConsigneAntiBoucle(user, texteUtilisateur = "", histori
   };
 }
 
-function construireConsignePedagogique(texte = "", type = "text") {
-  if (type === "audio") {
-    return `
-MODE AUDIO :
-- Si c'est social, réponse courte naturelle.
-- Sinon, commence par dire que tu as bien reçu l'audio.
-- Réponds avec chaleur et pédagogie.
-`;
-  }
-
-  if (type === "image") {
-    return `
-MODE IMAGE :
-- Dis que tu as reçu l'image.
-- Recopie ce qui est visible.
-- Si c'est flou, dis-le.
-- Explique sans faire tout à la place de l'élève.
-`;
-  }
-
-  if (estSoumissionReponse(texte)) {
-    return `
-MODE CORRECTION :
-- L'élève soumet sa réponse.
-- Corrige avec douceur.
-- Ne dis bravo que si c'est réellement juste.
-`;
-  }
-
-  if (estQuestionTechnique(texte)) {
-    return `
-MODE EXERCICE :
-- Méthode d'abord.
-- Guidage pas à pas.
-- Ne donne pas toute la réponse finale d'un coup.
-`;
-  }
-
-  return "MODE NORMAL : réponds naturellement, clairement et brièvement.";
+ return "MODE NORMAL : réponds naturellement, clairement et brièvement.";
 }
 
 async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
