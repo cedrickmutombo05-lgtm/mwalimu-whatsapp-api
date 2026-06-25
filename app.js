@@ -635,7 +635,6 @@ async function appelerJsonStrict({
     "histoire", "date", "indépendance", "independance",
     "qui", "quand", "où", "ou", "combien"
   ].some((m) => q.includes(m));
-}
 
 async function chercherContexteWeb(question = "", user = {}, historique = []) {
   return await safeAI(
