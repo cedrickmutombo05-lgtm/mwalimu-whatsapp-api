@@ -101,13 +101,13 @@ const {
   construireReponseHumaineSimple
 } = require("./src/social");
 
+
 const {
   ficheEstFaible,
   estQuestionGeographieRDC,
   fautChercherSurWeb,
   construireConsignePedagogique
 } = require("./src/ai");
-
 const { demarrerCron } = require("./src/cron");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
