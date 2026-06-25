@@ -99,6 +99,8 @@ const {
   genererRepriseApresBienEtre,
   construireReponseHumaineSimple
 } = require("./src/social");
+
+const { demarrerCron } = require("./src/cron");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 app.use(express.json({
@@ -1471,6 +1473,7 @@ app.post("/webhook", async (req, res) => {
     logInfo("api_starting");
     await initDB();
 
+demarrerCron();
     app.listen(PORT, () => {
       logInfo("server_listening", { port: PORT });
       console.log(`✅ Mwalimu en marche sur le port ${PORT}`);
