@@ -715,9 +715,6 @@ async function construireConsigneAntiBoucle(user, texteUtilisateur = "", histori
   };
 }
 
- return "MODE NORMAL : réponds naturellement, clairement et brièvement.";
-}
-
 async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
   let contexteWeb = "";
 
