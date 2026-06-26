@@ -1138,18 +1138,7 @@ if (onboarding.handled) {
   return;
 }
 
-
-  if (!user.nom) {
-    const nom = normaliserNom(nettoyer(texteUtilisateur));
-
-    if (!nom) {
-      await envoyerWhatsApp(from, `${HEADER_MWALIMU}
-${SEPARATOR}
-🟡 Donne-moi simplement ton *prénom*, s'il te plaît.`);
-      return;
-    }
-
-    await updateUserField(from, "nom", nom);
+ await updateUserField(from, "nom", nom);
     await envoyerWhatsApp(from, `🤝 Enchanté *${nom}* !\n🟡 En quelle *classe* es-tu ?`);
     return;
   }
