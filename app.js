@@ -1138,21 +1138,6 @@ if (onboarding.handled) {
   return;
 }
 
-  if (!user) {
-    await createUser(from);
-    user = await getUser(from);
-
-    await envoyerWhatsApp(from, `${HEADER_MWALIMU}
-${SEPARATOR}
-🔵 Mbote ! Je suis Mwalimu EdTech, ton mentor personnel.
-🟡 Quel est ton *prénom* ?`);
-    return;
-  }
-
-  if (msgType === "text") {
-    const commandeTraitee = await traiterCommandeTexte(from, user, texteUtilisateur);
-    if (commandeTraitee) return;
-  }
 
   if (!user.nom) {
     const nom = normaliserNom(nettoyer(texteUtilisateur));
