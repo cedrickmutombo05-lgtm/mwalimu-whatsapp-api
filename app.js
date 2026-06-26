@@ -1148,10 +1148,8 @@ let historique = Array.isArray(user.historique)
     historique = Array.isArray(user.historique)
         ? user.historique
         : safeJsonParse(user.historique, []);
-}
-  
 
-  let reponseBrute = "";
+   let reponseBrute = "";
   let ficheContexte = null;
   let bypassFormat = false;
 
