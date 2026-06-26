@@ -1138,10 +1138,6 @@ if (onboarding.handled) {
   return;
 }
 
- await updateUserField(from, "nom", nom);
-    await envoyerWhatsApp(from, `🤝 Enchanté *${nom}* !\n🟡 En quelle *classe* es-tu ?`);
-    return;
-  }
 let historique = Array.isArray(user.historique)
     ? user.historique
     : safeJsonParse(user.historique, []);
