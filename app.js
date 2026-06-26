@@ -1140,6 +1140,12 @@ if (onboarding.handled) {
   return;
 }
 
+logInfo("onboarding_passed", {
+  phone: from,
+  userId: user?.id || null,
+  nom: user?.nom || null,
+  classe: user?.classe || null
+});
 let historique = Array.isArray(user.historique)
     ? user.historique
     : safeJsonParse(user.historique, []);
@@ -1155,6 +1161,11 @@ let historique = Array.isArray(user.historique)
   let ficheContexte = null;
   let bypassFormat = false;
 
+logInfo("pipeline_route", {
+  phone: from,
+  msgType,
+  hasText: Boolean(texteUtilisateur)
+});
   if (msgType === "text") {
     const resultat = await traiterTexte({ ...user, phone: from }, texteUtilisateur, historique);
     reponseBrute = resultat?.reponse || "";
@@ -1181,6 +1192,13 @@ let historique = Array.isArray(user.historique)
 ❓ [CONSOLIDATION] : Envoie-moi plutôt ton exercice par écrit ou en photo lisible.`;
   }
 
+logInfo("pipeline_result", {
+  phone: from,
+  msgType,
+  hasResponse: Boolean(reponseBrute),
+  responseLength: String(reponseBrute || "").length,
+  bypassFormat
+});
   const messageFinal = bypassFormat
     ? reponseBrute
     : construireMessageFinal(
