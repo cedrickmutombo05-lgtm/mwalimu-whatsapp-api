@@ -1172,7 +1172,7 @@ logInfo("pipeline_route", {
     ficheContexte = resultat?.fiche || null;
     bypassFormat = Boolean(resultat?.bypassFormat);
   } else if (msgType === "audio") {
-    const resultat = await traiterAudio({ ...user, phone: from }, msg, historique);
+    const resultat = await handler.traiterAudio({ ...user, phone: from }, msg, historique);
     reponseBrute = resultat?.reponse || "";
     ficheContexte = resultat?.fiche || null;
     bypassFormat = Boolean(resultat?.bypassFormat);
