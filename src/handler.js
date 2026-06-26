@@ -4,14 +4,12 @@
 // HANDLER – ORCHESTRATION DES MESSAGES
 // =========================================================
 
-const {
-  logInfo,
-  normaliserTexteRelationnel
-} = require("./utils");
+const { logInfo, normaliserTexteRelationnel } = require("./utils");
 
 const {
   telechargerMedia,
-  estMimeAudioSupporte
+  estMimeAudioSupporte,
+  estMimeImageSupporte
 } = require("./whatsapp");
 
 const {
@@ -21,7 +19,8 @@ const {
 
 const {
   analyserAudioCourt,
-  reponseAudioUneSeulePasse
+  reponseAudioUneSeulePasse,
+  expliquerImageAvecIA
 } = require("./ai");
 
 async function traiterTexte(ctx) {
@@ -37,10 +36,7 @@ async function traiterAudio(user, msg, historique = []) {
 
   const { buffer, mimeType } = await telechargerMedia(audioId);
 
-  logInfo("audio_received", {
-    phone: user?.phone || "",
-    mimeType
-  });
+  logInfo("audio_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeAudioSupporte(mimeType)) {
     return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true };
@@ -74,8 +70,46 @@ async function traiterAudio(user, msg, historique = []) {
   };
 }
 
-async function traiterImage(ctx) {
-  return { handled: false, reponse: "", fiche: null, bypassFormat: false };
+async function traiterImage(user, msg, historique = []) {
+  const imageId = msg.image?.id;
+
+  if (!imageId) {
+    return {
+      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
+🔴 [INSPIRATION] : Nous allons y arriver.
+❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`,
+      fiche: null,
+      bypassFormat: false
+    };
+  }
+
+  const { buffer, mimeType } = await telechargerMedia(imageId);
+
+  logInfo("image_received", { phone: user?.phone || "", mimeType });
+
+  if (!estMimeImageSupporte(mimeType)) {
+    return {
+      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
+🔴 [INSPIRATION] : Ce n'est pas grave.
+❓ [CONSOLIDATION] : Envoie-moi une image JPG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
+      fiche: null,
+      bypassFormat: false
+    };
+  }
+
+  const base64Image = buffer.toString("base64");
+  let reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
+
+  if (!reponse || !reponse.trim()) {
+    reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.
+🔴 [INSPIRATION] : Nous pouvons reprendre calmement.
+❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`;
+  }
+
+  return { reponse, fiche: null, bypassFormat: false };
 }
 
 async function processIncomingMessage(ctx) {
