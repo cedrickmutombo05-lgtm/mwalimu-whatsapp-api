@@ -97,6 +97,7 @@ async function traiterImage(user, msg, historique = []) {
       reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
 🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
 🔴 [INSPIRATION] : Ce n'est pas grave.
+
 ❓ [CONSOLIDATION] : Envoie-moi une image JPG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
       fiche: null,
       bypassFormat: false
