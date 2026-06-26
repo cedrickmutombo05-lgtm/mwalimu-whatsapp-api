@@ -101,7 +101,7 @@ async function traiterImage(user, msg, historique = []) {
       fiche: null,
       bypassFormat: false
     };
-  }
+  
 
   const base64Image = buffer.toString("base64");
   
