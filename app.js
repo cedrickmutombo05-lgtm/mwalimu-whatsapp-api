@@ -1142,18 +1142,7 @@ if (onboarding.handled) {
     await envoyerWhatsApp(from, `🤝 Enchanté *${nom}* !\n🟡 En quelle *classe* es-tu ?`);
     return;
   }
-
- await updateUserField(from, "reve", rv);
-    user = await getUser(from);
-
-    await envoyerWhatsApp(from, `✨ *Quelle ambition magnifique !*
-🔴 Devenir *${rv}* est un rêve noble.
-🔵 *Pour commencer notre parcours ensemble :*
-👉 Quelle matière ou quel chapitre te pose problème en ce moment ?`);
-    return;
-  }
-
-  let historique = Array.isArray(user.historique)
+let historique = Array.isArray(user.historique)
     ? user.historique
     : safeJsonParse(user.historique, []);
 
