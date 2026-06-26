@@ -1179,7 +1179,7 @@ logInfo("pipeline_route", {
     contenuUtilisateurPourMemoire = "[audio envoyé]";
     await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
   } else if (msgType === "image") {
-    const resultat = await traiterImage({ ...user, phone: from }, msg, historique);
+    const resultat = await handler.traiterImage({ ...user, phone: from }, msg, historique);
     reponseBrute = resultat?.reponse || "";
     ficheContexte = resultat?.fiche || null;
     bypassFormat = Boolean(resultat?.bypassFormat);
