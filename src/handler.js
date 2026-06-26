@@ -63,12 +63,16 @@ async function traiterAudio(user, msg, historique = []) {
     return { reponse, fiche: null, bypassFormat: true };
   }
 
-  return {
-    reponse,
-    fiche: null,
-    bypassFormat: estMessagePurementSocial(reponse) && reponse.length < 180
-  };
+ 
+if (!reponse.toLowerCase().includes("audio")) {
+  reponse = `J'ai bien reçu ton audio.\n\n${reponse}`;
 }
+
+return {
+  reponse,
+  fiche: null,
+  bypassFormat: false
+}; 
 
 async function traiterImage(user, msg, historique = []) {
   const imageId = msg.image?.id;
@@ -100,7 +104,14 @@ async function traiterImage(user, msg, historique = []) {
   }
 
   const base64Image = buffer.toString("base64");
-  let reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
+  
+let reponse = "";
+
+try {
+  reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
+} catch (e) {
+  reponse = "";
+}
 
   if (!reponse || !reponse.trim()) {
     reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.
