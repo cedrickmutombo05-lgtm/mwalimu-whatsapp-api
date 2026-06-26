@@ -1146,11 +1146,6 @@ if (onboarding.handled) {
   if (!user.classe) {
     const cl = normaliserNom(nettoyer(texteUtilisateur));
 
-    if (!cl) {
-      await envoyerWhatsApp(from, `🟡 Écris-moi ta *classe* simplement.\nExemple : 6e, 8e, Terminale, 1ère secondaire.`);
-      return;
-    }
-
     await updateUserField(from, "classe", cl);
     user = await getUser(from);
 
