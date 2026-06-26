@@ -1150,7 +1150,6 @@ let historique = Array.isArray(user.historique)
 
   if (msgType === "text" && texteUtilisateur) {
    
-    const fresh = await getUser(from);
     historique = Array.isArray(fresh?.historique)
       ? fresh.historique
       : safeJsonParse(fresh?.historique, []);
