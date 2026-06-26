@@ -1149,7 +1149,7 @@ let historique = Array.isArray(user.historique)
   let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
   if (msgType === "text" && texteUtilisateur) {
-    await appendHistorique(from, "user", texteUtilisateur);
+   
     const fresh = await getUser(from);
     historique = Array.isArray(fresh?.historique)
       ? fresh.historique
