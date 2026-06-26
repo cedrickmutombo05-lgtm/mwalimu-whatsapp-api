@@ -1144,13 +1144,12 @@ let historique = Array.isArray(user.historique)
 
   let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
-  if (msgType === "text" && texteUtilisateur) {
-   
-    historique = Array.isArray(fresh?.historique)
-      ? fresh.historique
-      : safeJsonParse(fresh?.historique, []);
-    user = fresh || user;
-  }
+  
+    historique = Array.isArray(user.historique)
+        ? user.historique
+        : safeJsonParse(user.historique, []);
+}
+  
 
   let reponseBrute = "";
   let ficheContexte = null;
