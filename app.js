@@ -1143,16 +1143,7 @@ if (onboarding.handled) {
     return;
   }
 
-
-  if (!user.reve) {
-    const rv = normaliserNom(nettoyer(texteUtilisateur));
-
-    if (!rv) {
-      await envoyerWhatsApp(from, `❓ Dis-moi simplement ton *rêve* professionnel.\nExemple : avocat, médecin, ingénieur, pilote.`);
-      return;
-    }
-
-    await updateUserField(from, "reve", rv);
+ await updateUserField(from, "reve", rv);
     user = await getUser(from);
 
     await envoyerWhatsApp(from, `✨ *Quelle ambition magnifique !*
