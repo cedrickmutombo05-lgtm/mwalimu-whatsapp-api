@@ -2,6 +2,7 @@
 
 // =========================================================
 // HANDLER – ORCHESTRATION DES MESSAGES
+// Compatible CommonJS / Render / Node.js
 // =========================================================
 
 const { logInfo, normaliserTexteRelationnel } = require("./utils");
@@ -31,15 +32,26 @@ async function traiterAudio(user, msg, historique = []) {
   const audioId = msg.audio?.id;
 
   if (!audioId) {
-    return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true };
+    return {
+      reponse: "J'ai bien reçu ton audio, mais je n'arrive pas à le lire correctement.",
+      fiche: null,
+      bypassFormat: true
+    };
   }
 
   const { buffer, mimeType } = await telechargerMedia(audioId);
 
-  logInfo("audio_received", { phone: user?.phone || "", mimeType });
+  logInfo("audio_received", {
+    phone: user?.phone || "",
+    mimeType
+  });
 
   if (!estMimeAudioSupporte(mimeType)) {
-    return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true };
+    return {
+      reponse: "J'ai bien reçu ton audio, mais ce format audio n'est pas encore supporté.",
+      fiche: null,
+      bypassFormat: true
+    };
   }
 
   const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
@@ -48,31 +60,50 @@ async function traiterAudio(user, msg, historique = []) {
 
   if (transcriptionNormale && estMessagePurementSocial(transcriptionNormale)) {
     const simple = construireReponseHumaineSimple(user, transcriptionNormale, historique);
-    if (simple) return { reponse: simple, fiche: null, bypassFormat: true };
+    if (simple) {
+      return {
+        reponse: `J'ai bien reçu ton audio.\n\n${simple}`,
+        fiche: null,
+        bypassFormat: false
+      };
+    }
   }
 
   if (analyse.type === "social") {
     const simple = construireReponseHumaineSimple(user, transcription || "merci", historique);
-    return { reponse: simple || "Avec plaisir 😊", fiche: null, bypassFormat: true };
+    return {
+      reponse: `J'ai bien reçu ton audio.\n\n${simple || "Avec plaisir 😊"}`,
+      fiche: null,
+      bypassFormat: false
+    };
   }
 
-  let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique);
+  let reponse = "";
 
-  if (!reponse || !reponse.trim()) {
-    reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
-    return { reponse, fiche: null, bypassFormat: true };
+  try {
+    reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique);
+  } catch (e) {
+    reponse = "";
   }
 
- 
-if (!reponse.toLowerCase().includes("audio")) {
-  reponse = `J'ai bien reçu ton audio.\n\n${reponse}`;
+  if (!reponse || !String(reponse).trim()) {
+    return {
+      reponse: "J'ai bien reçu ton audio.\n\nJe n'arrive pas encore à l'analyser correctement.",
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  if (!String(reponse).toLowerCase().includes("audio")) {
+    reponse = `J'ai bien reçu ton audio.\n\n${reponse}`;
+  }
+
+  return {
+    reponse,
+    fiche: null,
+    bypassFormat: false
+  };
 }
-
-return {
-  reponse,
-  fiche: null,
-  bypassFormat: false
-}; 
 
 async function traiterImage(user, msg, historique = []) {
   const imageId = msg.image?.id;
@@ -90,38 +121,43 @@ async function traiterImage(user, msg, historique = []) {
 
   const { buffer, mimeType } = await telechargerMedia(imageId);
 
-  logInfo("image_received", { phone: user?.phone || "", mimeType });
+  logInfo("image_received", {
+    phone: user?.phone || "",
+    mimeType
+  });
 
   if (!estMimeImageSupporte(mimeType)) {
     return {
       reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
 🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
 🔴 [INSPIRATION] : Ce n'est pas grave.
-
 ❓ [CONSOLIDATION] : Envoie-moi une image JPG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
       fiche: null,
       bypassFormat: false
     };
-  
+  }
 
   const base64Image = buffer.toString("base64");
-  
-let reponse = "";
+  let reponse = "";
 
-try {
-  reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
-} catch (e) {
-  reponse = "";
-}
+  try {
+    reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
+  } catch (e) {
+    reponse = "";
+  }
 
-  if (!reponse || !reponse.trim()) {
+  if (!reponse || !String(reponse).trim()) {
     reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.
 🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.
 🔴 [INSPIRATION] : Nous pouvons reprendre calmement.
 ❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`;
   }
 
-  return { reponse, fiche: null, bypassFormat: false };
+  return {
+    reponse,
+    fiche: null,
+    bypassFormat: false
+  };
 }
 
 async function processIncomingMessage(ctx) {
