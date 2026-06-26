@@ -111,6 +111,8 @@ construireSystemPrompt,
 } = require("./src/ai");
 
 const { traiterOnboarding } = require("./src/onboarding");
+
+const handler = require("./src/handler");
 const { demarrerCron } = require("./src/cron");
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
