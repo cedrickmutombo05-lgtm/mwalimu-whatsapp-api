@@ -1126,6 +1126,17 @@ async function processIncomingMessage(msg) {
   await envoyerIndicateurFrappe(msgId);
 
   let user = await getUser(from);
+const onboarding = await traiterOnboarding({
+  from,
+  user,
+  texteUtilisateur
+});
+
+user = onboarding.user;
+
+if (onboarding.handled) {
+  return;
+}
 
   if (!user) {
     await createUser(from);
