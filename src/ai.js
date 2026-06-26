@@ -1,4 +1,5 @@
 
+
 // =========================================================
 // IA – GEMINI, PROMPTS, CLASSIFICATION, AUDIO, IMAGE
 // =========================================================
@@ -152,10 +153,20 @@ PERSONNALISATION :
 - Ne génère jamais l'ouverture finale.
 - Ne génère jamais le mot d'encouragement final.
 
+RÈGLE PÉDAGOGIQUE FONDAMENTALE :
+- Mwalimu guide l'élève, il ne fait pas le devoir à sa place.
+- Pour un exercice, donne la méthode, un indice ou un exemple similaire.
+- Ne donne la réponse finale que si elle est nécessaire pour expliquer ou corriger.
+
 COHÉRENCE :
 - La consolidation doit rester dans la même matière que la question.
 - Ne mélange pas droit, géographie, histoire, sciences, maths et français.
 - Réponds comme un vrai précepteur, pas comme un moteur de recherche.
+
+GÉOGRAPHIE RDC :
+- Pour les provinces, territoires, communes, villes, secteurs et chefferies de la RDC, sois très précis.
+- Ne confonds jamais chef-lieu, ville, province et territoire.
+- Si l'élève demande les territoires d'une province, donne les territoires, pas seulement le chef-lieu.
 `;
 }
 
@@ -167,20 +178,10 @@ function estSoumissionReponse(texte = "") {
   const t = String(texte || "").toLowerCase().trim();
 
   const indices = [
-    "ma réponse",
-    "ma reponse",
-    "j'ai trouvé",
-    "jai trouvé",
-    "voici ma réponse",
-    "voici ma reponse",
-    "mon résultat",
-    "mon resultat",
-    "j'obtiens",
-    "j'ai obtenu",
-    "le résultat est",
-    "le resultat est",
-    "ça donne",
-    "ca donne"
+    "ma réponse", "ma reponse", "j'ai trouvé", "jai trouvé",
+    "voici ma réponse", "voici ma reponse", "mon résultat", "mon resultat",
+    "j'obtiens", "j'ai obtenu", "le résultat est", "le resultat est",
+    "ça donne", "ca donne"
   ];
 
   if (indices.some((i) => t.includes(i))) return true;
@@ -193,25 +194,9 @@ function estQuestionTechnique(texte = "") {
   const t = String(texte || "").toLowerCase();
 
   return [
-    "calcule",
-    "calculer",
-    "résous",
-    "resous",
-    "équation",
-    "equation",
-    "fraction",
-    "physique",
-    "chimie",
-    "exercice",
-    "problème",
-    "probleme",
-    "géométrie",
-    "geometrie",
-    "puissance",
-    "racine",
-    "math",
-    "maths",
-    "formule"
+    "calcule", "calculer", "résous", "resous", "équation", "equation",
+    "fraction", "physique", "chimie", "exercice", "problème", "probleme",
+    "géométrie", "geometrie", "puissance", "racine", "math", "maths", "formule"
   ].some((m) => t.includes(m));
 }
 
@@ -222,50 +207,14 @@ function estQuestionAcademique(texte = "") {
   if (estMessagePurementSocial(t)) return false;
 
   return [
-    "explique",
-    "c est quoi",
-    "qu est ce que",
-    "comment",
-    "pourquoi",
-    "quand",
-    "ou",
-    "qui",
-    "combien",
-    "quelle",
-    "quel",
-    "quels",
-    "quelles",
-    "math",
-    "maths",
-    "equation",
-    "calcul",
-    "physique",
-    "chimie",
-    "histoire",
-    "geographie",
-    "francais",
-    "grammaire",
-    "conjugaison",
-    "droit",
-    "loi",
-    "article",
-    "constitution",
-    "province",
-    "territoire",
-    "exercice",
-    "probleme",
-    "aide",
-    "comprendre",
-    "apprendre",
-    "cours",
-    "lecon",
-    "chapitre",
-    "matiere",
-    "examen",
-    "revision",
-    "peux tu",
-    "dis moi",
-    "je voudrais",
+    "explique", "c est quoi", "qu est ce que", "comment", "pourquoi",
+    "quand", "ou", "qui", "combien", "quelle", "quel", "quels", "quelles",
+    "math", "maths", "equation", "calcul", "physique", "chimie",
+    "histoire", "geographie", "francais", "grammaire", "conjugaison",
+    "droit", "loi", "article", "constitution", "province", "territoire",
+    "commune", "ville", "secteur", "chefferie", "exercice", "probleme",
+    "aide", "comprendre", "apprendre", "cours", "lecon", "chapitre",
+    "matiere", "examen", "revision", "peux tu", "dis moi", "je voudrais",
     "explique moi"
   ].some((mot) => t.includes(mot));
 }
@@ -276,25 +225,10 @@ function extraireSujetMemoire(texte = "") {
   if (!t || estMessagePurementSocial(t)) return "";
 
   const sujets = [
-    "math",
-    "mathematiques",
-    "equation",
-    "fraction",
-    "histoire",
-    "geographie",
-    "francais",
-    "grammaire",
-    "droit",
-    "loi",
-    "article",
-    "rdc",
-    "congo",
-    "province",
-    "territoire",
-    "commune",
-    "ville",
-    "physique",
-    "chimie"
+    "math", "mathematiques", "equation", "fraction", "histoire",
+    "geographie", "francais", "grammaire", "droit", "loi", "article",
+    "rdc", "congo", "province", "territoire", "commune", "ville",
+    "secteur", "chefferie", "physique", "chimie"
   ];
 
   for (const s of sujets) {
@@ -327,7 +261,7 @@ function detecterMatierePrincipale(question = "", corps = "") {
   };
 
   add("droit", ["droit", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"], 4);
-  add("geographie", ["geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie"], 4);
+  add("geographie", ["geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "rdc", "congo"], 5);
   add("histoire", ["histoire", "passe", "colonisation", "independance", "royaume", "date historique"], 4);
   add("math", ["math", "maths", "equation", "fraction", "calcul", "racine", "puissance", "geometrie"], 4);
   add("physique", ["physique", "force", "vitesse", "energie", "masse", "pression", "mouvement"], 4);
@@ -393,27 +327,36 @@ function ficheEstFaible(fiche = null) {
   const contenu = String(fiche?.contenu || "").trim();
   const commentaire = String(fiche?.commentaire_ai || "").trim();
 
-  return !contenu && !commentaire;
+  if (!contenu && !commentaire) return true;
+  if (contenu.length < 80 && commentaire.length < 50) return true;
+
+  return false;
 }
 
 function estQuestionGeographieRDC(question = "", fiche = null) {
   const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
 
   return [
-    "rdc",
-    "congo",
-    "province",
-    "territoire",
-    "territoires",
-    "commune",
-    "communes",
-    "ville",
-    "villes",
-    "haut-katanga",
-    "haut katanga",
-    "géographie",
-    "geographie"
+    "rdc", "congo", "province", "provinces", "territoire", "territoires",
+    "commune", "communes", "ville", "villes", "secteur", "secteurs",
+    "chefferie", "chefferies", "haut-katanga", "haut katanga",
+    "kasaï", "kasai", "géographie", "geographie"
   ].some((m) => t.includes(m));
+}
+
+function questionDemandeListeAdministrative(question = "") {
+  const t = String(question || "").toLowerCase();
+
+  return (
+    t.includes("quels sont les territoires") ||
+    t.includes("quelles sont les communes") ||
+    t.includes("liste des territoires") ||
+    t.includes("liste des communes") ||
+    t.includes("territoires de") ||
+    t.includes("communes de") ||
+    t.includes("secteurs de") ||
+    t.includes("chefferies de")
+  );
 }
 
 function fautChercherSurWeb(question = "", fiche = null) {
@@ -422,46 +365,19 @@ function fautChercherSurWeb(question = "", fiche = null) {
   if (!q) return false;
   if (estMessagePurementSocial(q)) return false;
 
-  if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
+  if (estQuestionGeographieRDC(question, fiche)) return true;
+  if (questionDemandeListeAdministrative(question)) return true;
+
+  if (fiche && !ficheEstFaible(fiche)) {
     return false;
   }
 
   return [
-    "loi",
-    "code",
-    "article",
-    "constitution",
-    "juridique",
-    "droit",
-    "ohada",
-    "impôt",
-    "impot",
-    "taxe",
-    "tribunal",
-    "géographie",
-    "geographie",
-    "rdc",
-    "congo",
-    "province",
-    "territoire",
-    "commune",
-    "ville",
-    "haut-katanga",
-    "haut katanga",
-    "actualité",
-    "actualite",
-    "récent",
-    "recent",
-    "actuel",
-    "histoire",
-    "date",
-    "indépendance",
-    "independance",
-    "qui",
-    "quand",
-    "où",
-    "ou",
-    "combien"
+    "loi", "code", "article", "constitution", "juridique", "droit",
+    "ohada", "impôt", "impot", "taxe", "tribunal",
+    "actualité", "actualite", "récent", "recent", "actuel",
+    "histoire", "date", "indépendance", "independance",
+    "qui", "quand", "où", "ou", "combien"
   ].some((m) => q.includes(m));
 }
 
@@ -485,7 +401,7 @@ async function appelerChatCompletion(messages) {
 
   const result = await genererAvecRetry(model, {
     contents,
-    generationConfig: { temperature: 0.15 }
+    generationConfig: { temperature: 0.1 }
   });
 
   return result.response.text();
@@ -532,11 +448,15 @@ async function chercherContexteWeb(question = "", user = {}, historique = []) {
         role: "system",
         content: `
 MISSION WEB :
-- Utilise Google Search.
-- Donne un contexte brut, court, clair et factuel.
-- Pour une liste administrative, sois complet.
-- Si la liste n'est pas certaine, écris : Liste à confirmer.
-- Pas de structure pédagogique.
+- Utilise obligatoirement Google Search.
+- Pour les provinces, territoires, communes, villes, secteurs et chefferies de la RDC, le WEB est la SOURCE PRINCIPALE.
+- Si la question demande les territoires d'une province, donne uniquement la liste complète des territoires trouvés.
+- Ne donne jamais seulement le chef-lieu si l'élève demande les territoires.
+- Ne confonds jamais chef-lieu, province, ville, territoire, commune, secteur et chefferie.
+- Si une liste administrative est demandée, donne la liste complète trouvée.
+- Si la liste n'est pas certaine, écris exactement : Liste à confirmer.
+- Pas de structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION.
+- Pas de citation finale.
 `
       },
       ...historique.slice(-4),
@@ -650,7 +570,7 @@ function construireQuestionConsolidation(question = "", corps = "") {
 
   const modeles = {
     droit: `❓ [CONSOLIDATION] : Explique avec tes mots l'idée juridique principale de ${sujet}.`,
-    geographie: `❓ [CONSOLIDATION] : Donne un exemple concret lié à ${sujet}.`,
+    geographie: `❓ [CONSOLIDATION] : Cite un élément important que tu retiens sur ${sujet}.`,
     histoire: `❓ [CONSOLIDATION] : Quelle idée importante retiens-tu de ${sujet} ?`,
     math: `❓ [CONSOLIDATION] : Reprends la méthode en une phrase, puis essaie une étape.`,
     physique: `❓ [CONSOLIDATION] : Quelle unité ou formule principale dois-tu retenir ici ?`,
@@ -964,11 +884,12 @@ async function construireReponseDbWebIa(user, questionEleve, historique = [], fi
   }
 
   const blocWeb = contexteWeb
-    ? `CONTEXTE WEB :\n${contexteWeb}`
+    ? `CONTEXTE WEB — SOURCE PRINCIPALE :
+${contexteWeb}`
     : "CONTEXTE WEB : Aucun contexte web utile.";
 
   const blocDB = fiche
-    ? `CONTEXTE DB :
+    ? `CONTEXTE DB — SOURCE SECONDAIRE :
 Titre : ${fiche.titre || ""}
 Matière : ${fiche.matiere || ""}
 Classe : ${fiche.classe || ""}
@@ -985,9 +906,12 @@ ${tronquerTexte(fiche.commentaire_ai || "", 1200)}`
         role: "system",
         content: `
 RÈGLE FONDAMENTALE :
-- Utilise le web si disponible.
-- Utilise la DB comme appui.
-- N'invente jamais.
+- Pour les questions administratives RDC, utilise le WEB comme source principale.
+- La DB est seulement un appui secondaire.
+- Si le WEB donne une liste et la DB donne seulement un chef-lieu, réponds avec la liste WEB.
+- Ne confonds jamais chef-lieu, ville, province, territoire, commune, secteur et chefferie.
+- Si l'élève demande les territoires d'une province, donne d'abord la liste des territoires.
+- Si l'information n'est pas certaine, écris clairement : Liste à confirmer.
 - Réponds comme un précepteur, pas comme un moteur de recherche.
 - La consolidation reste dans la même matière.
 `
@@ -1033,6 +957,7 @@ module.exports = {
   detecterMatiereScientifique,
   ficheEstFaible,
   estQuestionGeographieRDC,
+  questionDemandeListeAdministrative,
   fautChercherSurWeb,
   appelerChatCompletion,
   appelerJsonStrict,
