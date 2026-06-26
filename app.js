@@ -935,46 +935,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 }
 
 
-async function traiterImage(user, msg, historique = []) {
-  const imageId = msg.image?.id;
-
-  if (!imageId) {
-    return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
-🔴 [INSPIRATION] : Nous allons y arriver.
-❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`,
-      fiche: null,
-      bypassFormat: false
-    };
-  }
-
-  const { buffer, mimeType } = await telechargerMedia(imageId);
-  logInfo("image_received", { phone: user?.phone || "", mimeType });
-
-  if (!estMimeImageSupporte(mimeType)) {
-    return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
-🔴 [INSPIRATION] : Ce n'est pas grave.
-❓ [CONSOLIDATION] : Envoie-moi une image JPG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
-      fiche: null,
-      bypassFormat: false
-    };
-  }
-
-  const base64Image = buffer.toString("base64");
-  let reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
-
-  if (!reponse || !reponse.trim()) {
-    reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.
-🔴 [INSPIRATION] : Nous pouvons reprendre calmement.
-❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`;
-  }
-
-  return { reponse, fiche: null, bypassFormat: false };
-}
 
 /* =========================================================
    14) COMMANDES + CRON
