@@ -1143,15 +1143,6 @@ if (onboarding.handled) {
     return;
   }
 
-  if (!user.classe) {
-    const cl = normaliserNom(nettoyer(texteUtilisateur));
-
-    await updateUserField(from, "classe", cl);
-    user = await getUser(from);
-
-    await envoyerWhatsApp(from, `🟡 C'est bien noté, *${user.nom}*.\n❓ Quel est ton plus grand *rêve* professionnel ?`);
-    return;
-  }
 
   if (!user.reve) {
     const rv = normaliserNom(nettoyer(texteUtilisateur));
