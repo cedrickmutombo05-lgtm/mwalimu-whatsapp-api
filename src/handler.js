@@ -96,7 +96,15 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   let consigne = construireConsignePedagogique(texteUtilisateur, "text");
 
   if (analyse.intention === "juridique") {
-    consigne += "\nLe message semble juridique. Ne cite un article que si tu es fiable.";
+    
+consigne += `
+Question juridique :
+- Utilise obligatoirement Google Search avant de répondre.
+- N'invente jamais un article de loi.
+- Si l'élève demande le contenu exact d'un article, réponds seulement si le texte est vérifié.
+- Si le texte n'est pas certain, dis : "Je dois vérifier le texte exact de cet article."
+- Ne mets jamais de citation entre guillemets si tu n'es pas sûr du texte exact.
+`;
   }
 
   if (
