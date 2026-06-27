@@ -871,68 +871,7 @@ MODE IMAGE :
   }, "");
 }
 
-/* =========================================================
-   13) TRAITEMENT
-========================================================= */
-async function traiterTexte(user, texteUtilisateur, historique = []) {
-  if (estMessagePurementSocial(texteUtilisateur)) {
-    const simple = construireReponseHumaineSimple(user, texteUtilisateur, historique);
-    if (simple) return { reponse: simple, fiche: null, bypassFormat: true };
-  }
 
-  const conversationAcademique = historique.some((m) => m.role === "user" && estQuestionAcademique(m.content || ""));
-
-  if (!conversationAcademique && !estQuestionAcademique(texteUtilisateur)) {
-    const prenom = premierPrenom(user?.nom || "");
-    return {
-      reponse: pick([
-        `Je suis là pour t'aider **${prenom}** 😊 Quelle matière ou quel exercice veux-tu travailler ?`,
-        `**${prenom}**, envoie-moi une question, une leçon ou un exercice, et je vais t'accompagner.`,
-        `D'accord **${prenom}**. Dis-moi maintenant ce que tu veux comprendre.`
-      ]),
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
-  const cacheKey = makeCacheKey(user, texteUtilisateur);
-  const cached = getCache(cacheKey);
-
-  if (cached) {
-    logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
-    return { reponse: cached, fiche: null, bypassFormat: false };
-  }
-
-  const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
-  const analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
-  const antiBoucle = await construireConsigneAntiBoucle(user, texteUtilisateur, historique);
-
-  let consigne = construireConsignePedagogique(texteUtilisateur, "text");
-
-  if (analyse.intention === "juridique") {
-    consigne += "\nLe message semble juridique. Ne cite un article que si tu es fiable.";
-  }
-
-  if (analyse.intention === "geographie_rdc" || estQuestionGeographieRDC(texteUtilisateur, fiche)) {
-    consigne += "\nQuestion géographique/administrative : sois précis et complet.";
-  }
-
-  if (antiBoucle.consigne) consigne += `\n${antiBoucle.consigne}`;
-
-  const reponse = await construireReponseDbWebIa(user, texteUtilisateur, historique, fiche, consigne);
-
-  if (reponse && String(reponse).trim()) {
-    setCache(cacheKey, reponse);
-  } else {
-    await logUnansweredQuestion(user, texteUtilisateur, "text", "traiterTexte_empty");
-  }
-
-  if (!estSoumissionReponse(texteUtilisateur)) {
-    await resetStudentAttempt(user.phone, antiBoucle.sujet || analyse.sujet || "general");
-  }
-
-  return { reponse, fiche: fiche || null, bypassFormat: false };
-}
 
 
 
