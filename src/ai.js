@@ -215,7 +215,7 @@ function estQuestionAcademique(texte = "") {
     "commune", "ville", "secteur", "chefferie", "exercice", "probleme",
     "aide", "comprendre", "apprendre", "cours", "lecon", "chapitre",
     "matiere", "examen", "revision", "peux tu", "dis moi", "je voudrais",
-    "explique moi"
+    "explique moi","parle moi","parle-moi","parlez-moi","parlez moi","brievement","brièvement","kinshasa","lubumbashi","chef lieu","chef-lieu"
   ].some((mot) => t.includes(mot));
 }
 
