@@ -1086,7 +1086,7 @@ logInfo("pipeline_route", {
   hasText: Boolean(texteUtilisateur)
 });
   if (msgType === "text") {
-    const resultat = await traiterTexte({ ...user, phone: from }, texteUtilisateur, historique);
+    const resultat = await handler.traiterTexte({ ...user, phone: from }, texteUtilisateur, historique);
     reponseBrute = resultat?.reponse || "";
     ficheContexte = resultat?.fiche || null;
     bypassFormat = Boolean(resultat?.bypassFormat);
