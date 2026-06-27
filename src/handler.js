@@ -62,7 +62,7 @@ async function traiterAudio(user, msg, historique = []) {
     const simple = construireReponseHumaineSimple(user, transcriptionNormale, historique);
     if (simple) {
       return {
-        reponse: `J'ai bien reçu ton audio.\n\n${simple}`,
+        reponse: simple,
         fiche: null,
         bypassFormat: true
       };
@@ -72,7 +72,7 @@ async function traiterAudio(user, msg, historique = []) {
   if (analyse.type === "social") {
     const simple = construireReponseHumaineSimple(user, transcription || "merci", historique);
     return {
-      reponse: `J'ai bien reçu ton audio.\n\n${simple || "Avec plaisir 😊"}`,
+      reponse: simple || "Avec plaisir 😊",
       fiche: null,
       bypassFormat: true
     };
