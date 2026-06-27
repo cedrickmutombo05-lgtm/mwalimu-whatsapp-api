@@ -99,7 +99,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     
   consigne += `
 Question juridique :
-- Utilise obligatoirement Google Search.
+- Utilise obligatoirement Google Search avant de répondre.
 - Si la question porte sur un article, cite d'abord l'article, puis explique ensuite.
 - Ordre obligatoire : 1) Texte de l'article 2) Explication pédagogique 3) Exemple simple 4) Consolidation.
 - N'invente jamais un numéro d'article ni son contenu.
