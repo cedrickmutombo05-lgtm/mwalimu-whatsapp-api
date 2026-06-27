@@ -98,7 +98,9 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   if (analyse.intention === "juridique") {
     
 
-consigne += `
+
+if (analyse.intention === "juridique") {
+  consigne += `
 Question juridique :
 - Utilise obligatoirement Google Search.
 - Si la question porte sur un article, cite d'abord l'article, puis explique ensuite.
@@ -107,6 +109,7 @@ Question juridique :
 - Si le texte exact n'est pas vérifié, dis : "Je dois vérifier le texte exact de cet article."
 - Réponds comme un professeur de droit expérimenté.
 `;
+}
   
 
   if (
