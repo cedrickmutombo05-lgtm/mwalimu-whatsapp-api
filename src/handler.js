@@ -5,7 +5,23 @@
 // Compatible CommonJS / Render / Node.js
 // =========================================================
 
-const { logInfo, normaliserTexteRelationnel } = require("./utils");
+
+const {
+  logInfo,
+  pick,
+  makeCacheKey,
+  getCache,
+  setCache,
+  normaliserTexteRelationnel,
+  premierPrenom
+} = require("./utils");
+
+const {
+  consulterBibliotheque,
+  logUnansweredQuestion,
+  resetStudentAttempt,
+  saveStudentAttempt
+} = require("./db");
 
 const {
   telechargerMedia,
@@ -19,13 +35,104 @@ const {
 } = require("./social");
 
 const {
+  estQuestionAcademique,
+  estQuestionGeographieRDC,
+  estSoumissionReponse,
+  detecterIntentionIA,
+  construireConsigneAntiBoucle,
+  construireConsignePedagogique,
+  construireReponseDbWebIa,
   analyserAudioCourt,
   reponseAudioUneSeulePasse,
   expliquerImageAvecIA
 } = require("./ai");
 
-async function traiterTexte(ctx) {
-  return { handled: false, reponse: "", fiche: null, bypassFormat: true };
+async function traiterTexte(user, texteUtilisateur, historique = []) {
+  if (estMessagePurementSocial(texteUtilisateur)) {
+    const simple = construireReponseHumaineSimple(user, texteUtilisateur, historique);
+    if (simple) return { reponse: simple, fiche: null, bypassFormat: true };
+  }
+
+  const conversationAcademique = historique.some(
+    (m) => m.role === "user" && estQuestionAcademique(m.content || "")
+  );
+
+  if (!conversationAcademique && !estQuestionAcademique(texteUtilisateur)) {
+    const prenom = premierPrenom(user?.nom || "");
+
+    return {
+      reponse: pick([
+        `Je suis là pour t'aider **${prenom}** 😊 Quelle matière ou quel exercice veux-tu travailler ?`,
+        `**${prenom}**, envoie-moi une question, une leçon ou un exercice, et je vais t'accompagner.`,
+        `D'accord **${prenom}**. Dis-moi maintenant ce que tu veux comprendre.`
+      ]),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  const cacheKey = makeCacheKey(user, texteUtilisateur);
+  const cached = getCache(cacheKey);
+
+  if (cached) {
+    logInfo("cache_hit", {
+      phone: user?.phone || "",
+      cacheKey
+    });
+
+    return { reponse: cached, fiche: null, bypassFormat: false };
+  }
+
+  const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
+  const analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
+
+  const antiBoucle = await construireConsigneAntiBoucle(
+    user,
+    texteUtilisateur,
+    historique,
+    saveStudentAttempt
+  );
+
+  let consigne = construireConsignePedagogique(texteUtilisateur, "text");
+
+  if (analyse.intention === "juridique") {
+    consigne += "\nLe message semble juridique. Ne cite un article que si tu es fiable.";
+  }
+
+  if (
+    analyse.intention === "geographie_rdc" ||
+    estQuestionGeographieRDC(texteUtilisateur, fiche)
+  ) {
+    consigne += "\nQuestion géographique/administrative : sois précis et complet.";
+  }
+
+  if (antiBoucle.consigne) {
+    consigne += `\n${antiBoucle.consigne}`;
+  }
+
+  const reponse = await construireReponseDbWebIa(
+    user,
+    texteUtilisateur,
+    historique,
+    fiche,
+    consigne
+  );
+
+  if (reponse && String(reponse).trim()) {
+    setCache(cacheKey, reponse);
+  } else {
+    await logUnansweredQuestion(user, texteUtilisateur, "text", "traiterTexte_empty");
+  }
+
+  if (!estSoumissionReponse(texteUtilisateur)) {
+    await resetStudentAttempt(user.phone, antiBoucle.sujet || analyse.sujet || "general");
+  }
+
+  return {
+    reponse,
+    fiche: fiche || null,
+    bypassFormat: false
+  };
 }
 
 async function traiterAudio(user, msg, historique = []) {
@@ -33,7 +140,7 @@ async function traiterAudio(user, msg, historique = []) {
 
   if (!audioId) {
     return {
-      reponse: "J'ai bien reçu ton audio, mais je n'arrive pas à le lire correctement.",
+      reponse: "Je n'arrive pas à lire ton audio.",
       fiche: null,
       bypassFormat: true
     };
@@ -48,7 +155,7 @@ async function traiterAudio(user, msg, historique = []) {
 
   if (!estMimeAudioSupporte(mimeType)) {
     return {
-      reponse: "J'ai bien reçu ton audio, mais ce format audio n'est pas encore supporté.",
+      reponse: "Format audio non supporté.",
       fiche: null,
       bypassFormat: true
     };
@@ -60,13 +167,7 @@ async function traiterAudio(user, msg, historique = []) {
 
   if (transcriptionNormale && estMessagePurementSocial(transcriptionNormale)) {
     const simple = construireReponseHumaineSimple(user, transcriptionNormale, historique);
-    if (simple) {
-      return {
-        reponse: simple,
-        fiche: null,
-        bypassFormat: true
-      };
-    }
+    if (simple) return { reponse: simple, fiche: null, bypassFormat: true };
   }
 
   if (analyse.type === "social") {
@@ -78,20 +179,11 @@ async function traiterAudio(user, msg, historique = []) {
     };
   }
 
-  let reponse = "";
+  let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique);
 
-  try {
-    reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique);
-  } catch (e) {
-    reponse = "";
-  }
-
-  if (!reponse || !String(reponse).trim()) {
-    return {
-      reponse: "J'ai bien reçu ton audio.\n\nJe n'arrive pas encore à l'analyser correctement.",
-      fiche: null,
-      bypassFormat: true
-    };
+  if (!reponse || !reponse.trim()) {
+    reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
+    return { reponse, fiche: null, bypassFormat: true };
   }
 
   if (!String(reponse).toLowerCase().includes("audio")) {
@@ -170,3 +262,7 @@ module.exports = {
   traiterImage,
   processIncomingMessage
 };
+
+
+ 
+
