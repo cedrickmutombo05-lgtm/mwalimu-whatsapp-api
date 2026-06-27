@@ -103,7 +103,15 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     analyse.intention === "geographie_rdc" ||
     estQuestionGeographieRDC(texteUtilisateur, fiche)
   ) {
-    consigne += "\nQuestion géographique/administrative : sois précis et complet.";
+   
+consigne += `
+Question géographique/administrative RDC :
+- Utilise Google Search avant de répondre.
+- Ne confonds jamais ville, chef-lieu et territoire.
+- Si l'élève demande les territoires d'une province, donne uniquement les territoires.
+- Ne cite pas une ville comme territoire.
+- Si tu n'es pas certain, dis clairement : "Je dois vérifier cette liste."
+`; 
   }
 
   if (antiBoucle.consigne) {
