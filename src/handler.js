@@ -25,7 +25,7 @@ const {
 } = require("./ai");
 
 async function traiterTexte(ctx) {
-  return { handled: false, reponse: "", fiche: null, bypassFormat: false };
+  return { handled: false, reponse: "", fiche: null, bypassFormat: true };
 }
 
 async function traiterAudio(user, msg, historique = []) {
@@ -64,7 +64,7 @@ async function traiterAudio(user, msg, historique = []) {
       return {
         reponse: `J'ai bien reçu ton audio.\n\n${simple}`,
         fiche: null,
-        bypassFormat: false
+        bypassFormat: true
       };
     }
   }
@@ -74,7 +74,7 @@ async function traiterAudio(user, msg, historique = []) {
     return {
       reponse: `J'ai bien reçu ton audio.\n\n${simple || "Avec plaisir 😊"}`,
       fiche: null,
-      bypassFormat: false
+      bypassFormat: true
     };
   }
 
