@@ -97,9 +97,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
   if (analyse.intention === "juridique") {
     
-
-
-if (analyse.intention === "juridique") {
   consigne += `
 Question juridique :
 - Utilise obligatoirement Google Search.
