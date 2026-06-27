@@ -97,15 +97,17 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
   if (analyse.intention === "juridique") {
     
+
 consigne += `
 Question juridique :
-- Utilise obligatoirement Google Search avant de répondre.
-- N'invente jamais un article de loi.
-- Si l'élève demande le contenu exact d'un article, réponds seulement si le texte est vérifié.
-- Si le texte n'est pas certain, dis : "Je dois vérifier le texte exact de cet article."
-- Ne mets jamais de citation entre guillemets si tu n'es pas sûr du texte exact.
+- Utilise obligatoirement Google Search.
+- Si la question porte sur un article, cite d'abord l'article, puis explique ensuite.
+- Ordre obligatoire : 1) Texte de l'article 2) Explication pédagogique 3) Exemple simple 4) Consolidation.
+- N'invente jamais un numéro d'article ni son contenu.
+- Si le texte exact n'est pas vérifié, dis : "Je dois vérifier le texte exact de cet article."
+- Réponds comme un professeur de droit expérimenté.
 `;
-  }
+  
 
   if (
     analyse.intention === "geographie_rdc" ||
