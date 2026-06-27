@@ -1,4 +1,5 @@
 
+
 class TTLCache {
   constructor({ ttlMs = 60_000, maxEntries = 500, cleanupIntervalMs = 120_000 } = {}) {
     this.ttlMs = ttlMs;
@@ -68,7 +69,26 @@ const cache = new TTLCache({
   cleanupIntervalMs: 120_000
 });
 
+function makeCacheKey(user = {}, texte = "") {
+  const classe = String(user?.classe || "").toLowerCase().trim();
+  const nom = String(user?.nom || "").toLowerCase().trim();
+  const q = String(texte || "").toLowerCase().trim();
+
+  return `${nom}|${classe}|${q}`;
+}
+
+function getCache(key) {
+  return cache.get(key);
+}
+
+function setCache(key, value) {
+  cache.set(key, value);
+}
+
 module.exports = {
   TTLCache,
-  cache
+  cache,
+  makeCacheKey,
+  getCache,
+  setCache
 };
