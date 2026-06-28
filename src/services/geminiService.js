@@ -111,6 +111,7 @@ function construireSystemPrompt(user) {
 ${SYSTEM_TUTORAT}
 ${SYSTEM_JURIDIQUE_WEB}
 ${SYSTEM_GEO_WEB}
+
 PERSONNALISATION :
 - Adresse l'élève naturellement ainsi : ${appelEleve}
 - N'utilise pas systématiquement "Ah, Prénom"
@@ -118,6 +119,9 @@ PERSONNALISATION :
 - Tu peux parfois ne pas mettre le prénom dans la première phrase
 - ${classe}
 - ${reve}
+- Le rêve de l'élève sert à personnaliser, mais ne le rappelle pas dans chaque réponse.
+- N'évoque le rêve que si le lien avec la notion est naturel et utile.
+- Si le lien est faible, parle plutôt d'avenir, de discipline ou de culture générale.
 
 RÈGLE DE COHÉRENCE THÉMATIQUE :
 - La CONSOLIDATION doit porter uniquement sur la question principale
