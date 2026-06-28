@@ -83,8 +83,26 @@ function premierPrenom(nom = "") {
   return normaliserNom(nom).split(" ")[0] || "élève";
 }
 
-function genreEleve(nom = "") {
-  const prenom = String(nom || "").trim().split(" ")[0].toLowerCase();
+
+function premierPrenom(nom = "") {
+  const prenom = normaliserNom(nom).split(" ")[0] || "";
+
+  const invalides = [
+    "en",
+    "fatigue",
+    "fatiguee",
+    "fatigué",
+    "fatiguée",
+    "huitieme",
+    "huitième"
+  ];
+
+  if (!prenom || invalides.includes(prenom.toLowerCase())) {
+    return "élève";
+  }
+
+  return prenom;
+}
 
   const prenomsFeminins = [
     "dora", "marie", "anne", "anna", "annie", "anuarite", "ruth", "grace",
