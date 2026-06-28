@@ -41,7 +41,32 @@ const {
   construireReponseDbWebIa
 } = require("./tutor");
 
-async function traiterTexte(user, texteUtilisateur, historique) {
+async function traiterTexte(user, texteUtilisateur, historique) { 
+  
+  const prenomActuel = premierPrenom(user?.nom || "");
+  const classeActuelle = String(user?.classe || "").trim();
+
+  if (!prenomActuel || prenomActuel === "élève") {
+    return {
+      reponse: `Bonsoir 😊 Avant de commencer, dis-moi ton prénom.
+
+Exemple :
+Je m'appelle Dora`,
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  if (!classeActuelle) {
+    return {
+      reponse: `Merci **${prenomActuel}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.
+
+Exemple :
+Je suis en huitième`,
+      fiche: null,
+      bypassFormat: true
+    };
+  }
   // 1. Si l'élève choisit une matière, on reste en conversation sociale
   if (estChoixMatiere(texteUtilisateur)) {
     const reponse = construireReponseChoixMatiere(user, texteUtilisateur);
