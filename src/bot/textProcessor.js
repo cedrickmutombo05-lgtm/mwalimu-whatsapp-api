@@ -1,4 +1,5 @@
 
+
 const { logInfo } = require("../core/logger");
 
 const {
@@ -16,6 +17,8 @@ const {
 } = require("../db");
 
 const {
+  estChoixMatiere,
+  construireReponseChoixMatiere,
   estMessagePurementSocial,
   estSecondTourSalutation,
   genererRepriseApresBienEtre,
@@ -39,19 +42,42 @@ const {
 } = require("./tutor");
 
 async function traiterTexte(user, texteUtilisateur, historique) {
-  if (estSecondTourSalutation(historique, texteUtilisateur)) {
-    const reponse = genererRepriseApresBienEtre(user);
-    return { reponse, fiche: null, bypassFormat: true };
+  // 1. Si l'élève choisit une matière, on reste en conversation sociale
+  if (estChoixMatiere(texteUtilisateur)) {
+    const reponse = construireReponseChoixMatiere(user, texteUtilisateur);
+
+    return {
+      reponse,
+      fiche: null,
+      bypassFormat: true
+    };
   }
 
+  // 2. Si Mwalimu a demandé "comment vas-tu ?" et l'élève répond, on répond humainement
+  if (estSecondTourSalutation(historique, texteUtilisateur)) {
+    const reponse = genererRepriseApresBienEtre(user);
+
+    return {
+      reponse,
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  // 3. Messages sociaux simples : pas de VÉCU / SAVOIR / INSPIRATION / CONSOLIDATION
   if (estMessagePurementSocial(texteUtilisateur)) {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
 
     if (reponseSimple) {
-      return { reponse: reponseSimple, fiche: null, bypassFormat: true };
+      return {
+        reponse: reponseSimple,
+        fiche: null,
+        bypassFormat: true
+      };
     }
   }
 
+  // 4. Si la conversation pédagogique n'a pas encore commencé
   const conversationDemarree = historique.some((m) =>
     m.role === "user" && estQuestionAcademique(m.content || "")
   );
@@ -66,9 +92,14 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       `Alors **${prenom}**, par quoi veux-tu commencer ? Un exercice ? Une leçon ? Dis-moi ce qui te tient à cœur.`
     ];
 
-    return { reponse: pick(relances), fiche: null, bypassFormat: true };
+    return {
+      reponse: pick(relances),
+      fiche: null,
+      bypassFormat: true
+    };
   }
 
+  // 5. Cache pédagogique
   const cacheKey = makeCacheKey(user, texteUtilisateur);
   const cached = getCache(cacheKey);
 
@@ -78,7 +109,11 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       cacheKey
     });
 
-    return { reponse: cached, fiche: null, bypassFormat: false };
+    return {
+      reponse: cached,
+      fiche: null,
+      bypassFormat: false
+    };
   }
 
   let analyse = {
@@ -109,7 +144,18 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     texteMin.includes("province") ||
     texteMin.includes("histoire") ||
     texteMin.includes("indépendance") ||
-    texteMin.includes("colonisation");
+    texteMin.includes("colonisation") ||
+    texteMin.includes("biologie") ||
+    texteMin.includes("microbiologie") ||
+    texteMin.includes("civisme") ||
+    texteMin.includes("citoyenneté") ||
+    texteMin.includes("citoyennete") ||
+    texteMin.includes("étude du milieu") ||
+    texteMin.includes("etude du milieu") ||
+    texteMin.includes("système métrique") ||
+    texteMin.includes("systeme metrique") ||
+    texteMin.includes("formes géométriques") ||
+    texteMin.includes("formes geometriques");
 
   if (besoinAnalyseIA) {
     analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
