@@ -55,17 +55,17 @@ function supprimerDoublonsLignes(texte = "") {
 
 function normaliserBalisesMwalimu(texte = "") {
   return String(texte || "")
-    .replace(/🔵\s*\*?\*?\[VÉCU\]\*?\*?\s*:?\s*/gi, "🔵 [VÉCU]\n")
-    .replace(/🟡\s*\*?\*?\[SAVOIR\]\*?\*?\s*:?\s*/gi, "🟡 [SAVOIR]\n")
-    .replace(/🔴\s*\*?\*?\[INSPIRATION\]\*?\*?\s*:?\s*/gi, "🔴 [INSPIRATION]\n")
-    .replace(/❓\s*\*?\*?\[CONSOLIDATION\]\*?\*?\s*:?\s*/gi, "❓ [CONSOLIDATION]\n")
+    .replace(/🔵\s*\*?\*?\[?\s*VÉCU\s*\]?\*?\*?\s*:?\s*/gi, "🔵 [VÉCU]\n")
+    .replace(/🟡\s*\*?\*?\[?\s*SAVOIR\s*\]?\*?\*?\s*:?\s*/gi, "🟡 [SAVOIR]\n")
+    .replace(/🔴\s*\*?\*?\[?\s*INSPIRATION\s*\]?\*?\*?\s*:?\s*/gi, "🔴 [INSPIRATION]\n")
+    .replace(/❓\s*\*?\*?\[?\s*CONSOLIDATION\s*\]?\*?\*?\s*:?\s*/gi, "❓ [CONSOLIDATION]\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function supprimerBlocsAutomatiquesFaibles(texte = "") {
   return String(texte || "")
-    .replace(/🟡\s*\[SAVOIR\]\s*\n?Voici l'idée essentielle à retenir\.?/gi, "")
+    .replace(/🟡\s*\[SAVOIR\]\s*\n?Voici l'idée essentielle\.?/gi, "")
     .replace(/🔴\s*\[INSPIRATION\]\s*\n?Une notion bien comprise te rend plus solide\.?/gi, "")
     .replace(/❓\s*\[CONSOLIDATION\]\s*\n?Dis-moi maintenant ce que tu retiens\.?/gi, "")
     .replace(/\n{3,}/g, "\n\n")
@@ -120,6 +120,7 @@ function blocEstPertinent(bloc = "") {
   if (b.length < 25) return false;
   if (/le\/la\s+tu peux me donner/i.test(b)) return false;
   if (/règle de image/i.test(b)) return false;
+  if (/lié à province/i.test(b) && !/province/i.test(b)) return false;
 
   return true;
 }
@@ -129,13 +130,18 @@ function construireQuestionsConsolidationCiblee(question = "", corps = "", sujet
   const notion = sujet && sujet.length > 3 ? sujet : "cette notion";
 
   const modeles = {
-    droit: `Explique avec tes mots l'idée principale de ${notion}.`,
+    droit: `Explique avec tes mots l'idée juridique principale de ${notion}.`,
     geographie: `Donne un exemple concret lié à ${notion}.`,
     histoire: `Quelle idée importante retiens-tu de ${notion} ?`,
-    math: `Quelle est la première étape à suivre pour résoudre ce type d'exercice ?`,
+    math: `Quelle est la première étape à suivre pour résoudre ou comprendre ${notion} ?`,
     physique: `Quelle grandeur ou quelle formule faut-il d'abord identifier ?`,
     chimie: `Quelle idée essentielle faut-il retenir ici ?`,
     francais: `Donne un autre exemple simple qui illustre cette notion.`,
+    sciences: `Quelle idée importante retiens-tu sur le vivant ou la nature ?`,
+    biologie: `Explique avec tes mots ce que tu retiens de cette notion de biologie.`,
+    microbiologie: `Cite un exemple simple lié aux microbes, aux bactéries ou aux virus.`,
+    civisme: `Quel comportement citoyen peut-on retenir de cette leçon ?`,
+    etude_milieu: `Donne un exemple simple tiré de ton milieu de vie.`,
     general: `Résume l'idée principale avec tes propres mots.`
   };
 
@@ -175,6 +181,12 @@ function choisirCitationFinale(question = "", corps = "") {
   if (matiere === "math") return pick(CITATIONS.mathematiques);
   if (matiere === "physique" || matiere === "chimie") return pick(CITATIONS.sciences);
   if (matiere === "francais") return pick(CITATIONS.francais);
+  if (matiere === "sciences" || matiere === "biologie" || matiere === "microbiologie") return pick(CITATIONS.sciences);
+  if (matiere === "civisme") return pick(CITATIONS.civisme);
+
+  if (matiere === "etude_milieu") {
+    return "***« Observer son milieu, c'est apprendre à mieux vivre et mieux servir sa communauté. »***";
+  }
 
   return pick(CITATIONS.general);
 }
@@ -185,26 +197,57 @@ function construireVecuNaturel(user = {}, question = "", historique = []) {
   const matiere = detecterMatierePrincipale(question, "");
 
   if (estMessageRelationnelSimple(question)) {
-    return `🔵 [VÉCU]\nJe te lis, ${prenom}.`;
+    return `🔵 [VÉCU]
+Je te lis, ${prenom}.`;
   }
 
   if (sujetMemoire) {
-    return `🔵 [VÉCU]\nD'accord ${prenom}, reprenons cela calmement.`;
+    return `🔵 [VÉCU]
+D'accord ${prenom}, reprenons cela calmement.`;
   }
 
   if (matiere === "droit") {
-    return `🔵 [VÉCU]\nD'accord ${prenom}, regardons cette notion de droit simplement.`;
+    return `🔵 [VÉCU]
+D'accord ${prenom}, regardons cette notion de droit simplement.`;
   }
 
   if (matiere === "geographie") {
-    return `🔵 [VÉCU]\nD'accord ${prenom}, regardons ce point de géographie calmement.`;
+    return `🔵 [VÉCU]
+D'accord ${prenom}, regardons ce point de géographie calmement.`;
   }
 
   if (matiere === "histoire") {
-    return `🔵 [VÉCU]\nD'accord ${prenom}, prenons ce sujet d'histoire simplement.`;
+    return `🔵 [VÉCU]
+D'accord ${prenom}, prenons ce sujet d'histoire simplement.`;
   }
 
-  return `🔵 [VÉCU]\nD'accord ${prenom}, voyons cela simplement.`;
+  if (matiere === "math") {
+    return `🔵 [VÉCU]
+D'accord ${prenom}, regardons cette notion de mathématiques pas à pas.`;
+  }
+
+  if (matiere === "biologie") {
+    return `🔵 [VÉCU]
+D'accord ${prenom}, observons cette notion du vivant simplement.`;
+  }
+
+  if (matiere === "microbiologie") {
+    return `🔵 [VÉCU]
+D'accord ${prenom}, regardons cette notion de microbiologie avec calme.`;
+  }
+
+  if (matiere === "civisme") {
+    return `🔵 [VÉCU]
+D'accord ${prenom}, voyons cette leçon de civisme avec des exemples simples.`;
+  }
+
+  if (matiere === "etude_milieu") {
+    return `🔵 [VÉCU]
+D'accord ${prenom}, partons de ton milieu de vie pour comprendre.`;
+  }
+
+  return `🔵 [VÉCU]
+D'accord ${prenom}, voyons cela simplement.`;
 }
 
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
@@ -239,9 +282,12 @@ function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
   if (matiere === "droit") return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
   if (matiere === "geographie") return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
   if (matiere === "histoire") return "👉 Si tu veux, nous pouvons prendre un autre point d'histoire ensuite.";
-  if (matiere === "math" || matiere === "physique" || matiere === "chimie") {
-    return "👉 Essaie maintenant de reformuler l'idée ou de faire une étape, puis envoie-moi ta réponse.";
-  }
+  if (matiere === "math") return "👉 Envoie-moi un petit exercice, et nous allons le résoudre étape par étape.";
+  if (matiere === "physique" || matiere === "chimie") return "👉 Essaie maintenant de reformuler l'idée ou de faire une étape, puis envoie-moi ta réponse.";
+  if (matiere === "biologie") return "👉 Si tu veux, nous pouvons continuer avec une autre notion de biologie.";
+  if (matiere === "microbiologie") return "👉 Si tu veux, nous pouvons revoir un exemple de microbe, de bactérie ou de virus.";
+  if (matiere === "civisme") return "👉 Si tu veux, nous pouvons continuer avec un exemple concret de citoyenneté.";
+  if (matiere === "etude_milieu") return "👉 Si tu veux, nous pouvons prendre un exemple dans ton quartier, ton école ou ta famille.";
 
   return "👉 Dis-moi maintenant ce que tu retiens en une phrase simple.";
 }
