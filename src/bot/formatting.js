@@ -175,8 +175,10 @@ function nettoyerReponseIA(texte = "") {
   t = t.replace(/^\s*👉\s*Si tu veux.*$/gim, "");
   t = t.replace(/^\s*\*\*\*«[^»]+»\*\*\*\s*$/gm, "");
 
-  t = normaliserBalisesMwalimu(t);
-  t = supprimerBlocsAutomatiquesFaibles(t);
+ 
+t = normaliserBalisesMwalimu(t);
+t = supprimerIntroAvantPremierBloc(t);
+t = supprimerBlocsAutomatiquesFaibles(t); 
 
   return supprimerDoublonsLignes(t);
 }
@@ -462,7 +464,9 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
   corps = corps.replace(/^👉\s*.*$/gim, "");
   corps = corps.replace(/^🌟\s*Mot d['’]encouragement\s*:.*$/gim, "");
   corps = supprimerBlocsAutomatiquesFaibles(corps);
-  corps = normaliserBalisesMwalimu(corps);
+  
+corps = normaliserBalisesMwalimu(corps);
+corps = supprimerIntroAvantPremierBloc(corps);
 
   const citationUnique = choisirCitationFinale(question, corps);
   const ouverture = choisirOuvertureContextuelle(corps, user, question);
