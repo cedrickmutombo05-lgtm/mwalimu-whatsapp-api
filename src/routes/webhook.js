@@ -4,7 +4,7 @@ const crypto = require("crypto");
 
 const { env } = require("../config/env");
 const { logError, logWarn, logInfo } = require("../core/logger");
-const { traiterMessageEntrant } = require("../bot/pipeline");
+const { traiterMessageEntrant } = require("../bot/pipeline.js");
 
 const router = express.Router();
 
