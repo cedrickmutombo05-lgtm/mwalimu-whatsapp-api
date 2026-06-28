@@ -264,7 +264,7 @@ function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
 }
 
 function choisirCitationFinale(question = "", corps = "") {
-  const matiere = detecterMatierePrincipale(question, corps);
+  const matiere = detecterMatierePrincipale(question, "");
 
   if (matiere === "droit") {
     return "***« Un droit compris est un droit mieux défendu, pour soi et pour la nation. »***";
@@ -370,7 +370,7 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
 }
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
-  const matiere = detecterMatierePrincipale(question, reponse);
+  const matiere = detecterMatierePrincipale(question, "");
 
   if (estMessageRelationnelSimple(question)) return "";
   if (matiere === "droit") return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
