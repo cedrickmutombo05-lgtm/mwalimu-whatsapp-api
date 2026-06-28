@@ -1,6 +1,15 @@
 
+
 const { HEADER_MWALIMU, CITATIONS } = require("../constants/messages");
-const { REGEX_HEADER_MWALIMU, REGEX_BLOC_CONSOLIDATION } = require("../constants/regex");
+
+const {
+  REGEX_HEADER_MWALIMU,
+  REGEX_BLOC_CONSOLIDATION,
+  REGEX_VECU,
+  REGEX_SAVOIR,
+  REGEX_INSPIRATION,
+  REGEX_CONSOLIDATION
+} = require("../constants/regex");
 
 const {
   MATIERE_MATH,
@@ -18,9 +27,7 @@ const {
   simplifierPresentationScientifique
 } = require("../core");
 
-const {
-  estMessageRelationnelSimple
-} = require("./social");
+const { estMessageRelationnelSimple } = require("./social");
 
 const {
   extraireSujetMemoire,
@@ -31,15 +38,12 @@ const {
 } = require("./detectors");
 
 function supprimerDoublonsLignes(texte = "") {
-  if (!texte) return "";
-
-  const lignes = String(texte).split("\n").map((l) => l.trimEnd());
+  const lignes = String(texte || "").split("\n").map((l) => l.trimEnd());
   const resultat = [];
   let precedent = "";
 
   for (const ligne of lignes) {
     const normalisee = ligne.trim().toLowerCase();
-
     if (normalisee && normalisee === precedent) continue;
 
     resultat.push(ligne);
@@ -49,17 +53,40 @@ function supprimerDoublonsLignes(texte = "") {
   return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function nettoyerReponseIA(texte = "") {
-  if (!texte) return "";
+function normaliserBalisesMwalimu(texte = "") {
+  return String(texte || "")
+    .replace(/🔵\s*\*?\*?\[VÉCU\]\*?\*?\s*:?\s*/gi, "🔵 [VÉCU]\n")
+    .replace(/🟡\s*\*?\*?\[SAVOIR\]\*?\*?\s*:?\s*/gi, "🟡 [SAVOIR]\n")
+    .replace(/🔴\s*\*?\*?\[INSPIRATION\]\*?\*?\s*:?\s*/gi, "🔴 [INSPIRATION]\n")
+    .replace(/❓\s*\*?\*?\[CONSOLIDATION\]\*?\*?\s*:?\s*/gi, "❓ [CONSOLIDATION]\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
-  let t = String(texte);
+function supprimerBlocsAutomatiquesFaibles(texte = "") {
+  return String(texte || "")
+    .replace(/🟡\s*\[SAVOIR\]\s*\n?Voici l'idée essentielle à retenir\.?/gi, "")
+    .replace(/🔴\s*\[INSPIRATION\]\s*\n?Une notion bien comprise te rend plus solide\.?/gi, "")
+    .replace(/❓\s*\[CONSOLIDATION\]\s*\n?Dis-moi maintenant ce que tu retiens\.?/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function nettoyerReponseIA(texte = "") {
+  let t = String(texte || "");
 
   t = t.replace(REGEX_HEADER_MWALIMU, "");
-  t = t.replace(/^\s*🌟\s*Mot d['']encouragement\s*:\s*.*$/gim, "");
+  t = t.replace(/^[-─]{5,}$/gm, "");
+  t = t.replace(/^\s*🌟\s*Mot d['’]encouragement\s*:\s*.*$/gim, "");
   t = t.replace(/^\s*👉\s*Je reste disponible.*$/gim, "");
   t = t.replace(/^\s*👉\s*Continue à me parler.*$/gim, "");
+  t = t.replace(/^\s*👉\s*Si tu veux.*$/gim, "");
+  t = t.replace(/^\s*\*\*\*«[^»]+»\*\*\*\s*$/gm, "");
 
-  return supprimerDoublonsLignes(t).replace(/\n{3,}/g, "\n\n").trim();
+  t = normaliserBalisesMwalimu(t);
+  t = supprimerBlocsAutomatiquesFaibles(t);
+
+  return supprimerDoublonsLignes(t);
 }
 
 function nettoyerSelonMatiere(texte = "", matiere = MATIERE_GENERAL) {
@@ -87,40 +114,37 @@ function appliquerLes4EtapesScientifiques(reponse = "", question = "", fiche = n
 }
 
 function blocEstPertinent(bloc = "") {
-  const lignes = bloc.split("\n").map((l) => l.trim());
-  const nbQuestions = lignes.filter((l) => l.endsWith("?")).length;
+  const b = String(bloc || "").trim();
 
-  if (nbQuestions === 0) return false;
+  if (!b.includes("?")) return false;
+  if (b.length < 25) return false;
+  if (/le\/la\s+tu peux me donner/i.test(b)) return false;
+  if (/règle de image/i.test(b)) return false;
 
-  const lignesSignificatives = lignes.filter((l) => l && !l.startsWith("A.") && !l.startsWith("B."));
-  return lignesSignificatives.some((l) => l.length > 5);
+  return true;
 }
 
 function construireQuestionsConsolidationCiblee(question = "", corps = "", sujet = "") {
   const matiere = detecterMatierePrincipale(question, corps);
-  const notion = sujet || extraireSujetMemoire(question) || "cette notion";
+  const notion = sujet && sujet.length > 3 ? sujet : "cette notion";
 
   const modeles = {
-    droit: `Pour t'assurer d'avoir bien compris : peux-tu m'expliquer en une phrase ce qu'est le/la ${notion} ?`,
-    geographie: `Si tu devais citer un exemple concret lié à ${notion}, lequel choisirais-tu ?`,
-    histoire: `Quelle est, selon toi, la conséquence la plus importante de ${notion} ?`,
-    math: `Essaie de m'expliquer la méthode que tu utiliserais pour résoudre un problème de type "${notion}".`,
-    physique: `Comment pourrais-tu vérifier expérimentalement la notion de ${notion} ?`,
-    chimie: `Quelle erreur fréquente un élève pourrait-il commettre en travaillant sur ${notion} ?`,
-    francais: `Donne-moi un autre exemple de phrase qui illustre la règle de ${notion}.`,
-    general: `Résume avec tes mots l'idée principale de ${notion}.`
+    droit: `Explique avec tes mots l'idée principale de ${notion}.`,
+    geographie: `Donne un exemple concret lié à ${notion}.`,
+    histoire: `Quelle idée importante retiens-tu de ${notion} ?`,
+    math: `Quelle est la première étape à suivre pour résoudre ce type d'exercice ?`,
+    physique: `Quelle grandeur ou quelle formule faut-il d'abord identifier ?`,
+    chimie: `Quelle idée essentielle faut-il retenir ici ?`,
+    francais: `Donne un autre exemple simple qui illustre cette notion.`,
+    general: `Résume l'idée principale avec tes propres mots.`
   };
 
-  const questionReflexion = modeles[matiere] || modeles.general;
-
   return `❓ [CONSOLIDATION]
-${questionReflexion}`;
+${modeles[matiere] || modeles.general}`;
 }
 
 function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
   let t = String(corps || "").trim();
-
-  if (!t) return t;
 
   const existingBloc = t.match(REGEX_BLOC_CONSOLIDATION)?.[0] || "";
 
@@ -128,12 +152,12 @@ function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
     return t;
   }
 
-  const newBloc = construireQuestionsConsolidationCiblee(question, t, sujet);
+  const nouveauBloc = construireQuestionsConsolidationCiblee(question, t, sujet);
 
   if (existingBloc) {
-    t = t.replace(REGEX_BLOC_CONSOLIDATION, newBloc);
+    t = t.replace(REGEX_BLOC_CONSOLIDATION, nouveauBloc);
   } else {
-    t = `${t}\n\n${newBloc}`;
+    t = `${t}\n\n${nouveauBloc}`;
   }
 
   return t.replace(/\n{3,}/g, "\n\n").trim();
@@ -142,18 +166,17 @@ function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
 function choisirCitationFinale(question = "", corps = "") {
   const matiere = detecterMatierePrincipale(question, corps);
 
-  const citationsMixtes = {
-    droit: "***« Un droit compris est un droit mieux défendu, pour soi et pour la nation. »***",
-    geographie: "***« Connaître les communes de sa ville, c'est déjà participer à la vie de la cité. »***",
-    histoire: "***« Comprendre le passé de son pays, c'est honorer ceux qui l'ont bâti. »***",
-    math: "***« Un esprit rigoureux en mathématiques est un esprit prêt à servir avec précision. »***",
-    physique: "***« La physique nous apprend à observer le monde ; la citoyenneté, à l'améliorer. »***",
-    chimie: "***« La chimie transforme la matière, la détermination transforme le pays. »***",
-    francais: "***« Maîtriser sa langue, c'est porter haut la culture de sa nation. »***",
-    general: "***« Apprendre aujourd'hui, c'est bâtir un Congo plus fort demain. »***"
-  };
+  if (matiere === "droit") {
+    return "***« Un droit compris est un droit mieux défendu, pour soi et pour la nation. »***";
+  }
 
-  return citationsMixtes[matiere] || citationsMixtes.general;
+  if (matiere === "geographie") return pick(CITATIONS.geographie);
+  if (matiere === "histoire") return pick(CITATIONS.histoire);
+  if (matiere === "math") return pick(CITATIONS.mathematiques);
+  if (matiere === "physique" || matiere === "chimie") return pick(CITATIONS.sciences);
+  if (matiere === "francais") return pick(CITATIONS.francais);
+
+  return pick(CITATIONS.general);
 }
 
 function construireVecuNaturel(user = {}, question = "", historique = []) {
@@ -162,58 +185,39 @@ function construireVecuNaturel(user = {}, question = "", historique = []) {
   const matiere = detecterMatierePrincipale(question, "");
 
   if (estMessageRelationnelSimple(question)) {
-    return `🔵 [VÉCU] : Je te lis, ${prenom}.`;
+    return `🔵 [VÉCU]\nJe te lis, ${prenom}.`;
   }
 
   if (sujetMemoire) {
-    return pick([
-      `🔵 [VÉCU] : D'accord ${prenom}, reprenons cela calmement.`,
-      `🔵 [VÉCU] : Très bien ${prenom}, nous revenons sur ce point.`,
-      `🔵 [VÉCU] : Allons-y doucement ${prenom}, reprenons ensemble.`
-    ]);
+    return `🔵 [VÉCU]\nD'accord ${prenom}, reprenons cela calmement.`;
   }
 
   if (matiere === "droit") {
-    return pick([
-      `🔵 [VÉCU] : D'accord ${prenom}, regardons cette notion de droit simplement.`,
-      `🔵 [VÉCU] : Très bien ${prenom}, prenons cette question juridique pas à pas.`,
-      `🔵 [VÉCU] : Voyons cela clairement ${prenom}.`
-    ]);
+    return `🔵 [VÉCU]\nD'accord ${prenom}, regardons cette notion de droit simplement.`;
   }
 
   if (matiere === "geographie") {
-    return pick([
-      `🔵 [VÉCU] : D'accord ${prenom}, regardons ce point de géographie calmement.`,
-      `🔵 [VÉCU] : Très bien ${prenom}, prenons cela pas à pas.`,
-      `🔵 [VÉCU] : Voyons cela simplement ${prenom}.`
-    ]);
+    return `🔵 [VÉCU]\nD'accord ${prenom}, regardons ce point de géographie calmement.`;
   }
 
   if (matiere === "histoire") {
-    return pick([
-      `🔵 [VÉCU] : D'accord ${prenom}, regardons cela comme un point d'histoire.`,
-      `🔵 [VÉCU] : Très bien ${prenom}, prenons ce sujet d'histoire simplement.`,
-      `🔵 [VÉCU] : Voyons cela calmement ${prenom}.`
-    ]);
+    return `🔵 [VÉCU]\nD'accord ${prenom}, prenons ce sujet d'histoire simplement.`;
   }
 
-  return pick([
-    `🔵 [VÉCU] : D'accord ${prenom}, voyons cela simplement.`,
-    `🔵 [VÉCU] : Très bien ${prenom}, prenons cette question pas à pas.`,
-    `🔵 [VÉCU] : Je t'accompagne ${prenom}. Regardons l'idée essentielle.`,
-    `🔵 [VÉCU] : Bien ${prenom}, allons à l'essentiel.`
-  ]);
+  return `🔵 [VÉCU]\nD'accord ${prenom}, voyons cela simplement.`;
 }
 
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
-  let t = String(corps || "").trim();
+  let t = normaliserBalisesMwalimu(corps);
 
-  const aVecu = /🔵\s*\[VÉCU\]/i.test(t);
-  const aSavoir = /🟡\s*\[SAVOIR\]/i.test(t);
-  const aInspiration = /🔴\s*\[INSPIRATION\]/i.test(t);
-  const aConsolidation = /❓\s*\[CONSOLIDATION\]/i.test(t);
+  const aVecu = REGEX_VECU.test(t);
+  const aSavoir = REGEX_SAVOIR.test(t);
+  const aInspiration = REGEX_INSPIRATION.test(t);
+  const aConsolidation = REGEX_CONSOLIDATION.test(t);
 
-  if (aVecu && aSavoir && aInspiration && aConsolidation) return t;
+  if (aVecu && aSavoir && aInspiration && aConsolidation) {
+    return t;
+  }
 
   const morceaux = [];
 
@@ -221,18 +225,17 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
 
   morceaux.push(t);
 
-  if (!aSavoir) morceaux.push("🟡 [SAVOIR] : Voici l'idée essentielle à retenir.");
-  if (!aInspiration) morceaux.push("🔴 [INSPIRATION] : Une notion bien comprise te rend plus solide.");
-  if (!aConsolidation) morceaux.push("❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.");
+  if (!aSavoir) morceaux.push("🟡 [SAVOIR]\nVoici l'idée essentielle.");
+  if (!aInspiration) morceaux.push("🔴 [INSPIRATION]\nUne notion bien comprise te rend plus solide.");
+  if (!aConsolidation) morceaux.push("❓ [CONSOLIDATION]\nDis-moi ce que tu retiens en une phrase simple.");
 
   return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
   const matiere = detecterMatierePrincipale(question, reponse);
-  const q = String(question || "").toLowerCase();
 
-  if (estMessageRelationnelSimple(q)) return "";
+  if (estMessageRelationnelSimple(question)) return "";
   if (matiere === "droit") return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
   if (matiere === "geographie") return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
   if (matiere === "histoire") return "👉 Si tu veux, nous pouvons prendre un autre point d'histoire ensuite.";
@@ -249,23 +252,11 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
 
   if (estMessageRelationnelSimple(question)) return "";
 
-  if (
-    corps.includes("je n'arrive pas encore") ||
-    corps.includes("petit souci technique") ||
-    corps.includes("réessaie") ||
-    corps.includes("image plus nette") ||
-    corps.includes("message vocal plus clair")
-  ) {
-    return "🌟 Mot d'encouragement : Ne te décourage pas ; nous pouvons reprendre calmement.";
-  }
-
   const vraieReussite =
     q.includes("voici ma réponse") ||
     q.includes("ma réponse") ||
     q.includes("j'ai trouvé") ||
     q.includes("j'ai obtenu") ||
-    q.includes("cela donne") ||
-    q.includes("ça donne") ||
     q.includes("j'obtiens");
 
   if (
@@ -276,10 +267,6 @@ function choisirEncouragementContextuel(reponse = "", question = "") {
       corps.includes("juste"))
   ) {
     return "🌟 Mot d'encouragement : Bon travail ; continue avec cette rigueur.";
-  }
-
-  if (corps.includes("méthode") || corps.includes("explication") || corps.includes("à retenir")) {
-    return "🌟 Mot d'encouragement : Relis doucement ; une idée bien comprise reste mieux.";
   }
 
   return "🌟 Mot d'encouragement : Avance pas à pas ; comprendre calmement vaut mieux que se précipiter.";
@@ -295,17 +282,16 @@ function dedupeBlocFinal(texte = "") {
     const normalisee = ligne.trim().toLowerCase();
 
     if (!normalisee) {
-      if (resultat[resultat.length - 1] !== "") {
-        resultat.push("");
-      }
+      if (resultat[resultat.length - 1] !== "") resultat.push("");
       continue;
     }
 
     const estUnique =
+      normalisee.startsWith("🔴🟡🔵") ||
+      normalisee.startsWith("────────────────") ||
       normalisee.startsWith("👉 ") ||
       normalisee.startsWith("🌟 mot d'encouragement") ||
-      normalisee.startsWith("***«") ||
-      normalisee === "────────────────";
+      normalisee.startsWith("***«");
 
     if (estUnique) {
       if (uniques.has(normalisee)) continue;
@@ -330,30 +316,28 @@ function construireMessageFinal(user, reponseBrute, historique = [], question = 
 
   let corps = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
 
-  const sujetQuestion = extraireSujetMemoire(question);
+  corps = remplacerBlocConsolidation(corps, question, extraireSujetMemoire(question));
 
-  corps = remplacerBlocConsolidation(corps, question, sujetQuestion);
-
+  corps = corps.replace(REGEX_HEADER_MWALIMU, "");
+  corps = corps.replace(/^[-─]{5,}$/gm, "");
   corps = corps.replace(/^\s*\*\*\*«[^»]+»\*\*\*\s*$/gm, "");
-  corps = corps.replace(/^🌟\s*Mot d['']encouragement\s*:.*$/gim, "");
-  corps = corps.replace(/^👉\s*Je reste disponible.*$/gim, "");
-  corps = corps.replace(/^👉\s*Continue à me parler.*$/gim, "");
-  corps = corps.replace(/\n{3,}/g, "\n\n").trim();
+  corps = corps.replace(/^👉\s*.*$/gim, "");
+  corps = corps.replace(/^🌟\s*Mot d['’]encouragement\s*:.*$/gim, "");
+  corps = supprimerBlocsAutomatiquesFaibles(corps);
+  corps = normaliserBalisesMwalimu(corps);
 
   const citationUnique = choisirCitationFinale(question, corps);
   const ouverture = choisirOuvertureContextuelle(corps, user, question);
-  const encouragement = !/🌟/.test(corps) ? choisirEncouragementContextuel(corps, question) : "";
+  const encouragement = choisirEncouragementContextuel(corps, question);
 
-  const parties = [
+  return dedupeBlocFinal([
     HEADER_MWALIMU,
     "────────────────",
     corps,
     citationUnique,
     ouverture,
     encouragement
-  ].filter((part) => part && part.trim() !== "");
-
-  return dedupeBlocFinal(parties.join("\n"));
+  ].filter(Boolean).join("\n"));
 }
 
 function messageSecours(user, msgType = "message") {
@@ -361,17 +345,27 @@ function messageSecours(user, msgType = "message") {
 
   return `${HEADER_MWALIMU}
 ────────────────
-🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}, ${appel}.
-🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
-🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.
-❓ [CONSOLIDATION] : Réessaie dans un instant, ou reformule ta question plus simplement.
+🔵 [VÉCU]
+J'ai bien reçu ${messageTypeLisible(msgType)}, ${appel}.
+
+🟡 [SAVOIR]
+Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.
+
+🔴 [INSPIRATION]
+Même quand cela bloque un peu, on peut reprendre avec calme et méthode.
+
+❓ [CONSOLIDATION]
+Réessaie dans un instant, ou reformule ta question plus simplement.
+
+${pick(CITATIONS.general)}
 👉 Je reste à tes côtés.
-🌟 Mot d'encouragement : Nous pouvons reprendre calmement.
-${pick(CITATIONS.general)}`.replace(/\n{3,}/g, "\n\n").trim();
+🌟 Mot d'encouragement : Nous pouvons reprendre calmement.`;
 }
 
 module.exports = {
   supprimerDoublonsLignes,
+  normaliserBalisesMwalimu,
+  supprimerBlocsAutomatiquesFaibles,
   nettoyerReponseIA,
   nettoyerSelonMatiere,
   reformaterFinalSelonMatiere,
