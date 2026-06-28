@@ -63,7 +63,6 @@ function normaliserTexteRelationnel(texte = "") {
     .replace(/^dacc$/i, "d accord")
     .replace(/^ca vas$/i, "ca va")
     .replace(/^sa va$/i, "ca va")
-    .replace(/^cc$/i, "cc")
     .trim();
 
   return t;
@@ -78,11 +77,6 @@ function normaliserTexteMemoire(texte = "") {
     .replace(/\s+/g, " ")
     .trim();
 }
-
-function premierPrenom(nom = "") {
-  return normaliserNom(nom).split(" ")[0] || "élève";
-}
-
 
 function premierPrenom(nom = "") {
   const prenom = normaliserNom(nom).split(" ")[0] || "";
@@ -103,6 +97,9 @@ function premierPrenom(nom = "") {
 
   return prenom;
 }
+
+function genreEleve(nom = "") {
+  const prenom = String(nom || "").trim().split(" ")[0].toLowerCase();
 
   const prenomsFeminins = [
     "dora", "marie", "anne", "anna", "annie", "anuarite", "ruth", "grace",
@@ -149,12 +146,13 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
   t = t.replace(/\bAh,\s*\*\*[^*]+\*\*,?\s*/gi, "");
   t = t.replace(/\bAh,\s*[^,\n]+,?\s*/gi, "");
   t = t.replace(/\bc'est une excellente question qui nous emmène dans un tout autre domaine, celui de l'histoire\s*!?/gi, "");
- 
-t = t.replace(/\ben tant que\s+(future avocate|futur avocat),?\s*/gi, "");
-t = t.replace(/\bpour une\s+(future avocate|futur avocat)\s+comme toi\b/gi, "pour une personne qui apprend avec sérieux");
-t = t.replace(/\bpour un\s+(futur avocat)\s+comme toi\b/gi, "pour une personne qui apprend avec sérieux");
-t = t.replace(/\bfuture avocate\b/gi, "élève ambitieuse");
-t = t.replace(/\bfutur avocat\b/gi, "élève ambitieux"); 
+
+  t = t.replace(/\ben tant que\s+(future avocate|futur avocat),?\s*/gi, "");
+  t = t.replace(/\bpour une\s+(future avocate|futur avocat)\s+comme toi\b/gi, "pour une personne qui apprend avec sérieux");
+  t = t.replace(/\bpour un\s+(futur avocat)\s+comme toi\b/gi, "pour une personne qui apprend avec sérieux");
+  t = t.replace(/\bfuture avocate\b/gi, "élève ambitieuse");
+  t = t.replace(/\bfutur avocat\b/gi, "élève ambitieux");
+
   t = t.replace(/\bmon cher\b/gi, prenom);
   t = t.replace(/\bma chère\b/gi, prenom);
   t = t.replace(/\bcher élève\b/gi, prenom);
