@@ -283,7 +283,7 @@ function detecterMatiereChoisie(texte = "") {
     "travaillons",
     "on peut faire",
     "on peut etudier",
-    "on peut étudier"
+    "on peut étudier",
     
 "je voudrais etudier",
 "je voudrais étudier",
