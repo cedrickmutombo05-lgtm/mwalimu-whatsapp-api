@@ -284,7 +284,20 @@ function detecterMatiereChoisie(texte = "") {
     "on peut faire",
     "on peut etudier",
     "on peut étudier"
-  ];
+    
+"je voudrais etudier",
+"je voudrais étudier",
+"j aimerais etudier",
+"j'aimerais étudier",
+"je souhaite etudier",
+"je souhaite étudier",
+"me tente",
+"ca me tente",
+"ça me tente",
+"m interesse",
+"m intéresse",
+"m'intéresse",
+ ];
 
   const aIntentionChoix = intentionsChoix.some((mot) =>
     t.includes(normaliserSocial(mot))
