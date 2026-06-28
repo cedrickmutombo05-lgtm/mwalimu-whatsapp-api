@@ -131,8 +131,12 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
   t = t.replace(/\bAh,\s*\*\*[^*]+\*\*,?\s*/gi, "");
   t = t.replace(/\bAh,\s*[^,\n]+,?\s*/gi, "");
   t = t.replace(/\bc'est une excellente question qui nous emmène dans un tout autre domaine, celui de l'histoire\s*!?/gi, "");
-  t = t.replace(/\bfuture avocate\b/gi, "");
-  t = t.replace(/\bfutur avocat\b/gi, "");
+ 
+t = t.replace(/\ben tant que\s+(future avocate|futur avocat),?\s*/gi, "");
+t = t.replace(/\bpour une\s+(future avocate|futur avocat)\s+comme toi\b/gi, "pour une personne qui apprend avec sérieux");
+t = t.replace(/\bpour un\s+(futur avocat)\s+comme toi\b/gi, "pour une personne qui apprend avec sérieux");
+t = t.replace(/\bfuture avocate\b/gi, "élève ambitieuse");
+t = t.replace(/\bfutur avocat\b/gi, "élève ambitieux"); 
   t = t.replace(/\bmon cher\b/gi, prenom);
   t = t.replace(/\bma chère\b/gi, prenom);
   t = t.replace(/\bcher élève\b/gi, prenom);
