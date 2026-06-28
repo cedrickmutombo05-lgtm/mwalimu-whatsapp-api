@@ -7,8 +7,8 @@ const { env } = require("./src/config/env");
 const { initDB } = require("./src/db");
 const { logInfo, logError } = require("./src/core/logger");
 
-const webhookRoutes = require("./src/routes/webhook");
-const healthRoutes = require("./src/routes/health");
+const webhookRoutes = require("./src/routes/webhook.js");
+const healthRoutes = require("./src/routes/health.js");
 
 const { demarrerRappelMatinal } = require("./src/jobs/morningReminder");
 const { demarrerNettoyage } = require("./src/jobs/cleanup");
