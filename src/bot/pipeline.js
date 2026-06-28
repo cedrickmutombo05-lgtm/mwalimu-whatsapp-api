@@ -43,7 +43,7 @@ const {
 const {
   construireMessageFinal,
   messageSecours
-} = require("./formatting");
+} = require("./formatting.js");
 
 function extraireHistorique(user = {}) {
   if (Array.isArray(user?.historique)) return user.historique;
