@@ -148,6 +148,22 @@ function supprimerBlocsAutomatiquesFaibles(texte = "") {
     .trim();
 }
 
+function supprimerIntroAvantPremierBloc(texte = "") {
+  const t = String(texte || "").trim();
+
+  const positions = [
+    t.search(/🔵\s*\[VÉCU\]/i),
+    t.search(/🟡\s*\[SAVOIR\]/i),
+    t.search(/🔴\s*\[INSPIRATION\]/i),
+    t.search(/❓\s*\[CONSOLIDATION\]/i)
+  ].filter((i) => i >= 0);
+
+  if (!positions.length) return t;
+
+  const premierBloc = Math.min(...positions);
+
+  return t.slice(premierBloc).trim();
+}
 function nettoyerReponseIA(texte = "") {
   let t = String(texte || "");
 
