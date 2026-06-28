@@ -1,4 +1,5 @@
 
+
 const {
   nettoyer,
   normaliserNom,
@@ -10,6 +11,18 @@ const {
   updateUserField
 } = require("../db");
 
+const {
+  estMessagePurementSocial,
+  estChoixMatiere
+} = require("./social");
+
+function nettoyerClasse(classe = "") {
+  return normaliserNom(classe)
+    .replace(/[.!?]+$/g, "")
+    .replace(/\s+et\s+(je\s+)?(veux|voudrais|aimerais|souhaite|choisis|prends|vais)\b[\s\S]*$/i, "")
+    .trim();
+}
+
 function extraireNomDepuisMessage(texte = "") {
   const brut = String(texte || "").trim();
 
@@ -17,8 +30,7 @@ function extraireNomDepuisMessage(texte = "") {
     /je m['’]?appelle\s+(.+)/i,
     /mon nom est\s+(.+)/i,
     /mon prénom est\s+(.+)/i,
-    /moi c['’]?est\s+(.+)/i,
-    /je suis\s+([a-zA-ZÀ-ÿ\s'-]{2,60})$/i
+    /moi c['’]?est\s+(.+)/i
   ];
 
   for (const pattern of patterns) {
@@ -44,11 +56,11 @@ function extraireClasseDepuisMessage(texte = "") {
   for (const pattern of patterns) {
     const match = brut.match(pattern);
     if (match?.[1]) {
-      return normaliserNom(match[1]).replace(/[.!?]+$/g, "");
+      return nettoyerClasse(match[1]);
     }
   }
 
-  const direct = brut.match(/\b([1-6](ère|ere|e|ème|eme)?\s*(primaire|secondaire|humanités|humanites)|7e|8e)\b/i);
+  const direct = brut.match(/\b(1ère|1ere|1e|2e|3e|4e|5e|6e|7e|8e|huitième|huitieme|septième|septieme|sixième|sixieme|primaire|secondaire|humanités|humanites)\b/i);
   if (direct?.[0]) return normaliserNom(direct[0]);
 
   return "";
@@ -90,14 +102,21 @@ function detecterCommandeSimple(texte = "") {
 }
 
 async function traiterIntentionsProfil(user = {}, texte = "") {
-  const nom = extraireNomDepuisMessage(texte);
-  if (nom && nom.length >= 2 && nom.length <= 80) {
-    await updateUserField(user.phone, "nom", nom);
-
+  // Si l'élève choisit une matière, ce n'est pas une mise à jour de profil
+  if (estChoixMatiere(texte)) {
     return {
-      handled: true,
-      user: { ...user, nom },
-      reponse: `Enchanté **${premierPrenom(nom)}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`
+      handled: false,
+      user,
+      reponse: ""
+    };
+  }
+
+  // Si c'est social, ne jamais l'interpréter comme un nom
+  if (estMessagePurementSocial(texte)) {
+    return {
+      handled: false,
+      user,
+      reponse: ""
     };
   }
 
@@ -108,7 +127,18 @@ async function traiterIntentionsProfil(user = {}, texte = "") {
     return {
       handled: true,
       user: { ...user, classe },
-      reponse: `Très bien **${premierPrenom(user.nom || "élève")}**. J'ai noté ta classe : **${classe}**. Tu peux maintenant m'envoyer une question ou un exercice.`
+      reponse: `Très bien **${premierPrenom(user.nom || "élève")}**. J'ai noté ta classe : **${classe}**. Quelle matière veux-tu travailler maintenant ?`
+    };
+  }
+
+  const nom = extraireNomDepuisMessage(texte);
+  if (nom && nom.length >= 2 && nom.length <= 80) {
+    await updateUserField(user.phone, "nom", nom);
+
+    return {
+      handled: true,
+      user: { ...user, nom },
+      reponse: `Enchanté **${premierPrenom(nom)}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`
     };
   }
 
