@@ -1,4 +1,5 @@
 
+
 const { logError } = require("../core/logger");
 
 const {
@@ -21,7 +22,6 @@ const {
   estQuestionTechnique,
   extraireSujetMemoire,
   detecterMatiereScientifique,
-  estQuestionGeographieRDC,
   fautChercherSurWeb
 } = require("./detectors");
 
@@ -67,7 +67,7 @@ function construireConsignePedagogique(texte = "", type = "text") {
 - Sois humain, utile et succinct`;
 }
 
-async function chercherContexteWeb(question = "", user = {}, historique = []) {
+async function chercherContexteWeb(question = "", user = {}) {
   const system = construireSystemPrompt(user);
 
   const reponse = await safeAI(
@@ -77,6 +77,8 @@ async function chercherContexteWeb(question = "", user = {}, historique = []) {
         role: "system",
         content: `MISSION WEB :
 - Utilise Google Search
+- Réponds uniquement à la QUESTION ACTUELLE
+- Ignore toute ancienne conversation
 - Donne un CONTEXTE WEB BRUT, court, clair et factuel
 - Si la question concerne une province, une commune, une ville, un territoire ou une subdivision administrative, donne la liste complète trouvée
 - Pour une liste administrative, n'omets aucun élément trouvé
@@ -85,11 +87,11 @@ async function chercherContexteWeb(question = "", user = {}, historique = []) {
 - Pas de citation finale
 - Pas d'encouragement`
       },
-      ...historique.slice(-4),
       {
         role: "user",
-        content: `QUESTION :
+        content: `QUESTION ACTUELLE UNIQUEMENT :
 ${question}
+
 Donne un contexte web brut, précis et exhaustif si la question demande une liste.`
       }
     ]),
@@ -99,10 +101,12 @@ Donne un contexte web brut, précis et exhaustif si la question demande une list
   return String(reponse || "").trim();
 }
 
-async function detecterIntentionIA(user, texte = "", historique = []) {
+async function detecterIntentionIA(user, texte = "") {
   const system = `${construireSystemPrompt(user)}
 MODE CLASSIFICATION STRICTE :
 - Réponds uniquement en JSON valide
+- Analyse seulement le MESSAGE ACTUEL
+- Ignore les anciennes questions
 - intention possible : salutation, remerciement, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc
 - matiere possible : math, physique, chimie, general
 - besoinCorrectionRenforcee doit être true ou false
@@ -118,12 +122,12 @@ MODE CLASSIFICATION STRICTE :
   try {
     const parsed = await appelerJsonStrict({
       systemInstruction: system,
-      prompt: `Analyse ce message et classe-le.
+      prompt: `Analyse uniquement ce message et classe-le.
 
-MESSAGE :
+MESSAGE ACTUEL :
 ${texte}`,
       schema: JSON_SCHEMA_INTENTION,
-      history: historique.slice(-3)
+      history: []
     });
 
     if (!parsed || typeof parsed !== "object") return fallback;
@@ -141,7 +145,7 @@ ${texte}`,
 }
 
 async function construireConsigneAntiBoucle(user, texteUtilisateur = "", historique = []) {
-  const analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
+  const analyse = await detecterIntentionIA(user, texteUtilisateur);
   const sujet = analyse.sujet || extraireSujetMemoire(texteUtilisateur) || "general";
 
   if (analyse.intention !== "soumission_reponse" && !estSoumissionReponse(texteUtilisateur)) {
@@ -186,17 +190,17 @@ async function construireReponseDbWebIa(
   const utiliserWeb = fautChercherSurWeb(questionEleve, fiche);
 
   if (utiliserWeb) {
-    contexteWeb = await chercherContexteWeb(questionEleve, user, historique);
+    contexteWeb = await chercherContexteWeb(questionEleve, user);
   }
 
   const blocWeb = contexteWeb
-    ? `CONTEXTE WEB (SOURCE PRINCIPALE) :
+    ? `CONTEXTE WEB POUR LA QUESTION ACTUELLE :
 ${contexteWeb}`
     : `CONTEXTE WEB :
 Aucune information web utile trouvée.`;
 
   const blocDB = fiche
-    ? `CONTEXTE DB (SECONDAIRE) :
+    ? `CONTEXTE DB POUR LA QUESTION ACTUELLE :
 Titre : ${fiche?.titre || "Sans titre"}
 Matière : ${fiche?.matiere || "Non précisée"}
 Classe : ${fiche?.classe || "Non précisée"}
@@ -213,35 +217,49 @@ Aucune fiche locale disponible.`;
       {
         role: "system",
         content: `RÈGLE FONDAMENTALE :
+- Réponds uniquement à la QUESTION ACTUELLE
+- Ignore totalement les anciennes questions de l'élève
+- Ne mélange jamais deux sujets différents
+- Si la question actuelle parle de droit, reste en droit
+- Si la question actuelle parle de géographie, reste en géographie
+- Si la question actuelle parle d'image, analyse seulement l'image
 - Utilise d'abord le WEB si disponible
 - Utilise la DB comme appui
 - Ne réponds jamais comme un moteur de recherche
 - Si la question demande une liste administrative complète, recopie la liste complète trouvée
 - Si tu n'es pas sûr d'une liste complète, dis-le honnêtement
 - N'invente jamais un territoire, une commune, une ville ou un article
-- La matière de la CONSOLIDATION doit être strictement la même que celle de la question principale
-- La citation finale doit être strictement liée à la même matière
-- L'ouverture finale doit être strictement liée à la même matière
-- Interdiction de mélanger histoire, géographie, droit, sciences, mathématiques ou français dans la même consolidation`
+- La CONSOLIDATION doit porter uniquement sur la question actuelle
+- La citation finale doit être liée à la matière actuelle
+- L'ouverture finale doit être liée à la matière actuelle`
       },
       {
         role: "system",
         content: consignePedagogique || "Sois pédagogique et clair."
       },
-      ...historique.slice(-5),
       {
         role: "user",
-        content: `QUESTION :
+        content: `QUESTION ACTUELLE :
 ${questionEleve}
+
 ${blocWeb}
+
 ${blocDB}
-Donne maintenant la réponse finale de Mwalimu.`
+
+Donne maintenant la réponse finale de Mwalimu uniquement sur cette question.`
       }
     ]),
-    `🔵 [VÉCU] : J'ai bien reçu ta demande.
-🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
-🔴 [INSPIRATION] : Ce n'est pas un problème ; nous pouvons reprendre plus simplement.
-❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`
+    `🔵 [VÉCU]
+J'ai bien reçu ta demande.
+
+🟡 [SAVOIR]
+Je n'ai pas encore pu produire une réponse claire.
+
+🔴 [INSPIRATION]
+Ce n'est pas un problème ; nous pouvons reprendre plus simplement.
+
+❓ [CONSOLIDATION]
+Reformule ta question en une seule phrase.`
   );
 }
 
