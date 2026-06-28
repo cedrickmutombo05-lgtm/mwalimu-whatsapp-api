@@ -54,13 +54,89 @@ function supprimerDoublonsLignes(texte = "") {
 }
 
 function normaliserBalisesMwalimu(texte = "") {
-  return String(texte || "")
-    .replace(/🔵\s*\*?\*?\[?\s*VÉCU\s*\]?\*?\*?\s*:?\s*/gi, "🔵 [VÉCU]\n")
-    .replace(/🟡\s*\*?\*?\[?\s*SAVOIR\s*\]?\*?\*?\s*:?\s*/gi, "🟡 [SAVOIR]\n")
-    .replace(/🔴\s*\*?\*?\[?\s*INSPIRATION\s*\]?\*?\*?\s*:?\s*/gi, "🔴 [INSPIRATION]\n")
-    .replace(/❓\s*\*?\*?\[?\s*CONSOLIDATION\s*\]?\*?\*?\s*:?\s*/gi, "❓ [CONSOLIDATION]\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  let t = String(texte || "");
+
+  t = t
+    .replace(/🔵\s*\*?\*?\[?\s*VÉCU\s*\]?\*?\*?\s*:?\s*/gi, "\n🔵 [VÉCU]\n")
+    .replace(/🟡\s*\*?\*?\[?\s*SAVOIR\s*\]?\*?\*?\s*:?\s*/gi, "\n🟡 [SAVOIR]\n")
+    .replace(/🔴\s*\*?\*?\[?\s*INSPIRATION\s*\]?\*?\*?\s*:?\s*/gi, "\n🔴 [INSPIRATION]\n")
+    .replace(/❓\s*\*?\*?\[?\s*CONSOLIDATION\s*\]?\*?\*?\s*:?\s*/gi, "\n❓ [CONSOLIDATION]\n");
+
+  const lignes = t.split("\n");
+  const resultat = [];
+
+  const vus = {
+    vecu: false,
+    savoir: false,
+    inspiration: false,
+    consolidation: false
+  };
+
+  function traiterTag(cle, tag, contenu = "") {
+    if (!vus[cle]) {
+      resultat.push(tag);
+      vus[cle] = true;
+    }
+
+    if (contenu && contenu.trim()) {
+      resultat.push(contenu.trim());
+    }
+  }
+
+  for (const ligneBrute of lignes) {
+    const ligne = ligneBrute.trim();
+    if (!ligne) continue;
+
+    if (/^🔵\s*\[VÉCU\]$/i.test(ligne)) {
+      traiterTag("vecu", "🔵 [VÉCU]");
+      continue;
+    }
+
+    if (/^🟡\s*\[SAVOIR\]$/i.test(ligne)) {
+      traiterTag("savoir", "🟡 [SAVOIR]");
+      continue;
+    }
+
+    if (/^🔴\s*\[INSPIRATION\]$/i.test(ligne)) {
+      traiterTag("inspiration", "🔴 [INSPIRATION]");
+      continue;
+    }
+
+    if (/^❓\s*\[CONSOLIDATION\]$/i.test(ligne)) {
+      traiterTag("consolidation", "❓ [CONSOLIDATION]");
+      continue;
+    }
+
+    const vecuSimple = ligne.match(/^🔵\s+(.*)$/i);
+    if (vecuSimple) {
+      traiterTag("vecu", "🔵 [VÉCU]", vecuSimple[1]);
+      continue;
+    }
+
+    const savoirSimple = ligne.match(/^🟡\s+(.*)$/i);
+    if (savoirSimple) {
+      traiterTag("savoir", "🟡 [SAVOIR]", savoirSimple[1]);
+      continue;
+    }
+
+    const inspirationSimple = ligne.match(/^🔴\s+(.*)$/i);
+    if (inspirationSimple) {
+      traiterTag("inspiration", "🔴 [INSPIRATION]", inspirationSimple[1]);
+      continue;
+    }
+
+    const consolidationSimple = ligne.match(/^❓\s+(.*)$/i);
+    if (consolidationSimple) {
+      if (!vus.consolidation) {
+        traiterTag("consolidation", "❓ [CONSOLIDATION]", consolidationSimple[1]);
+      }
+      continue;
+    }
+
+    resultat.push(ligne);
+  }
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function supprimerBlocsAutomatiquesFaibles(texte = "") {
