@@ -5,9 +5,7 @@ const { logInfo } = require("../core/logger");
 const {
   pick,
   premierPrenom,
-  makeCacheKey,
-  getCache,
-  setCache
+  cache
 } = require("../core");
 
 const {
@@ -41,33 +39,59 @@ const {
   construireReponseDbWebIa
 } = require("./tutor");
 
-async function traiterTexte(user, texteUtilisateur, historique) { 
-  
+function makeLocalCacheKey(user = {}, texte = "") {
+  const nom = String(user?.nom || "").toLowerCase().trim();
+  const classe = String(user?.classe || "").toLowerCase().trim();
+  const q = String(texte || "").toLowerCase().trim();
+
+  return `${nom}|${classe}|${q}`;
+}
+
+function getLocalCache(key) {
+  return cache?.get ? cache.get(key) : null;
+}
+
+function setLocalCache(key, value) {
+  if (cache?.set) cache.set(key, value);
+}
+
+function classeEstInvalide(classe = "") {
+  const c = String(classe || "").trim().toLowerCase();
+
+  const invalides = [
+    "",
+    "en",
+    "fatigue",
+    "fatiguee",
+    "fatigué",
+    "fatiguée",
+    "je suis fatigue",
+    "je suis fatiguee"
+  ];
+
+  return invalides.includes(c);
+}
+
+async function traiterTexte(user, texteUtilisateur, historique = []) {
   const prenomActuel = premierPrenom(user?.nom || "");
   const classeActuelle = String(user?.classe || "").trim();
 
-  if (!prenomActuel || prenomActuel === "élève") {
+  if (!user?.nom || !prenomActuel || prenomActuel === "élève") {
     return {
-      reponse: `Bonsoir 😊 Avant de commencer, dis-moi ton prénom.
-
-Exemple :
-Je m'appelle Dora`,
+      reponse: `Bonsoir 😊 Avant de commencer, quel est ton prénom ?`,
       fiche: null,
       bypassFormat: true
     };
   }
 
-  if (!classeActuelle) {
+  if (classeEstInvalide(classeActuelle)) {
     return {
-      reponse: `Merci **${prenomActuel}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.
-
-Exemple :
-Je suis en huitième`,
+      reponse: `Merci **${prenomActuel}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`,
       fiche: null,
       bypassFormat: true
     };
   }
-  // 1. Si l'élève choisit une matière, on reste en conversation sociale
+
   if (estChoixMatiere(texteUtilisateur)) {
     const reponse = construireReponseChoixMatiere(user, texteUtilisateur);
 
@@ -78,7 +102,6 @@ Je suis en huitième`,
     };
   }
 
-  // 2. Si Mwalimu a demandé "comment vas-tu ?" et l'élève répond, on répond humainement
   if (estSecondTourSalutation(historique, texteUtilisateur)) {
     const reponse = genererRepriseApresBienEtre(user);
 
@@ -89,7 +112,6 @@ Je suis en huitième`,
     };
   }
 
-  // 3. Messages sociaux simples : pas de VÉCU / SAVOIR / INSPIRATION / CONSOLIDATION
   if (estMessagePurementSocial(texteUtilisateur)) {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
 
@@ -102,19 +124,16 @@ Je suis en huitième`,
     }
   }
 
-  // 4. Si la conversation pédagogique n'a pas encore commencé
   const conversationDemarree = historique.some((m) =>
     m.role === "user" && estQuestionAcademique(m.content || "")
   );
 
   if (!conversationDemarree && !estQuestionAcademique(texteUtilisateur)) {
-    const prenom = premierPrenom(user?.nom || "");
-
     const relances = [
-      `Je suis là pour t'aider **${prenom}** 😊 Dis-moi, quelle matière ou quel exercice veux-tu travailler ?`,
-      `N'hésite pas **${prenom}** ! Tu peux me parler de maths, physique, histoire, géographie, droit... Qu'est-ce qui t'intéresse ?`,
-      `**${prenom}**, je suis prêt à t'expliquer ce que tu veux. Quelle notion veux-tu comprendre aujourd'hui ?`,
-      `Alors **${prenom}**, par quoi veux-tu commencer ? Un exercice ? Une leçon ? Dis-moi ce qui te tient à cœur.`
+      `Je suis là pour t'aider **${prenomActuel}** 😊 Dis-moi, quelle matière ou quel exercice veux-tu travailler ?`,
+      `N'hésite pas **${prenomActuel}** ! Tu peux me parler de maths, physique, histoire, géographie, droit... Qu'est-ce qui t'intéresse ?`,
+      `**${prenomActuel}**, je suis prêt à t'expliquer ce que tu veux. Quelle notion veux-tu comprendre aujourd'hui ?`,
+      `Alors **${prenomActuel}**, par quoi veux-tu commencer ? Un exercice ? Une leçon ? Dis-moi ce qui te tient à cœur.`
     ];
 
     return {
@@ -124,9 +143,8 @@ Je suis en huitième`,
     };
   }
 
-  // 5. Cache pédagogique
-  const cacheKey = makeCacheKey(user, texteUtilisateur);
-  const cached = getCache(cacheKey);
+  const cacheKey = makeLocalCacheKey(user, texteUtilisateur);
+  const cached = getLocalCache(cacheKey);
 
   if (cached) {
     logInfo("cache_hit", {
@@ -180,7 +198,10 @@ Je suis en huitième`,
     texteMin.includes("système métrique") ||
     texteMin.includes("systeme metrique") ||
     texteMin.includes("formes géométriques") ||
-    texteMin.includes("formes geometriques");
+    texteMin.includes("formes geometriques") ||
+    texteMin.includes("mer") ||
+    texteMin.includes("océan") ||
+    texteMin.includes("ocean");
 
   if (besoinAnalyseIA) {
     analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
@@ -215,7 +236,7 @@ Je suis en huitième`,
   );
 
   if (reponse && String(reponse).trim()) {
-    setCache(cacheKey, reponse);
+    setLocalCache(cacheKey, reponse);
   }
 
   if (!reponse || !String(reponse).trim()) {
