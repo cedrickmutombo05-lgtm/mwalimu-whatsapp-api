@@ -32,6 +32,27 @@ const MATIERES_ORIENTATION = {
     ]
   },
 
+  francais: {
+    label: "français",
+    aliases: [
+      "francais",
+      "français",
+      "grammaire",
+      "conjugaison",
+      "orthographe",
+      "lecture",
+      "redaction",
+      "rédaction"
+    ],
+    themes: [
+      "la grammaire",
+      "la conjugaison",
+      "l’orthographe",
+      "la lecture",
+      "la rédaction"
+    ]
+  },
+
   formes_geometriques: {
     label: "formes géométriques",
     aliases: [
@@ -97,7 +118,14 @@ const MATIERES_ORIENTATION = {
 
   microbiologie: {
     label: "microbiologie",
-    aliases: ["microbiologie", "microbes", "microbe", "bacteries", "bactéries", "virus"],
+    aliases: [
+      "microbiologie",
+      "microbes",
+      "microbe",
+      "bacteries",
+      "bactéries",
+      "virus"
+    ],
     themes: [
       "les microbes",
       "les bactéries",
@@ -134,18 +162,6 @@ const MATIERES_ORIENTATION = {
       "le quartier",
       "l’environnement",
       "l’hygiène"
-    ]
-  },
-
-  francais: {
-    label: "français",
-    aliases: ["francais", "français", "grammaire", "orthographe", "conjugaison"],
-    themes: [
-      "la grammaire",
-      "la conjugaison",
-      "l’orthographe",
-      "la lecture",
-      "la rédaction"
     ]
   },
 
@@ -211,10 +227,14 @@ function detecterMatiereChoisie(texte = "") {
     "combien"
   ];
 
-  const estQuestionDeCours = questionsDirectes.some((mot) => t.includes(mot));
+  const estQuestionDeCours = questionsDirectes.some((mot) =>
+    t.includes(normaliserSocial(mot))
+  );
 
   for (const [key, matiere] of Object.entries(MATIERES_ORIENTATION)) {
-    if (matiere.aliases.map(normaliserSocial).includes(t)) {
+    const aliases = matiere.aliases.map(normaliserSocial);
+
+    if (aliases.includes(t)) {
       return { key, ...matiere };
     }
   }
@@ -227,10 +247,22 @@ function detecterMatiereChoisie(texte = "") {
     "je vais etudier",
     "je vais étudier",
     "je veux apprendre",
+    "je voudrais apprendre",
+    "j aimerais apprendre",
+    "j'aimerais apprendre",
+    "je souhaite apprendre",
     "je veux revoir",
+    "je voudrais revoir",
+    "j aimerais revoir",
+    "j'aimerais revoir",
+    "je souhaite revoir",
     "je veux reviser",
     "je veux réviser",
     "je veux travailler",
+    "je voudrais travailler",
+    "j aimerais travailler",
+    "j'aimerais travailler",
+    "je souhaite travailler",
     "oui je vais etudier",
     "oui je vais étudier",
     "oui je veux etudier",
@@ -251,270 +283,13 @@ function detecterMatiereChoisie(texte = "") {
     "travaillons",
     "on peut faire",
     "on peut etudier",
-    "on peut étudier",
-    "je voudrais etudier",
-    "je voudrais étudier"
-   
-const { logInfo } = require("../core/logger");
-
-const {
-  pick,
-  premierPrenom,
-  cache
-} = require("../core");
-
-const {
-  consulterBibliotheque,
-  resetStudentAttempt,
-  logUnansweredQuestion
-} = require("../db");
-
-const {
-  estChoixMatiere,
-  construireReponseChoixMatiere,
-  estMessagePurementSocial,
-  estSecondTourSalutation,
-  genererRepriseApresBienEtre,
-  construireReponseHumaineSimple
-} = require("./social");
-
-const {
-  estSoumissionReponse,
-  estQuestionTechnique,
-  extraireSujetMemoire,
-  detecterMatiereScientifique,
-  estQuestionGeographieRDC,
-  estQuestionAcademique
-} = require("./detectors");
-
-const {
-  construireConsignePedagogique,
-  detecterIntentionIA,
-  construireConsigneAntiBoucle,
-  construireReponseDbWebIa
-} = require("./tutor");
-
-function makeLocalCacheKey(user = {}, texte = "") {
-  const nom = String(user?.nom || "").toLowerCase().trim();
-  const classe = String(user?.classe || "").toLowerCase().trim();
-  const q = String(texte || "").toLowerCase().trim();
-
-  return `${nom}|${classe}|${q}`;
-}
-
-function getLocalCache(key) {
-  return cache?.get ? cache.get(key) : null;
-}
-
-function setLocalCache(key, value) {
-  if (cache?.set) cache.set(key, value);
-}
-
-function classeEstInvalide(classe = "") {
-  const c = String(classe || "").trim().toLowerCase();
-
-  const invalides = [
-    "",
-    "en",
-    "fatigue",
-    "fatiguee",
-    "fatigué",
-    "fatiguée",
-    "je suis fatigue",
-    "je suis fatiguee"
+    "on peut étudier"
   ];
 
-  return invalides.includes(c);
-}
-
-async function traiterTexte(user, texteUtilisateur, historique = []) {
-  const prenomActuel = premierPrenom(user?.nom || "");
-  const classeActuelle = String(user?.classe || "").trim();
-
-  if (!user?.nom || !prenomActuel || prenomActuel === "élève") {
-    return {
-      reponse: `Bonsoir 😊 Avant de commencer, quel est ton prénom ?`,
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
-  if (classeEstInvalide(classeActuelle)) {
-    return {
-      reponse: `Merci **${prenomActuel}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`,
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
-  if (estChoixMatiere(texteUtilisateur)) {
-    const reponse = construireReponseChoixMatiere(user, texteUtilisateur);
-
-    return {
-      reponse,
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
-  if (estSecondTourSalutation(historique, texteUtilisateur)) {
-    const reponse = genererRepriseApresBienEtre(user);
-
-    return {
-      reponse,
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
-  if (estMessagePurementSocial(texteUtilisateur)) {
-    const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
-
-    if (reponseSimple) {
-      return {
-        reponse: reponseSimple,
-        fiche: null,
-        bypassFormat: true
-      };
-    }
-  }
-
-  const conversationDemarree = historique.some((m) =>
-    m.role === "user" && estQuestionAcademique(m.content || "")
+  const aIntentionChoix = intentionsChoix.some((mot) =>
+    t.includes(normaliserSocial(mot))
   );
 
-  if (!conversationDemarree && !estQuestionAcademique(texteUtilisateur)) {
-    const relances = [
-      `Je suis là pour t'aider **${prenomActuel}** 😊 Dis-moi, quelle matière ou quel exercice veux-tu travailler ?`,
-      `N'hésite pas **${prenomActuel}** ! Tu peux me parler de maths, physique, histoire, géographie, droit... Qu'est-ce qui t'intéresse ?`,
-      `**${prenomActuel}**, je suis prêt à t'expliquer ce que tu veux. Quelle notion veux-tu comprendre aujourd'hui ?`,
-      `Alors **${prenomActuel}**, par quoi veux-tu commencer ? Un exercice ? Une leçon ? Dis-moi ce qui te tient à cœur.`
-    ];
-
-    return {
-      reponse: pick(relances),
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
-  const cacheKey = makeLocalCacheKey(user, texteUtilisateur);
-  const cached = getLocalCache(cacheKey);
-
-  if (cached) {
-    logInfo("cache_hit", {
-      phone: user?.phone || "",
-      cacheKey
-    });
-
-    return {
-      reponse: cached,
-      fiche: null,
-      bypassFormat: false
-    };
-  }
-
-  let analyse = {
-    intention: "question_normale",
-    matiere: detecterMatiereScientifique(texteUtilisateur, "", null),
-    besoinCorrectionRenforcee: false,
-    sujet: extraireSujetMemoire(texteUtilisateur) || "general"
-  };
-
-  const texteMin = String(texteUtilisateur || "").toLowerCase();
-
-  const besoinAnalyseIA =
-    estSoumissionReponse(texteUtilisateur) ||
-    estQuestionTechnique(texteUtilisateur) ||
-    texteMin.includes("droit") ||
-    texteMin.includes("loi") ||
-    texteMin.includes("ohada") ||
-    texteMin.includes("rdc") ||
-    texteMin.includes("congo") ||
-    texteMin.includes("géographie") ||
-    texteMin.includes("geographie") ||
-    texteMin.includes("territoire") ||
-    texteMin.includes("territoires") ||
-    texteMin.includes("commune") ||
-    texteMin.includes("communes") ||
-    texteMin.includes("ville") ||
-    texteMin.includes("villes") ||
-    texteMin.includes("province") ||
-    texteMin.includes("histoire") ||
-    texteMin.includes("indépendance") ||
-    texteMin.includes("colonisation") ||
-    texteMin.includes("biologie") ||
-    texteMin.includes("microbiologie") ||
-    texteMin.includes("civisme") ||
-    texteMin.includes("citoyenneté") ||
-    texteMin.includes("citoyennete") ||
-    texteMin.includes("étude du milieu") ||
-    texteMin.includes("etude du milieu") ||
-    texteMin.includes("système métrique") ||
-    texteMin.includes("systeme metrique") ||
-    texteMin.includes("formes géométriques") ||
-    texteMin.includes("formes geometriques") ||
-    texteMin.includes("mer") ||
-    texteMin.includes("océan") ||
-    texteMin.includes("ocean");
-
-  if (besoinAnalyseIA) {
-    analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
-  }
-
-  const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
-  const consigneBase = construireConsignePedagogique(texteUtilisateur, "text");
-  const antiBoucle = await construireConsigneAntiBoucle(user, texteUtilisateur, historique);
-
-  let consigneFinale = consigneBase;
-
-  if (analyse.intention === "juridique") {
-    consigneFinale += `\nLe message semble juridique. Si c'est un article, recopie-le exactement seulement s'il est fiable.`;
-  }
-
-  if (analyse.intention === "geographie_rdc" || estQuestionGeographieRDC(texteUtilisateur, fiche)) {
-    consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
-  }
-
-  consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
-
-  if (antiBoucle.consigne) {
-    consigneFinale += `\n${antiBoucle.consigne}`;
-  }
-
-  const reponse = await construireReponseDbWebIa(
-    user,
-    texteUtilisateur,
-    historique,
-    fiche,
-    consigneFinale
-  );
-
-  if (reponse && String(reponse).trim()) {
-    setLocalCache(cacheKey, reponse);
-  }
-
-  if (!reponse || !String(reponse).trim()) {
-    await logUnansweredQuestion(user, texteUtilisateur, "text", "traiterTexte_empty");
-  }
-
-  if (!estSoumissionReponse(texteUtilisateur)) {
-    await resetStudentAttempt(user.phone, antiBoucle.sujet || analyse.sujet || "general");
-  }
-
-  return {
-    reponse,
-    fiche: fiche || null,
-    bypassFormat: false
-  };
-}
-
-module.exports = {
-  traiterTexte
-}; 
-  ];
-
-  const aIntentionChoix = intentionsChoix.some((mot) => t.includes(normaliserSocial(mot)));
   if (!aIntentionChoix) return null;
 
   for (const [key, matiere] of Object.entries(MATIERES_ORIENTATION)) {
@@ -556,9 +331,13 @@ function estMessagePurementSocial(texte = "") {
   if (estChoixMatiere(texte)) return true;
 
   if (/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)$/i.test(t)) return true;
+
   if (/^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|merci a toi|merci mwalimu|je te remercie|je vous remercie|cimer|thanks|thx)$/i.test(t)) return true;
+
   if (/^(ok|okay|d accord|dac|dacc|oui|non|ca va|bien|super|cool|entendu|compris|parfait|tres bien|nickel|ca marche|ca va merci|pas de souci|pas de probleme|a plus|a tantot|a toute|bye|tchao)$/i.test(t)) return true;
+
   if (/^(bonne nuit|fais de beaux reves|dors bien|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)$/i.test(t)) return true;
+
   if (/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\s]+$/u.test(t)) return true;
 
   if (/^(tu vas bien|comment vas tu|comment tu vas|et toi|et vous|vous allez bien|comment ca va|ca va)$/i.test(t)) return true;
