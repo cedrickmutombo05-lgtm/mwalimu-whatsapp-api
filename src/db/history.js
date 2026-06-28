@@ -1,7 +1,8 @@
 
 const { pool } = require("./pool");
 const { getUser } = require("./users");
-const { tronquerTexte, safeJsonParse } = require("../core");
+
+const { tronquerTexte, safeJsonParse } = require("../core/helpers/general");
 
 async function appendHistorique(phone, role, content) {
   const nouvelElement = {
