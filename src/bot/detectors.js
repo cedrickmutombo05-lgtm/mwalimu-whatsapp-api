@@ -176,7 +176,7 @@ function detecterMatierePrincipale(question = "", corps = "") {
 
   ajouter("geographie",
     ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "fleuve", "rivière", "riviere", "nil", "amazone", "lac", "montagne", "relief", "capitale"],
-    ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "fleuve", "rivière", "riviere", "nil", "amazone", "lac", "montagne", "relief", "capitale"]
+    ["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "fleuve", "rivière", "riviere", "nil", "amazone", "lac", "montagne", "relief", "capitale", "mre", "mers", "océan", "ocean", "océans", "oceans", "maritime",]
   );
 
   ajouter("histoire",
