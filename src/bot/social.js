@@ -34,7 +34,14 @@ const MATIERES_ORIENTATION = {
 
   formes_geometriques: {
     label: "formes géométriques",
-    aliases: ["forme geometrique", "formes geometriques", "forme géométrique", "formes géométriques", "geometrie", "géométrie"],
+    aliases: [
+      "forme geometrique",
+      "formes geometriques",
+      "forme géométrique",
+      "formes géométriques",
+      "geometrie",
+      "géométrie"
+    ],
     themes: [
       "le triangle",
       "le carré",
@@ -46,7 +53,15 @@ const MATIERES_ORIENTATION = {
 
   systeme_metrique: {
     label: "système métrique",
-    aliases: ["systeme metrique", "système métrique", "mesure", "mesures", "unite de mesure", "unites de mesure", "unités de mesure"],
+    aliases: [
+      "systeme metrique",
+      "système métrique",
+      "mesure",
+      "mesures",
+      "unite de mesure",
+      "unites de mesure",
+      "unités de mesure"
+    ],
     themes: [
       "le mètre",
       "le litre",
@@ -94,7 +109,13 @@ const MATIERES_ORIENTATION = {
 
   civisme: {
     label: "civisme / éducation à la citoyenneté",
-    aliases: ["civisme", "citoyennete", "citoyenneté", "education a la citoyennete", "éducation à la citoyenneté"],
+    aliases: [
+      "civisme",
+      "citoyennete",
+      "citoyenneté",
+      "education a la citoyennete",
+      "éducation à la citoyenneté"
+    ],
     themes: [
       "les droits et devoirs",
       "le respect des lois",
@@ -193,7 +214,7 @@ function detecterMatiereChoisie(texte = "") {
   const estQuestionDeCours = questionsDirectes.some((mot) => t.includes(mot));
 
   for (const [key, matiere] of Object.entries(MATIERES_ORIENTATION)) {
-    if (matiere.aliases.includes(t)) {
+    if (matiere.aliases.map(normaliserSocial).includes(t)) {
       return { key, ...matiere };
     }
   }
@@ -205,11 +226,19 @@ function detecterMatiereChoisie(texte = "") {
     "je veux étudier",
     "je vais etudier",
     "je vais étudier",
+    "je veux apprendre",
+    "je veux revoir",
+    "je veux reviser",
+    "je veux réviser",
+    "je veux travailler",
     "oui je vais etudier",
     "oui je vais étudier",
     "oui je veux etudier",
     "oui je veux étudier",
-    "je veux apprendre",
+    "oui je veux revoir",
+    "oui je veux reviser",
+    "oui je veux réviser",
+    "oui je veux travailler",
     "je choisis",
     "je prends",
     "on fait",
@@ -220,15 +249,14 @@ function detecterMatiereChoisie(texte = "") {
     "je préfère",
     "allons en",
     "travaillons",
-    "je veux reviser",
-    "je veux réviser",
-    "je veux travailler",
     "on peut faire",
     "on peut etudier",
-    "on peut étudier"
+    "on peut étudier",
+    "je voudrais etudier",
+    "je voudrais étudier"
   ];
 
-  const aIntentionChoix = intentionsChoix.some((mot) => t.includes(mot));
+  const aIntentionChoix = intentionsChoix.some((mot) => t.includes(normaliserSocial(mot)));
   if (!aIntentionChoix) return null;
 
   for (const [key, matiere] of Object.entries(MATIERES_ORIENTATION)) {
@@ -249,7 +277,7 @@ function construireReponseChoixMatiere(user = {}, texte = "") {
   if (!matiere) return "";
 
   const prenom = premierPrenom(user?.nom || "");
-  const appel = prenom ? `**${prenom}**` : "toi";
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
 
   const themes = matiere.themes
     .map((theme, index) => `${index + 1}. ${theme}`)
@@ -269,8 +297,8 @@ function estMessagePurementSocial(texte = "") {
 
   if (estChoixMatiere(texte)) return true;
 
-  if (/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)\b/i.test(t)) return true;
-  if (/^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|merci a toi|merci mwalimu|je te remercie|je vous remercie|cimer|thanks|thx)\b/i.test(t)) return true;
+  if (/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)$/i.test(t)) return true;
+  if (/^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|merci a toi|merci mwalimu|je te remercie|je vous remercie|cimer|thanks|thx)$/i.test(t)) return true;
   if (/^(ok|okay|d accord|dac|dacc|oui|non|ca va|bien|super|cool|entendu|compris|parfait|tres bien|nickel|ca marche|ca va merci|pas de souci|pas de probleme|a plus|a tantot|a toute|bye|tchao)$/i.test(t)) return true;
   if (/^(bonne nuit|fais de beaux reves|dors bien|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)$/i.test(t)) return true;
   if (/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\s]+$/u.test(t)) return true;
@@ -279,9 +307,9 @@ function estMessagePurementSocial(texte = "") {
 
   if (/^(je vais bien|je vais tres bien|je vais super bien|je vais bien merci|je vais tres bien merci|je me porte bien|je me porte tres bien|je me porte super bien|je me sens bien|je me sens tres bien|je me sens super bien|tranquille|tranquille merci|pas mal|pas mal merci|au top|au top merci|ca roule|ca roule merci|imboko|imboko merci|bien merci|bien et toi|je vais bien et toi|je me porte bien et toi|oui je vais bien|oui je vais tres bien|oui je me porte bien|oui ca va|oui ca va merci)$/i.test(t)) return true;
 
-  if (/^(je suis fatigue|je suis fatiguee|je suis fatigué|je suis fatiguée|je suis triste|je suis content|je suis contente|je suis decourage|je suis decouragee|je veux parler un peu|tu es la|tu es là|on reprend demain|je t aime bien mwalimu|tu es fort|tu es forte)$/i.test(t)) return true;
+  if (/^(je suis fatigue|je suis fatiguee|je suis triste|je suis content|je suis contente|je suis decourage|je suis decouragee|je veux parler un peu|tu es la|on reprend demain|je t aime bien mwalimu|tu es fort|tu es forte)$/i.test(t)) return true;
 
-  if (/^(ca s est bien passee|ca s est bien passe|ça s est bien passée|ça s est bien passé|ma journee s est bien passee|ma journee s est bien passe)$/i.test(t)) return true;
+  if (/^(oui\s+)?(ma journee|la journee|ca)\s+s\s+est\s+bien\s+(passee|passe)$/i.test(t)) return true;
 
   return false;
 }
@@ -396,11 +424,10 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
     "comment te sens tu",
     "comment se passe ta journee",
     "comment s est passee ta journee",
+    "j espere que ta journee s est bien passee",
     "j espere que tu as bien dormi",
     "content de te retrouver",
     "contente de te retrouver",
-    "ravi de te parler",
-    "ravie de te parler",
     "est ce que tout va bien pour toi",
     "tu veux parler un peu",
     "quelle matiere veux tu",
@@ -409,13 +436,7 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
     "qu est ce que tu aimerais apprendre"
   ];
 
-  if (motifs.some((motif) => texte.includes(motif))) return true;
-  if (/comment\b.*\bvas\b.*\btu\b/i.test(texte)) return true;
-  if (/comment\b.*\bte\b.*\bsens\b/i.test(texte)) return true;
-  if (/comment\b.*\bse\b.*\bpasse\b/i.test(texte)) return true;
-  if (/est(\s|-)ce(\s|-)que\b.*\bva\b.*\bbien\b/i.test(texte)) return true;
-
-  return false;
+  return motifs.some((motif) => texte.includes(motif));
 }
 
 function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
@@ -424,26 +445,51 @@ function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
   const t = normaliserSocial(texteUtilisateur);
 
   const reponsesCourtes = [
-    "ca va", "ca va bien", "je vais bien", "bien et toi", "oui je vais bien",
-    "ca va merci", "je vais bien merci", "tranquille", "cool", "super",
-    "pas mal", "tres bien", "nickel", "je vais super bien", "au top",
-    "tu vas bien", "comment vas tu", "et toi", "et vous", "comment ca va",
-    "vous allez bien", "je vais tres bien", "je me sens bien",
-    "je me porte bien", "ca roule", "imboko", "bien merci",
-    "je vais bien et toi", "je me porte bien et toi", "oui ca va",
+    "ca va",
+    "ca va bien",
+    "je vais bien",
+    "bien et toi",
+    "oui je vais bien",
+    "ca va merci",
+    "je vais bien merci",
+    "tranquille",
+    "cool",
+    "super",
+    "pas mal",
+    "tres bien",
+    "nickel",
+    "je vais super bien",
+    "au top",
+    "tu vas bien",
+    "comment vas tu",
+    "et toi",
+    "et vous",
+    "comment ca va",
+    "vous allez bien",
+    "je vais tres bien",
+    "je me sens bien",
+    "je me porte bien",
+    "ca roule",
+    "imboko",
+    "bien merci",
+    "je vais bien et toi",
+    "je me porte bien et toi",
+    "oui ca va",
     "oui ca va merci",
     "ca s est bien passee",
     "ca s est bien passe",
     "ma journee s est bien passee",
-    "ma journee s est bien passe"
+    "ma journee s est bien passe",
+    "oui ma journee s est bien passee",
+    "oui ma journee s est bien passe"
   ];
 
-  return t.length < 120 && reponsesCourtes.includes(t);
+  return t.length < 140 && reponsesCourtes.includes(t);
 }
 
 function genererRepriseApresBienEtre(user = {}) {
   const prenom = premierPrenom(user?.nom || "");
-  const appel = prenom ? `**${prenom}**` : "toi";
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
 
   return pick([
     `Tant mieux ${appel} 😊 Qu'est-ce que tu aimerais apprendre maintenant ?`,
@@ -457,7 +503,7 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
   if (choixMatiere) return choixMatiere;
 
   const prenom = premierPrenom(user?.nom || "");
-  const appel = prenom ? `**${prenom}**` : "toi";
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
   const t = normaliserSocial(texte);
   const heure = new Date().getHours();
 
@@ -470,8 +516,8 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     ]);
   }
 
-  if (/je suis fatiguee|je suis fatigue|je suis fatiguée|je suis fatigué/.test(t)) {
-    return `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu seras prête, on reprendra calmement.`;
+  if (/je suis fatiguee|je suis fatigue/.test(t)) {
+    return `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu auras repris un peu d'énergie, on continuera calmement.`;
   }
 
   if (/je suis triste|je suis decouragee|je suis decourage/.test(t)) {
@@ -482,11 +528,11 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
     return `Ça me fait plaisir ${appel} 😊 Profitons de cette bonne énergie pour apprendre quelque chose simplement.`;
   }
 
-  if (/ca s est bien passee|ca s est bien passe|ma journee s est bien passee|ma journee s est bien passe/.test(t)) {
+  if (/(oui\s+)?(ma journee|la journee|ca)\s+s\s+est\s+bien\s+(passee|passe)/.test(t)) {
     return `Tant mieux ${appel} 😊 Je suis content que ta journée se soit bien passée. Tu veux parler un peu ou travailler une matière ?`;
   }
 
-  if (/tu es la|tu es là/.test(t)) {
+  if (/tu es la/.test(t)) {
     return `Oui ${appel}, je suis là 😊 Dis-moi ce que tu veux faire : parler un peu, réviser ou poser une question.`;
   }
 
