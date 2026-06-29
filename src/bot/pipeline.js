@@ -35,6 +35,7 @@ const HEADER_MWALIMU = `🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excelle
 
 function contientHeaderMwalimu(texte = "") {
   const t = String(texte || "");
+
   return (
     t.includes("🔴🟡🔵") ||
     /Mwalimu EdTech\s*:\s*Ton Mentor/i.test(t)
@@ -57,17 +58,50 @@ function contientFuiteInterneIA(texte = "") {
 
   return (
     t.includes("tool_code") ||
+    t.includes("google_search") ||
     t.includes("google_search.search") ||
+    t.includes("queries=") ||
+    t.includes("print(") ||
     t.includes("thought") ||
     t.includes("here's a plan") ||
     t.includes("heres a plan") ||
     t.includes("the user wants") ||
     t.includes("i need to") ||
-    t.includes("i will use") ||
+    t.includes("i will") ||
+    t.includes("i should") ||
     t.includes("provided context") ||
     t.includes("mwalimu edtech persona") ||
-    t.includes("print(") ||
-    t.includes("queries=")
+
+    t.includes("use a warm") ||
+    t.includes("rigorous, pedagogical") ||
+    t.includes("benevolent tone") ||
+    t.includes("guide without doing") ||
+    t.includes("explain like a real tutor") ||
+    t.includes("use a human") ||
+    t.includes("motivating, and respectful tone") ||
+    t.includes("adapt the level") ||
+    t.includes("refer to the drc") ||
+    t.includes("school context") ||
+    t.includes("keep the response") ||
+    t.includes("clear, natural, and brief") ||
+    t.includes("avoid repetitions") ||
+    t.includes("being verbose") ||
+    t.includes("not over-praise") ||
+    t.includes("start human") ||
+    t.includes("use the student's name") ||
+    t.includes("student's name naturally") ||
+    t.includes("follow the pedagogical structure") ||
+    t.includes("ensure that") ||
+    t.includes("ask one or two") ||
+    t.includes("check dora") ||
+    t.includes("dora's understanding") ||
+    t.includes("core concepts") ||
+    t.includes("do not mention") ||
+    t.includes("do not reveal") ||
+
+    /"\s*[^"]+\s+huitième\s+rdc\s*"/i.test(t) ||
+    /définition.+huitième.+rdc/i.test(t) ||
+    /definition.+huitieme.+rdc/i.test(t)
   );
 }
 
@@ -77,21 +111,18 @@ function nettoyerFuiteInterneIA(texte = "") {
   if (!t) return "";
   if (!contientFuiteInterneIA(t)) return t;
 
-  // Supprime les blocs de code éventuels.
   t = t.replace(/```[\s\S]*?```/g, "");
 
-  // Supprime la partie tool_code jusqu’à un éventuel début de réponse pédagogique.
   t = t.replace(
     /tool_code[\s\S]*?(?=(🔵|🟡|🔴|❓|\[VÉCU\]|\[SAVOIR\]|\[INSPIRATION\]|\[CONSOLIDATION\]|Bonjour|D'accord|Très bien|En fait|La |Le |Les |Un |Une |Voici))/i,
     ""
   );
 
-  // Supprime les blocs de raisonnement interne.
-  t = t.replace(/\bthought\b[\s\S]*?(here'?s a plan\s*:|voici un plan\s*:)?/i, "");
+  t = t.replace(/\bthought\b[\s\S]*?(?=(🔵|🟡|🔴|❓|\[VÉCU\]|\[SAVOIR\]|\[INSPIRATION\]|\[CONSOLIDATION\]|Bonjour|D'accord|Très bien|En fait|La |Le |Les |Un |Une |Voici))/i, "");
 
   const lignesInterdites = [
     /tool_code/i,
-    /google_search\.search/i,
+    /google_search/i,
     /queries=/i,
     /print\(/i,
     /\bthought\b/i,
@@ -102,12 +133,49 @@ function nettoyerFuiteInterneIA(texte = "") {
     /i should/i,
     /provided context/i,
     /mwalimu edtech persona/i,
-    /start with/i,
-    /include/i,
-    /explain what/i,
-    /all while/i,
-    /for a student/i,
-    /^\s*\d+\.\s*\*\*?\s*[🔵🟡🔴❓]/i
+
+    /use a warm/i,
+    /rigorous, pedagogical/i,
+    /benevolent tone/i,
+    /guide without doing/i,
+    /explain like a real tutor/i,
+    /use a human/i,
+    /motivating, and respectful tone/i,
+    /adapt the level/i,
+    /refer to the drc/i,
+    /school context/i,
+    /keep the response/i,
+    /clear, natural, and brief/i,
+    /avoid repetitions/i,
+    /being verbose/i,
+    /not over-praise/i,
+    /start human/i,
+    /use the student's name/i,
+    /student's name naturally/i,
+    /follow the pedagogical structure/i,
+    /ensure that/i,
+    /ask one or two/i,
+    /check dora/i,
+    /dora's understanding/i,
+    /core concepts/i,
+    /do not mention/i,
+    /do not reveal/i,
+
+    /définition.+huitième.+rdc/i,
+    /definition.+huitieme.+rdc/i,
+    /réaction chimique.+huitième/i,
+    /reaction chimique.+huitieme/i,
+    /^\s*[-•]\s*use\s+/i,
+    /^\s*[-•]\s*guide\s+/i,
+    /^\s*[-•]\s*explain\s+/i,
+    /^\s*[-•]\s*adapt\s+/i,
+    /^\s*[-•]\s*refer\s+/i,
+    /^\s*[-•]\s*keep\s+/i,
+    /^\s*[-•]\s*avoid\s+/i,
+    /^\s*[-•]\s*not\s+/i,
+    /^\s*[-•]\s*start\s+/i,
+    /^\s*[-•]\s*follow\s+/i,
+    /^\s*[-•]\s*ensure\s+/i
   ];
 
   t = t
@@ -121,12 +189,10 @@ function nettoyerFuiteInterneIA(texte = "") {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  // Si après nettoyage il reste encore une fuite, on bloque.
   if (contientFuiteInterneIA(t)) {
     return "";
   }
 
-  // Si le nettoyage a presque tout supprimé, mieux vaut ne rien envoyer.
   if (t.length < 40) {
     return "";
   }
@@ -141,7 +207,7 @@ function construireReponseSecurite(user = {}, question = "") {
 
   return `Je reprends correctement ${appel} 😊
 
-Je ne dois pas afficher d’éléments techniques à l’élève.
+Une erreur de formulation s'est glissée dans la réponse précédente. Reprenons calmement.
 
 Réécris simplement ta demande, par exemple :
 **Explique-moi cela simplement.**`;
@@ -323,7 +389,6 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
     return ajouterHeaderPedagogique(construireReponseSecurite(user, question));
   }
 
-  // Les réponses sociales, commandes, profil, choix de matière et repos gardent bypassFormat:true.
   if (result.bypassFormat) {
     return reponseNettoyeeDirecte;
   }
