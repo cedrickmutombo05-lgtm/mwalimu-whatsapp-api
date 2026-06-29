@@ -20,7 +20,12 @@ const {
   estMessagePurementSocial,
   estSecondTourSalutation,
   genererRepriseApresBienEtre,
-  construireReponseHumaineSimple
+  construireReponseHumaineSimple,
+  normaliserSocial,
+  estMessageRemerciement,
+  estMessageSalutation,
+  estMessageCourtHumain,
+  estMessageRetourTravail
 } = require("./social");
 
 const {
@@ -135,6 +140,218 @@ function contientMatiereScientifiqueRenforcee(texte = "") {
   );
 }
 
+function extraireQuestionConsolidationDepuisTexte(texte = "") {
+  const contenu = String(texte || "");
+
+  const blocMatch = contenu.match(/(?:❓\s*)?\[CONSOLIDATION\]\s*([\s\S]*)/i);
+
+  if (blocMatch?.[1]) {
+    const bloc = blocMatch[1]
+      .split(/\n(?=\*\*\*«|👉|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement)/i)[0]
+      .trim();
+
+    const lignes = bloc
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .filter((l) => !/^\*\*\*«/.test(l))
+      .filter((l) => !/^👉/.test(l))
+      .filter((l) => !/^🌟|^⭐/.test(l));
+
+    const questionAvecPoint = lignes.find((l) => l.includes("?"));
+
+    if (questionAvecPoint) {
+      return questionAvecPoint.replace(/^[-•👉\s]+/, "").trim();
+    }
+
+    if (lignes[0]) {
+      return lignes[0].replace(/^[-•👉\s]+/, "").trim();
+    }
+  }
+
+  const rappelMatch =
+    contenu.match(/👉\s*(.+)$/im) ||
+    contenu.match(/question de consolidation\s*:?\s*(.+)$/im) ||
+    contenu.match(/essaie encore\s*:?\s*(.+)$/im);
+
+  if (rappelMatch?.[1]) {
+    return rappelMatch[1].trim();
+  }
+
+  return "";
+}
+
+function detecterConsolidationEnAttente(historique = []) {
+  const messages = [...historique].reverse();
+
+  for (const msg of messages) {
+    if (msg?.role !== "assistant") continue;
+
+    const contenu = String(msg?.content || "");
+
+    if (
+      /consolidation validée/i.test(contenu) ||
+      /tu as compris l’essentiel/i.test(contenu) ||
+      /tu as compris l'essentiel/i.test(contenu) ||
+      /nous pouvons maintenant passer/i.test(contenu)
+    ) {
+      return null;
+    }
+
+    const question = extraireQuestionConsolidationDepuisTexte(contenu);
+
+    if (question) {
+      return {
+        question,
+        source: contenu
+      };
+    }
+  }
+
+  return null;
+}
+
+function estMessageFatigueOuPause(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    /je suis fatigue|je suis fatiguee|je suis malade|je ne me sens pas bien/.test(t) ||
+    /je dois partir|je pars|a demain|bonne nuit|on reprend demain/.test(t)
+  );
+}
+
+function estNouvelleDemandePendantConsolidation(texte = "") {
+  const t = normaliserSocial(texte);
+
+  if (estChoixMatiere(texte)) return true;
+
+  return (
+    /^(je veux|je voudrais|j aimerais|je souhaite|explique|donne moi|parle moi|on fait|on peut faire)/.test(t) ||
+    /qu est ce que|c est quoi|pourquoi|comment|quels sont|quelle est/.test(t)
+  );
+}
+
+function estTentativeReponseConsolidation(texte = "") {
+  const t = normaliserSocial(texte);
+
+  if (!t) return false;
+  if (estChoixMatiere(texte)) return false;
+  if (estMessageRemerciement(texte)) return false;
+  if (estMessageSalutation(texte)) return false;
+  if (estMessageCourtHumain(texte)) return false;
+  if (estMessageRetourTravail(texte)) return false;
+  if (estNouvelleDemandePendantConsolidation(texte)) return false;
+
+  return t.split(/\s+/).filter(Boolean).length >= 3;
+}
+
+function evaluerReponseConsolidation(question = "", reponse = "") {
+  const t = normaliserSocial(reponse);
+
+  if (!t) {
+    return {
+      ok: false,
+      raison: "vide"
+    };
+  }
+
+  if (/je ne sais pas|j ai oublie|j'ai oublié|aucune idee|aucune idée|je n ai pas compris|je n'ai pas compris/.test(t)) {
+    return {
+      ok: false,
+      raison: "aveu_incomprehension"
+    };
+  }
+
+  const mots = t.split(/\s+/).filter((m) => m.length > 2);
+
+  if (mots.length < 5) {
+    return {
+      ok: false,
+      raison: "trop_court"
+    };
+  }
+
+  const questionNorm = normaliserSocial(question);
+
+  const motsQuestion = questionNorm
+    .split(/\s+/)
+    .filter((m) => m.length >= 5)
+    .filter((m) => ![
+      "explique",
+      "donne",
+      "avec",
+      "mots",
+      "qu est",
+      "quelle",
+      "pourquoi",
+      "comment",
+      "consolidation"
+    ].includes(m));
+
+  const score = motsQuestion.filter((mot) => t.includes(mot)).length;
+
+  if (motsQuestion.length >= 2 && score === 0 && mots.length < 9) {
+    return {
+      ok: false,
+      raison: "hors_sujet_possible"
+    };
+  }
+
+  return {
+    ok: true,
+    raison: "suffisant"
+  };
+}
+
+function construireRappelConsolidation(user = {}, question = "") {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  return `Doucement ${appel} 😊
+
+Avant de passer à autre chose, répondons d'abord à la petite question de consolidation.
+
+C'est important pour vérifier que tu as vraiment compris. Je te le demande comme un grand frère qui veut te voir progresser avec sérénité.
+
+👉 ${question}`;
+}
+
+function construireReponsePauseAvecConsolidation(user = {}, question = "") {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  return `Je comprends ${appel} 😊 Repose-toi un peu.
+
+Quand tu seras prêt, on reprendra calmement, mais on commencera d'abord par répondre à la petite question de consolidation restée en attente :
+
+👉 ${question}`;
+}
+
+function construireFeedbackConsolidation(user = {}, question = "", reponseEleve = "") {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  const evaluation = evaluerReponseConsolidation(question, reponseEleve);
+
+  if (evaluation.ok) {
+    return `✅ Consolidation validée.
+
+Très bien ${appel} 😊
+Tu as répondu à la question de consolidation. L'essentiel est compris.
+
+Nous pouvons maintenant passer à autre chose ou continuer le même sujet.
+
+Quelle matière veux-tu travailler maintenant ?`;
+  }
+
+  return `C'est bien essayé ${appel} 😊
+Tu as commencé à répondre, et c'est déjà une bonne chose.
+
+Mais avant d'avancer, je veux que tu consolides mieux l'idée. Réponds simplement avec tes propres mots, même en une petite phrase claire.
+
+👉 ${question}`;
+}
+
 async function traiterTexte(user, texteUtilisateur, historique = []) {
   const texteSocial = nettoyerNomBot(texteUtilisateur);
   const textePourSocial = texteSocial || texteUtilisateur;
@@ -160,7 +377,52 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 3. Choix de matière : orientation sociale, pas de pédagogie directe
+  // 3. Règle précepteur : consolidation obligatoire avant de changer de sujet
+  const consolidation = detecterConsolidationEnAttente(historique);
+
+  if (consolidation?.question) {
+    if (estMessageFatigueOuPause(textePourSocial)) {
+      return {
+        reponse: construireReponsePauseAvecConsolidation(user, consolidation.question),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    if (
+      estMessageRemerciement(textePourSocial) ||
+      estMessageSalutation(textePourSocial) ||
+      estMessageRetourTravail(textePourSocial) ||
+      estMessageCourtHumain(textePourSocial) ||
+      estNouvelleDemandePendantConsolidation(textePourSocial)
+    ) {
+      return {
+        reponse: construireRappelConsolidation(user, consolidation.question),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    if (estTentativeReponseConsolidation(textePourSocial)) {
+      return {
+        reponse: construireFeedbackConsolidation(
+          user,
+          consolidation.question,
+          textePourSocial
+        ),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    return {
+      reponse: construireRappelConsolidation(user, consolidation.question),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  // 4. Choix de matière : orientation sociale, pas de pédagogie directe
   if (estChoixMatiere(texteUtilisateur) || estChoixMatiere(textePourSocial)) {
     const reponse =
       construireReponseChoixMatiere(user, texteUtilisateur) ||
@@ -173,7 +435,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 4. Réponse après une question de bien-être
+  // 5. Réponse après une question de bien-être
   if (estSecondTourSalutation(historique, textePourSocial)) {
     const reponse = genererRepriseApresBienEtre(user, historique);
 
@@ -184,7 +446,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 5. Messages sociaux simples : pas de VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
+  // 6. Messages sociaux simples : pas de VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
   if (
     estMessagePurementSocial(texteUtilisateur) ||
     estMessagePurementSocial(textePourSocial)
@@ -204,7 +466,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     }
   }
 
-  // 6. Si l’élève parle sans poser encore une vraie question académique
+  // 7. Si l’élève parle sans poser encore une vraie question académique
   const conversationDemarree = historique.some((m) =>
     m.role === "user" && estQuestionAcademique(m.content || "")
   );
@@ -231,7 +493,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 7. Cache pédagogique
+  // 8. Cache pédagogique
   const cacheKey = makeLocalCacheKey(user, texteUtilisateur);
   const cached = getLocalCache(cacheKey);
 
@@ -366,6 +628,8 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
 
+  consigneFinale += `\nÀ la fin de l'explication, pose toujours une seule question de consolidation claire. L'élève devra y répondre avant de passer à autre chose.`;
+
   if (antiBoucle.consigne) {
     consigneFinale += `\n${antiBoucle.consigne}`;
   }
@@ -412,5 +676,9 @@ module.exports = {
   setLocalCache,
   classeEstInvalide,
   nettoyerNomBot,
-  contientMatiereScientifiqueRenforcee
+  contientMatiereScientifiqueRenforcee,
+  extraireQuestionConsolidationDepuisTexte,
+  detecterConsolidationEnAttente,
+  construireRappelConsolidation,
+  construireFeedbackConsolidation
 };
