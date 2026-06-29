@@ -52,6 +52,101 @@ function ajouterHeaderPedagogique(texte = "") {
 ${reponse}`;
 }
 
+function contientFuiteInterneIA(texte = "") {
+  const t = String(texte || "").toLowerCase();
+
+  return (
+    t.includes("tool_code") ||
+    t.includes("google_search.search") ||
+    t.includes("thought") ||
+    t.includes("here's a plan") ||
+    t.includes("heres a plan") ||
+    t.includes("the user wants") ||
+    t.includes("i need to") ||
+    t.includes("i will use") ||
+    t.includes("provided context") ||
+    t.includes("mwalimu edtech persona") ||
+    t.includes("print(") ||
+    t.includes("queries=")
+  );
+}
+
+function nettoyerFuiteInterneIA(texte = "") {
+  let t = String(texte || "").trim();
+
+  if (!t) return "";
+  if (!contientFuiteInterneIA(t)) return t;
+
+  // Supprime les blocs de code éventuels.
+  t = t.replace(/```[\s\S]*?```/g, "");
+
+  // Supprime la partie tool_code jusqu’à un éventuel début de réponse pédagogique.
+  t = t.replace(
+    /tool_code[\s\S]*?(?=(🔵|🟡|🔴|❓|\[VÉCU\]|\[SAVOIR\]|\[INSPIRATION\]|\[CONSOLIDATION\]|Bonjour|D'accord|Très bien|En fait|La |Le |Les |Un |Une |Voici))/i,
+    ""
+  );
+
+  // Supprime les blocs de raisonnement interne.
+  t = t.replace(/\bthought\b[\s\S]*?(here'?s a plan\s*:|voici un plan\s*:)?/i, "");
+
+  const lignesInterdites = [
+    /tool_code/i,
+    /google_search\.search/i,
+    /queries=/i,
+    /print\(/i,
+    /\bthought\b/i,
+    /here'?s a plan/i,
+    /the user wants/i,
+    /i need to/i,
+    /i will/i,
+    /i should/i,
+    /provided context/i,
+    /mwalimu edtech persona/i,
+    /start with/i,
+    /include/i,
+    /explain what/i,
+    /all while/i,
+    /for a student/i,
+    /^\s*\d+\.\s*\*\*?\s*[🔵🟡🔴❓]/i
+  ];
+
+  t = t
+    .split("\n")
+    .filter((ligne) => {
+      const l = String(ligne || "").trim();
+      if (!l) return true;
+      return !lignesInterdites.some((regex) => regex.test(l));
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  // Si après nettoyage il reste encore une fuite, on bloque.
+  if (contientFuiteInterneIA(t)) {
+    return "";
+  }
+
+  // Si le nettoyage a presque tout supprimé, mieux vaut ne rien envoyer.
+  if (t.length < 40) {
+    return "";
+  }
+
+  return t;
+}
+
+function construireReponseSecurite(user = {}, question = "") {
+  const nom = String(user?.nom || "").trim();
+  const prenom = nom ? nom.split(/\s+/)[0] : "";
+  const appel = prenom ? `**${prenom}**` : "toi";
+
+  return `Je reprends correctement ${appel} 😊
+
+Je ne dois pas afficher d’éléments techniques à l’élève.
+
+Réécris simplement ta demande, par exemple :
+**Explique-moi cela simplement.**`;
+}
+
 function extrairePhone(msg = {}) {
   return (
     msg.from ||
@@ -222,11 +317,15 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
     return "";
   }
 
-  // Important :
-  // Les réponses sociales, commandes, profil, choix de matière et repos
-  // gardent bypassFormat:true, donc PAS de header.
+  const reponseNettoyeeDirecte = nettoyerFuiteInterneIA(reponseBrute);
+
+  if (!reponseNettoyeeDirecte) {
+    return ajouterHeaderPedagogique(construireReponseSecurite(user, question));
+  }
+
+  // Les réponses sociales, commandes, profil, choix de matière et repos gardent bypassFormat:true.
   if (result.bypassFormat) {
-    return reponseBrute;
+    return reponseNettoyeeDirecte;
   }
 
   const noms = [
@@ -245,14 +344,25 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
     if (typeof fn !== "function") continue;
 
     try {
-      const sortie = await fn(reponseBrute, user, question, result.fiche || null);
+      const sortie = await fn(
+        reponseNettoyeeDirecte,
+        user,
+        question,
+        result.fiche || null
+      );
 
       if (typeof sortie === "string" && sortie.trim()) {
-        return ajouterHeaderPedagogique(sortie);
+        const propre = nettoyerFuiteInterneIA(sortie);
+        return ajouterHeaderPedagogique(
+          propre || construireReponseSecurite(user, question)
+        );
       }
 
       if (sortie?.reponse) {
-        return ajouterHeaderPedagogique(sortie.reponse);
+        const propre = nettoyerFuiteInterneIA(sortie.reponse);
+        return ajouterHeaderPedagogique(
+          propre || construireReponseSecurite(user, question)
+        );
       }
     } catch (_) {
       // On essaie l'autre forme.
@@ -260,27 +370,31 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
 
     try {
       const sortie = await fn({
-        reponse: reponseBrute,
+        reponse: reponseNettoyeeDirecte,
         user,
         question,
         fiche: result.fiche || null
       });
 
       if (typeof sortie === "string" && sortie.trim()) {
-        return ajouterHeaderPedagogique(sortie);
+        const propre = nettoyerFuiteInterneIA(sortie);
+        return ajouterHeaderPedagogique(
+          propre || construireReponseSecurite(user, question)
+        );
       }
 
       if (sortie?.reponse) {
-        return ajouterHeaderPedagogique(sortie.reponse);
+        const propre = nettoyerFuiteInterneIA(sortie.reponse);
+        return ajouterHeaderPedagogique(
+          propre || construireReponseSecurite(user, question)
+        );
       }
     } catch (_) {
-      // On garde la réponse brute.
+      // On garde la réponse brute nettoyée.
     }
   }
 
-  // Sécurité finale :
-  // Si formatting.js ne met pas le header, pipeline.js le remet.
-  return ajouterHeaderPedagogique(reponseBrute);
+  return ajouterHeaderPedagogique(reponseNettoyeeDirecte);
 }
 
 async function envoyerMessageSafe(phone = "", message = "") {
@@ -510,5 +624,7 @@ module.exports = {
   appendHistoriqueSafe,
   envoyerMessageSafe,
   ajouterHeaderPedagogique,
-  contientHeaderMwalimu
+  contientHeaderMwalimu,
+  contientFuiteInterneIA,
+  nettoyerFuiteInterneIA
 };
