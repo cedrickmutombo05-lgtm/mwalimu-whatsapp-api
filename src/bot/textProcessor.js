@@ -164,31 +164,43 @@ function estPhraseInterneIA(texte = "") {
   );
 }
 
+function estRappelConsolidationAssistant(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("doucement") &&
+    t.includes("avant de passer") &&
+    t.includes("question de consolidation")
+  );
+}
+
 function estQuestionConsolidationValide(texte = "") {
   const q = String(texte || "").trim();
 
   if (!q) return false;
   if (estPhraseInterneIA(q)) return false;
-  if (q.length < 10 || q.length > 280) return false;
+  if (q.length < 8 || q.length > 320) return false;
 
   return (
     q.includes("?") ||
     /^explique/i.test(q) ||
     /^dis/i.test(q) ||
     /^peux-tu/i.test(q) ||
-    /^donne/i.test(q)
+    /^peux tu/i.test(q) ||
+    /^donne/i.test(q) ||
+    /^cite/i.test(q)
   );
 }
 
 function nettoyerLigneConsolidation(ligne = "") {
   return String(ligne || "")
-    .replace(/^[-•👉\s*]+/, "")
+    .replace(/^[-•👉❓\s*]+/, "")
     .replace(/^\*\*/, "")
     .replace(/\*\*$/, "")
     .trim();
 }
 
-function extraireDerniereQuestionDepuisBlocConsolidation(bloc = "") {
+function extraireDerniereQuestionDepuisBloc(bloc = "") {
   const lignes = String(bloc || "")
     .split("\n")
     .map(nettoyerLigneConsolidation)
@@ -219,6 +231,7 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
 
   if (!contenu) return "";
 
+  // Source 1 officielle : dernier bloc [CONSOLIDATION]
   const regexConsolidation = /(?:❓\s*)?(?:\*\*)?\[CONSOLIDATION\](?:\*\*)?/gi;
   const positions = [];
   let match;
@@ -230,19 +243,33 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
     });
   }
 
-  if (positions.length === 0) {
-    return "";
+  if (positions.length > 0) {
+    const dernierePosition = positions[positions.length - 1];
+
+    let bloc = contenu.slice(dernierePosition.end);
+
+    bloc = bloc
+      .split(/\n(?=\*\*\*«|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement|tool_code|thought|Voici un plan|Here|🔶|✅)/i)[0]
+      .trim();
+
+    const question = extraireDerniereQuestionDepuisBloc(bloc);
+
+    if (question) return question;
   }
 
-  const dernierePosition = positions[positions.length - 1];
+  // Source 2 : question introduite par ❓, même si le label [CONSOLIDATION] manque
+  const questionsEmoji = [...contenu.matchAll(/❓\s*([\s\S]*?\?)/g)];
 
-  let bloc = contenu.slice(dernierePosition.end);
+  if (questionsEmoji.length > 0) {
+    const derniere = questionsEmoji[questionsEmoji.length - 1]?.[1]?.trim() || "";
+    const question = nettoyerLigneConsolidation(derniere);
 
-  bloc = bloc
-    .split(/\n(?=\*\*\*«|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement|tool_code|thought|Voici un plan|Here|🔶|✅)/i)[0]
-    .trim();
+    if (estQuestionConsolidationValide(question)) {
+      return question;
+    }
+  }
 
-  return extraireDerniereQuestionDepuisBlocConsolidation(bloc);
+  return "";
 }
 
 function detecterConsolidationEnAttente(historique = []) {
@@ -255,6 +282,8 @@ function detecterConsolidationEnAttente(historique = []) {
 
     if (
       /consolidation validée/i.test(contenu) ||
+      /ta réponse est juste/i.test(contenu) ||
+      /ta reponse est juste/i.test(contenu) ||
       /tu as compris l’essentiel/i.test(contenu) ||
       /tu as compris l'essentiel/i.test(contenu) ||
       /nous pouvons maintenant passer/i.test(contenu)
@@ -262,7 +291,12 @@ function detecterConsolidationEnAttente(historique = []) {
       return null;
     }
 
-    if (!/\[CONSOLIDATION\]/i.test(contenu)) {
+    // Les anciens rappels ne deviennent jamais la nouvelle source officielle.
+    if (estRappelConsolidationAssistant(contenu)) {
+      continue;
+    }
+
+    if (!/\[CONSOLIDATION\]|❓/i.test(contenu)) {
       continue;
     }
 
@@ -326,14 +360,7 @@ function estTentativeReponseConsolidation(texte = "") {
   if (estMessageRetourTravail(texte)) return false;
   if (estNouvelleDemandePendantConsolidation(texte)) return false;
 
-  // Réponse courte acceptée comme tentative : "Acide.", "Basique.", "Le noyau."
   return t.split(/\s+/).filter(Boolean).length >= 1;
-}
-
-function contientMot(texte = "", mots = []) {
-  const t = normaliserSocial(texte);
-
-  return mots.some((mot) => t.includes(normaliserSocial(mot)));
 }
 
 function affirmationAcideOuBasique(reponse = "") {
@@ -353,6 +380,43 @@ function affirmationAcideOuBasique(reponse = "") {
   };
 }
 
+function reponseContientUnExempleValable(reponse = "") {
+  const r = normaliserSocial(reponse);
+
+  if (!r) return false;
+
+  const horsSujetEvidents = [
+    "salete",
+    "saleté",
+    "mensonge",
+    "voler",
+    "guerre",
+    "maladie",
+    "insulte",
+    "haine",
+    "violence"
+  ];
+
+  if (horsSujetEvidents.some((mot) => r.includes(mot))) {
+    return false;
+  }
+
+  const mots = r.split(/\s+/).filter(Boolean);
+
+  if (mots.length >= 1 && mots.length <= 12) {
+    return true;
+  }
+
+  return (
+    r.includes("simple") ||
+    r.includes("ordinaire") ||
+    r.includes("courant") ||
+    r.includes("de base") ||
+    r.includes("sans decoration") ||
+    r.includes("sans décoration")
+  );
+}
+
 function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
   const q = normaliserSocial(question);
   const r = normaliserSocial(reponse);
@@ -360,14 +424,8 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
 
   // 1. Acide / basique selon H+ et OH-
   const parleIonsAcideBase =
-    (
-      q.includes("h") ||
-      qRaw.includes("h+")
-    ) &&
-    (
-      q.includes("oh") ||
-      qRaw.includes("oh-")
-    ) &&
+    (q.includes("h") || qRaw.includes("h+")) &&
+    (q.includes("oh") || qRaw.includes("oh-")) &&
     q.includes("acide") &&
     q.includes("basique");
 
@@ -386,11 +444,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
 
     if (beaucoupH) {
       if (ditAcide && !ditBasique) {
-        return {
-          traite: true,
-          ok: true,
-          correction: ""
-        };
+        return { traite: true, ok: true, correction: "" };
       }
 
       if (ditBasique && !ditAcide) {
@@ -412,11 +466,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
 
     if (beaucoupOH) {
       if (ditBasique && !ditAcide) {
-        return {
-          traite: true,
-          ok: true,
-          correction: ""
-        };
+        return { traite: true, ok: true, correction: "" };
       }
 
       if (ditAcide && !ditBasique) {
@@ -437,7 +487,62 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
     }
   }
 
-  // 2. Différence procaryote / eucaryote
+  // 2. Exemple de quelque chose de basique au sens commun
+  if (
+    q.includes("exemple") &&
+    q.includes("basique") &&
+    (
+      q.includes("vie de tous les jours") ||
+      q.includes("sens commun") ||
+      q.includes("tous les jours")
+    )
+  ) {
+    if (reponseContientUnExempleValable(reponse)) {
+      return {
+        traite: true,
+        ok: true,
+        correction: ""
+      };
+    }
+
+    return {
+      traite: true,
+      ok: false,
+      correction:
+        "Ici, “basique” veut dire simple, ordinaire ou de base. Pense à un objet ou une chose simple du quotidien : une chemise simple, de l’eau, du pain, un t-shirt simple."
+    };
+  }
+
+  // 3. Sens littéral / sens caché
+  if (
+    q.includes("sens direct") ||
+    q.includes("sens litteral") ||
+    q.includes("sens littéral") ||
+    q.includes("sens cache") ||
+    q.includes("sens caché")
+  ) {
+    if (
+      r.includes("comprehension") ||
+      r.includes("compréhension") ||
+      r.includes("comprendre") ||
+      r.includes("eviter") ||
+      r.includes("éviter") ||
+      r.includes("malentendu") ||
+      r.includes("confusion") ||
+      r.includes("sens")
+    ) {
+      return { traite: true, ok: true, correction: "" };
+    }
+
+    return {
+      traite: true,
+      ok: false,
+      correction:
+        "Comprendre d’abord le sens direct permet d’éviter les confusions avant de chercher un éventuel sens caché."
+    };
+  }
+
+  // 4. Différence procaryote / eucaryote
   if (
     q.includes("procaryote") &&
     q.includes("eucaryote") &&
@@ -447,25 +552,8 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
     const parleProc = r.includes("procaryote");
     const parleEuc = r.includes("eucaryote");
 
-    const ideeCorrecte =
-      parleNoyau &&
-      (
-        r.includes("sans noyau") ||
-        r.includes("pas de noyau") ||
-        r.includes("n a pas de noyau") ||
-        r.includes("na pas de noyau") ||
-        r.includes("n ont pas de noyau") ||
-        r.includes("non") ||
-        r.includes("absence")
-      ) &&
-      parleEuc;
-
-    if (ideeCorrecte || (parleNoyau && parleProc && parleEuc)) {
-      return {
-        traite: true,
-        ok: true,
-        correction: ""
-      };
+    if (parleNoyau && (parleProc || parleEuc)) {
+      return { traite: true, ok: true, correction: "" };
     }
 
     return {
@@ -476,7 +564,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
     };
   }
 
-  // 3. Réaction chimique / changement physique
+  // 5. Réaction chimique / changement physique
   if (
     q.includes("reaction chimique") &&
     q.includes("changement physique")
@@ -486,9 +574,9 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
       r.includes("nouveaux produits") ||
       r.includes("nouvelle substance") ||
       r.includes("nouvelles substances") ||
-      r.includes("transformation des reactifs") ||
-      r.includes("réactifs se transforment") ||
-      r.includes("reactifs se transforment");
+      r.includes("transformation") ||
+      r.includes("reactifs") ||
+      r.includes("réactifs");
 
     const ideePhysique =
       r.includes("pas de nouvelle substance") ||
@@ -499,11 +587,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
       r.includes("état change");
 
     if (ideeReaction || ideePhysique) {
-      return {
-        traite: true,
-        ok: true,
-        correction: ""
-      };
+      return { traite: true, ok: true, correction: "" };
     }
 
     return {
@@ -514,7 +598,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
     };
   }
 
-  // 4. Réactifs vers produits
+  // 6. Réactifs vers produits
   if (
     q.includes("reactifs") &&
     q.includes("produits")
@@ -527,11 +611,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
       r.includes("transforment") ||
       r.includes("transformation")
     ) {
-      return {
-        traite: true,
-        ok: true,
-        correction: ""
-      };
+      return { traite: true, ok: true, correction: "" };
     }
 
     return {
@@ -542,7 +622,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
     };
   }
 
-  // 5. Définition simple de la cellule
+  // 7. Définition simple de la cellule
   if (
     q.includes("cellule") &&
     (
@@ -560,11 +640,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
       );
 
     if (ideeCellule) {
-      return {
-        traite: true,
-        ok: true,
-        correction: ""
-      };
+      return { traite: true, ok: true, correction: "" };
     }
 
     return {
@@ -644,12 +720,12 @@ function evaluerReponseConsolidation(question = "", reponse = "") {
       "difference",
       "différence",
       "peux",
-      "dire"
+      "dire",
+      "exemple"
     ].includes(m));
 
   const score = motsQuestion.filter((mot) => t.includes(mot)).length;
 
-  // Réponse courte mais pertinente : acceptée.
   if (score >= 1 && mots.length >= 1) {
     return {
       ok: true,
@@ -658,7 +734,6 @@ function evaluerReponseConsolidation(question = "", reponse = "") {
     };
   }
 
-  // Réponse longue mais hors sujet : refusée.
   if (motsQuestion.length >= 2 && score === 0) {
     return {
       ok: false,
@@ -668,7 +743,6 @@ function evaluerReponseConsolidation(question = "", reponse = "") {
     };
   }
 
-  // Si la réponse est compréhensible et non hors sujet évident, on accepte avec souplesse.
   if (mots.length >= 3) {
     return {
       ok: true,
@@ -778,6 +852,7 @@ function deduireSujetDepuisQuestion(question = "") {
     .replace(/^me dire\s+/i, "")
     .replace(/^explique\s+/i, "")
     .replace(/^donne\s+/i, "")
+    .replace(/^cite\s+/i, "")
     .trim();
 
   const difference = q.match(/diff[eé]rence\s+entre\s+(.+?)\s+et\s+(.+?)\s*\?/i);
@@ -814,6 +889,8 @@ function retrouverDernierSujetPedagogique(historique = []) {
     if (msg?.role !== "assistant") continue;
 
     const contenu = String(msg?.content || "");
+
+    if (estRappelConsolidationAssistant(contenu)) continue;
 
     const question = extraireQuestionConsolidationDepuisTexte(contenu);
 
@@ -1140,13 +1217,13 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
   }
 
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
-  consigneFinale += `\nÀ la fin de l'explication, pose toujours une seule question de consolidation claire. L'élève devra y répondre avant de passer à autre chose.`;
+  consigneFinale += `\nÀ la fin de l'explication, pose toujours une seule question de consolidation claire. Utilise le format exact : ❓ [CONSOLIDATION]. L'élève devra y répondre avant de passer à autre chose.`;
 
   if (antiBoucle.consigne) {
     consigneFinale += `\n${antiBoucle.consigne}`;
   }
 
-  let reponse = await construireReponseDbWebIa(
+  const reponseIA = await construireReponseDbWebIa(
     user,
     questionPedagogique,
     historique,
@@ -1154,12 +1231,11 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
     consigneFinale
   );
 
-  if (reponse && String(reponse).trim()) {
-    reponse = prefixeContinuation ? `${prefixeContinuation}${reponse}` : reponse;
-    setLocalCache(cacheKey, reponse);
+  if (reponseIA && String(reponseIA).trim()) {
+    setLocalCache(cacheKey, reponseIA);
   }
 
-  if (!reponse || !String(reponse).trim()) {
+  if (!reponseIA || !String(reponseIA).trim()) {
     await logUnansweredQuestion(
       user,
       questionPedagogique,
@@ -1176,7 +1252,7 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
   }
 
   return {
-    reponse,
+    reponse: prefixeContinuation ? `${prefixeContinuation}${reponseIA}` : reponseIA,
     fiche: fiche || null,
     bypassFormat: false
   };
