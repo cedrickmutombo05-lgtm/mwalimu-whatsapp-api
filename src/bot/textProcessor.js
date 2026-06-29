@@ -326,7 +326,260 @@ function estTentativeReponseConsolidation(texte = "") {
   if (estMessageRetourTravail(texte)) return false;
   if (estNouvelleDemandePendantConsolidation(texte)) return false;
 
-  return t.split(/\s+/).filter(Boolean).length >= 3;
+  // Réponse courte acceptée comme tentative : "Acide.", "Basique.", "Le noyau."
+  return t.split(/\s+/).filter(Boolean).length >= 1;
+}
+
+function contientMot(texte = "", mots = []) {
+  const t = normaliserSocial(texte);
+
+  return mots.some((mot) => t.includes(normaliserSocial(mot)));
+}
+
+function affirmationAcideOuBasique(reponse = "") {
+  const r = normaliserSocial(reponse);
+
+  const ditAcide =
+    r.includes("acide") &&
+    !/pas acide|non acide|n est pas acide|nest pas acide/.test(r);
+
+  const ditBasique =
+    r.includes("basique") &&
+    !/pas basique|non basique|n est pas basique|nest pas basique/.test(r);
+
+  return {
+    ditAcide,
+    ditBasique
+  };
+}
+
+function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
+  const q = normaliserSocial(question);
+  const r = normaliserSocial(reponse);
+  const qRaw = String(question || "").toLowerCase();
+
+  // 1. Acide / basique selon H+ et OH-
+  const parleIonsAcideBase =
+    (
+      q.includes("h") ||
+      qRaw.includes("h+")
+    ) &&
+    (
+      q.includes("oh") ||
+      qRaw.includes("oh-")
+    ) &&
+    q.includes("acide") &&
+    q.includes("basique");
+
+  if (parleIonsAcideBase) {
+    const beaucoupH =
+      /beaucoup[^.!?]*(h\s*\+)/i.test(qRaw) ||
+      q.includes("beaucoup d ions h") ||
+      q.includes("beaucoup ions h");
+
+    const beaucoupOH =
+      /beaucoup[^.!?]*(oh\s*-)/i.test(qRaw) ||
+      q.includes("beaucoup d ions oh") ||
+      q.includes("beaucoup ions oh");
+
+    const { ditAcide, ditBasique } = affirmationAcideOuBasique(reponse);
+
+    if (beaucoupH) {
+      if (ditAcide && !ditBasique) {
+        return {
+          traite: true,
+          ok: true,
+          correction: ""
+        };
+      }
+
+      if (ditBasique && !ditAcide) {
+        return {
+          traite: true,
+          ok: false,
+          correction:
+            "Ici, une solution qui contient beaucoup d’ions H+ et très peu d’ions OH- est **acide**, et non basique."
+        };
+      }
+
+      return {
+        traite: true,
+        ok: false,
+        correction:
+          "Ici, il faut retenir ceci : beaucoup d’ions H+ indique une solution **acide**."
+      };
+    }
+
+    if (beaucoupOH) {
+      if (ditBasique && !ditAcide) {
+        return {
+          traite: true,
+          ok: true,
+          correction: ""
+        };
+      }
+
+      if (ditAcide && !ditBasique) {
+        return {
+          traite: true,
+          ok: false,
+          correction:
+            "Ici, une solution qui contient beaucoup d’ions OH- est **basique**, et non acide."
+        };
+      }
+
+      return {
+        traite: true,
+        ok: false,
+        correction:
+          "Ici, il faut retenir ceci : beaucoup d’ions OH- indique une solution **basique**."
+      };
+    }
+  }
+
+  // 2. Différence procaryote / eucaryote
+  if (
+    q.includes("procaryote") &&
+    q.includes("eucaryote") &&
+    (q.includes("difference") || q.includes("différence"))
+  ) {
+    const parleNoyau = r.includes("noyau");
+    const parleProc = r.includes("procaryote");
+    const parleEuc = r.includes("eucaryote");
+
+    const ideeCorrecte =
+      parleNoyau &&
+      (
+        r.includes("sans noyau") ||
+        r.includes("pas de noyau") ||
+        r.includes("n a pas de noyau") ||
+        r.includes("na pas de noyau") ||
+        r.includes("n ont pas de noyau") ||
+        r.includes("non") ||
+        r.includes("absence")
+      ) &&
+      parleEuc;
+
+    if (ideeCorrecte || (parleNoyau && parleProc && parleEuc)) {
+      return {
+        traite: true,
+        ok: true,
+        correction: ""
+      };
+    }
+
+    return {
+      traite: true,
+      ok: false,
+      correction:
+        "La différence essentielle est que la cellule eucaryote possède un noyau, tandis que la cellule procaryote n’a pas de vrai noyau."
+    };
+  }
+
+  // 3. Réaction chimique / changement physique
+  if (
+    q.includes("reaction chimique") &&
+    q.includes("changement physique")
+  ) {
+    const ideeReaction =
+      r.includes("nouveau produit") ||
+      r.includes("nouveaux produits") ||
+      r.includes("nouvelle substance") ||
+      r.includes("nouvelles substances") ||
+      r.includes("transformation des reactifs") ||
+      r.includes("réactifs se transforment") ||
+      r.includes("reactifs se transforment");
+
+    const ideePhysique =
+      r.includes("pas de nouvelle substance") ||
+      r.includes("ne cree pas") ||
+      r.includes("ne crée pas") ||
+      r.includes("forme change") ||
+      r.includes("etat change") ||
+      r.includes("état change");
+
+    if (ideeReaction || ideePhysique) {
+      return {
+        traite: true,
+        ok: true,
+        correction: ""
+      };
+    }
+
+    return {
+      traite: true,
+      ok: false,
+      correction:
+        "La réaction chimique forme de nouvelles substances, tandis qu’un changement physique change surtout l’état ou la forme sans créer une nouvelle substance."
+    };
+  }
+
+  // 4. Réactifs vers produits
+  if (
+    q.includes("reactifs") &&
+    q.includes("produits")
+  ) {
+    if (
+      r.includes("produit") ||
+      r.includes("produits") ||
+      r.includes("nouvelle substance") ||
+      r.includes("nouvelles substances") ||
+      r.includes("transforment") ||
+      r.includes("transformation")
+    ) {
+      return {
+        traite: true,
+        ok: true,
+        correction: ""
+      };
+    }
+
+    return {
+      traite: true,
+      ok: false,
+      correction:
+        "Quand des réactifs se transforment, ils donnent de nouveaux produits : c’est le signe d’une réaction chimique."
+    };
+  }
+
+  // 5. Définition simple de la cellule
+  if (
+    q.includes("cellule") &&
+    (
+      q.includes("qu est ce") ||
+      q.includes("definition") ||
+      q.includes("définition") ||
+      q.includes("explique")
+    )
+  ) {
+    const ideeCellule =
+      r.includes("cellule") ||
+      (
+        (r.includes("unite") || r.includes("unité") || r.includes("base")) &&
+        (r.includes("vivant") || r.includes("vie") || r.includes("etre vivant") || r.includes("être vivant"))
+      );
+
+    if (ideeCellule) {
+      return {
+        traite: true,
+        ok: true,
+        correction: ""
+      };
+    }
+
+    return {
+      traite: true,
+      ok: false,
+      correction:
+        "Une cellule est la plus petite unité de base du vivant."
+    };
+  }
+
+  return {
+    traite: false,
+    ok: false,
+    correction: ""
+  };
 }
 
 function evaluerReponseConsolidation(question = "", reponse = "") {
@@ -335,23 +588,39 @@ function evaluerReponseConsolidation(question = "", reponse = "") {
   if (!t) {
     return {
       ok: false,
-      raison: "vide"
+      raison: "vide",
+      correction: ""
     };
   }
 
-  if (/je ne sais pas|j ai oublie|j'ai oublié|aucune idee|aucune idée|je n ai pas compris|je n'ai pas compris/.test(t)) {
+  if (
+    /je ne sais pas|j ai oublie|j'ai oublié|aucune idee|aucune idée|je n ai pas compris|je n'ai pas compris/.test(t)
+  ) {
     return {
       ok: false,
-      raison: "aveu_incomprehension"
+      raison: "aveu_incomprehension",
+      correction:
+        "Ce n’est pas grave. On va reprendre doucement l’idée avant de continuer."
+    };
+  }
+
+  const specifique = evaluerCasSpecifiqueConsolidation(question, reponse);
+
+  if (specifique.traite) {
+    return {
+      ok: specifique.ok,
+      raison: specifique.ok ? "bonne_reponse_specifique" : "erreur_specifique",
+      correction: specifique.correction || ""
     };
   }
 
   const mots = t.split(/\s+/).filter((m) => m.length > 2);
 
-  if (mots.length < 5) {
+  if (mots.length === 0) {
     return {
       ok: false,
-      raison: "trop_court"
+      raison: "trop_vague",
+      correction: ""
     };
   }
 
@@ -373,21 +642,46 @@ function evaluerReponseConsolidation(question = "", reponse = "") {
       "consolidation",
       "principale",
       "difference",
-      "différence"
+      "différence",
+      "peux",
+      "dire"
     ].includes(m));
 
   const score = motsQuestion.filter((mot) => t.includes(mot)).length;
 
-  if (motsQuestion.length >= 2 && score === 0 && mots.length < 9) {
+  // Réponse courte mais pertinente : acceptée.
+  if (score >= 1 && mots.length >= 1) {
+    return {
+      ok: true,
+      raison: "courte_mais_pertinente",
+      correction: ""
+    };
+  }
+
+  // Réponse longue mais hors sujet : refusée.
+  if (motsQuestion.length >= 2 && score === 0) {
     return {
       ok: false,
-      raison: "hors_sujet_possible"
+      raison: "hors_sujet_possible",
+      correction:
+        "Ta réponse semble s’éloigner de la question posée. Revenons à la question précise."
+    };
+  }
+
+  // Si la réponse est compréhensible et non hors sujet évident, on accepte avec souplesse.
+  if (mots.length >= 3) {
+    return {
+      ok: true,
+      raison: "suffisant",
+      correction: ""
     };
   }
 
   return {
-    ok: true,
-    raison: "suffisant"
+    ok: false,
+    raison: "trop_vague",
+    correction:
+      "Ta réponse est encore un peu trop vague. Essaie de donner l’idée principale en quelques mots simples."
   };
 }
 
@@ -425,17 +719,22 @@ function construireFeedbackConsolidation(user = {}, question = "", reponseEleve 
     return `✅ Consolidation validée.
 
 Très bien ${appel} 😊
-Tu as répondu à la question de consolidation. L'essentiel est compris.
+Ta réponse est juste. Elle peut être courte ou longue : l'essentiel, c'est que l'idée soit correcte.
 
 Nous pouvons maintenant passer à autre chose ou continuer le même sujet.
 
 Quelle matière veux-tu travailler maintenant ?`;
   }
 
-  return `C'est bien essayé ${appel} 😊
-Tu as commencé à répondre, et c'est déjà une bonne chose.
+  const correction = evaluation.correction
+    ? `\n\n${evaluation.correction}`
+    : "";
 
-Mais avant d'avancer, je veux que tu consolides mieux l'idée. Réponds simplement avec tes propres mots, même en une petite phrase claire.
+  return `Pas encore exactement ${appel} 😊
+
+Tu as fait l'effort de répondre, et c'est déjà bien. Mais ici, l'idée n'est pas encore correcte.${correction}
+
+Reprenons calmement :
 
 👉 ${question}`;
 }
@@ -895,6 +1194,7 @@ module.exports = {
   detecterConsolidationEnAttente,
   construireRappelConsolidation,
   construireFeedbackConsolidation,
+  evaluerReponseConsolidation,
   estQuestionUtilisateur,
   estNouvelleDemandePendantConsolidation,
   estDemandeContinuerMemeSujet,
