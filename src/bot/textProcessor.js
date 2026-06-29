@@ -74,7 +74,18 @@ function classeEstInvalide(classe = "") {
   return invalides.includes(c);
 }
 
+function nettoyerNomBot(texte = "") {
+  return String(texte || "")
+    .replace(/\bmwalimu\b/gi, " ")
+    .replace(/\bmwalimu edtech\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function traiterTexte(user, texteUtilisateur, historique = []) {
+  const texteSocial = nettoyerNomBot(texteUtilisateur);
+  const textePourSocial = texteSocial || texteUtilisateur;
+
   const prenomActuel = premierPrenom(user?.nom || "");
   const classeActuelle = String(user?.classe || "").trim();
 
@@ -97,8 +108,9 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   }
 
   // 3. Choix de matière : orientation sociale, pas de pédagogie directe
-  if (estChoixMatiere(texteUtilisateur)) {
-    const reponse = construireReponseChoixMatiere(user, texteUtilisateur);
+  if (estChoixMatiere(texteUtilisateur) || estChoixMatiere(textePourSocial)) {
+    const reponse = construireReponseChoixMatiere(user, texteUtilisateur)
+      || construireReponseChoixMatiere(user, textePourSocial);
 
     return {
       reponse,
@@ -108,7 +120,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   }
 
   // 4. Réponse après une question de bien-être
-  if (estSecondTourSalutation(historique, texteUtilisateur)) {
+  if (estSecondTourSalutation(historique, textePourSocial)) {
     const reponse = genererRepriseApresBienEtre(user);
 
     return {
@@ -119,10 +131,13 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   }
 
   // 5. Messages sociaux simples : pas de VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
-  if (estMessagePurementSocial(texteUtilisateur)) {
+  if (
+    estMessagePurementSocial(texteUtilisateur) ||
+    estMessagePurementSocial(textePourSocial)
+  ) {
     const reponseSimple = construireReponseHumaineSimple(
       user,
-      texteUtilisateur,
+      textePourSocial,
       historique
     );
 
@@ -290,5 +305,6 @@ module.exports = {
   makeLocalCacheKey,
   getLocalCache,
   setLocalCache,
-  classeEstInvalide
+  classeEstInvalide,
+  nettoyerNomBot
 };
