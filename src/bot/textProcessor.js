@@ -262,9 +262,6 @@ function detecterConsolidationEnAttente(historique = []) {
       return null;
     }
 
-    // Très important :
-    // On ignore les anciens rappels contenant seulement 👉.
-    // La seule source officielle est le dernier vrai bloc [CONSOLIDATION].
     if (!/\[CONSOLIDATION\]/i.test(contenu)) {
       continue;
     }
@@ -443,12 +440,123 @@ Mais avant d'avancer, je veux que tu consolides mieux l'idée. Réponds simpleme
 👉 ${question}`;
 }
 
+function estDemandeContinuerMemeSujet(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("meme sujet") ||
+    t.includes("même sujet") ||
+    t.includes("continuer avec le meme") ||
+    t.includes("continuer avec le même") ||
+    t.includes("on continue") ||
+    t.includes("continuons") ||
+    t.includes("nous pouvons continuer") ||
+    t.includes("poursuivons") ||
+    t.includes("allons plus loin") ||
+    t.includes("explique encore") ||
+    t.includes("continue l explication") ||
+    t.includes("continue l'explication") ||
+    t.includes("reprends le sujet") ||
+    t.includes("on peut continuer")
+  );
+}
+
+function nettoyerSujetPedagogique(sujet = "") {
+  return String(sujet || "")
+    .replace(/[?!.]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function deduireSujetDepuisQuestion(question = "") {
+  let q = String(question || "").trim();
+
+  q = q
+    .replace(/^avec tes propres mots,\s*/i, "")
+    .replace(/^peux-tu\s+/i, "")
+    .replace(/^peux tu\s+/i, "")
+    .replace(/^m['’]?expliquer\s+/i, "")
+    .replace(/^me dire\s+/i, "")
+    .replace(/^explique\s+/i, "")
+    .replace(/^donne\s+/i, "")
+    .trim();
+
+  const difference = q.match(/diff[eé]rence\s+entre\s+(.+?)\s+et\s+(.+?)\s*\?/i);
+  if (difference?.[1] && difference?.[2]) {
+    return nettoyerSujetPedagogique(`${difference[1]} et ${difference[2]}`);
+  }
+
+  const transformation = q.match(/ce qui se passe quand\s+(.+?)\s*\?/i);
+  if (transformation?.[1]) {
+    return nettoyerSujetPedagogique(transformation[1]);
+  }
+
+  const questCeQue = q.match(/qu['’]?est[-\s]?ce\s+qu['’]?(?:une|un|la|le|les)?\s*(.+?)\s*\?/i);
+  if (questCeQue?.[1]) {
+    return nettoyerSujetPedagogique(questCeQue[1]);
+  }
+
+  q = q
+    .replace(/^(la|le|les|un|une)\s+/i, "")
+    .replace(/\?$/g, "")
+    .trim();
+
+  if (q.length > 90) {
+    q = q.slice(0, 90).trim();
+  }
+
+  return nettoyerSujetPedagogique(q);
+}
+
+function retrouverDernierSujetPedagogique(historique = []) {
+  const messages = [...historique].reverse();
+
+  for (const msg of messages) {
+    if (msg?.role !== "assistant") continue;
+
+    const contenu = String(msg?.content || "");
+
+    const question = extraireQuestionConsolidationDepuisTexte(contenu);
+
+    if (question) {
+      const sujet = deduireSujetDepuisQuestion(question);
+
+      if (sujet) return sujet;
+    }
+  }
+
+  for (const msg of messages) {
+    const contenu = String(msg?.content || "");
+
+    if (msg?.role === "user" && estQuestionUtilisateur(contenu)) {
+      const sujet = deduireSujetDepuisQuestion(contenu);
+      if (sujet) return sujet;
+    }
+
+    if (msg?.role === "assistant") {
+      const match = contenu.match(/Nous allons travailler\s+\*{1,2}([^*]+)\*{1,2}/i);
+      if (match?.[1]) return nettoyerSujetPedagogique(match[1]);
+    }
+  }
+
+  return "";
+}
+
+function construireQuestionContinuationSujet(sujet = "") {
+  const s = nettoyerSujetPedagogique(sujet);
+
+  return `Continue l'explication pédagogique sur : ${s}. Ajoute un exemple simple, puis pose une seule question de consolidation claire à l'élève.`;
+}
+
 async function traiterTexte(user, texteUtilisateur, historique = []) {
   const texteSocial = nettoyerNomBot(texteUtilisateur);
   const textePourSocial = texteSocial || texteUtilisateur;
 
   const prenomActuel = premierPrenom(user?.nom || "");
   const classeActuelle = String(user?.classe || "").trim();
+
+  let questionPedagogique = texteUtilisateur;
+  let prefixeContinuation = "";
 
   if (!user?.nom || !prenomActuel || prenomActuel === "élève") {
     return {
@@ -510,7 +618,29 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  if (estChoixMatiere(texteUtilisateur) || estChoixMatiere(textePourSocial)) {
+  if (estDemandeContinuerMemeSujet(textePourSocial)) {
+    const dernierSujet = retrouverDernierSujetPedagogique(historique);
+
+    if (dernierSujet) {
+      questionPedagogique = construireQuestionContinuationSujet(dernierSujet);
+
+      prefixeContinuation = `Très bien **${prenomActuel}** 😊
+Nous continuons avec le même sujet : **${dernierSujet}**.
+
+`;
+    } else {
+      return {
+        reponse: `D'accord **${prenomActuel}** 😊 Nous pouvons continuer, mais rappelle-moi simplement le sujet que tu veux reprendre.`,
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+  }
+
+  if (
+    !prefixeContinuation &&
+    (estChoixMatiere(texteUtilisateur) || estChoixMatiere(textePourSocial))
+  ) {
     const reponse =
       construireReponseChoixMatiere(user, texteUtilisateur) ||
       construireReponseChoixMatiere(user, textePourSocial);
@@ -522,7 +652,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  if (estSecondTourSalutation(historique, textePourSocial)) {
+  if (!prefixeContinuation && estSecondTourSalutation(historique, textePourSocial)) {
     const reponse = genererRepriseApresBienEtre(user, historique);
 
     return {
@@ -533,8 +663,11 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   }
 
   if (
-    estMessagePurementSocial(texteUtilisateur) ||
-    estMessagePurementSocial(textePourSocial)
+    !prefixeContinuation &&
+    (
+      estMessagePurementSocial(texteUtilisateur) ||
+      estMessagePurementSocial(textePourSocial)
+    )
   ) {
     const reponseSimple = construireReponseHumaineSimple(
       user,
@@ -556,11 +689,12 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   );
 
   const questionScientifiqueRenforcee =
-    contientMatiereScientifiqueRenforcee(texteUtilisateur);
+    contientMatiereScientifiqueRenforcee(questionPedagogique);
 
   if (
+    !prefixeContinuation &&
     !conversationDemarree &&
-    !estQuestionAcademique(texteUtilisateur) &&
+    !estQuestionAcademique(questionPedagogique) &&
     !questionScientifiqueRenforcee
   ) {
     const relances = [
@@ -577,7 +711,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  const cacheKey = makeLocalCacheKey(user, texteUtilisateur);
+  const cacheKey = makeLocalCacheKey(user, questionPedagogique);
   const cached = getLocalCache(cacheKey);
 
   if (cached) {
@@ -586,8 +720,12 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
       cacheKey
     });
 
+    const reponseCachee = prefixeContinuation
+      ? `${prefixeContinuation}${cached}`
+      : cached;
+
     return {
-      reponse: cached,
+      reponse: reponseCachee,
       fiche: null,
       bypassFormat: false
     };
@@ -595,17 +733,17 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
   let analyse = {
     intention: "question_normale",
-    matiere: detecterMatiereScientifique(texteUtilisateur, "", null),
+    matiere: detecterMatiereScientifique(questionPedagogique, "", null),
     besoinCorrectionRenforcee: false,
-    sujet: extraireSujetMemoire(texteUtilisateur) || "general"
+    sujet: extraireSujetMemoire(questionPedagogique) || "general"
   };
 
-  const texteMin = String(texteUtilisateur || "").toLowerCase();
+  const texteMin = String(questionPedagogique || "").toLowerCase();
 
   const besoinAnalyseIA =
-    estSoumissionReponse(texteUtilisateur) ||
-    estQuestionTechnique(texteUtilisateur) ||
-    contientMatiereScientifiqueRenforcee(texteUtilisateur) ||
+    estSoumissionReponse(questionPedagogique) ||
+    estQuestionTechnique(questionPedagogique) ||
+    contientMatiereScientifiqueRenforcee(questionPedagogique) ||
     texteMin.includes("droit") ||
     texteMin.includes("loi") ||
     texteMin.includes("ohada") ||
@@ -670,14 +808,14 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     texteMin.includes("oceans");
 
   if (besoinAnalyseIA) {
-    analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
+    analyse = await detecterIntentionIA(user, questionPedagogique, historique);
   }
 
-  const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
-  const consigneBase = construireConsignePedagogique(texteUtilisateur, "text");
+  const fiche = await consulterBibliotheque(questionPedagogique, user.classe || "");
+  const consigneBase = construireConsignePedagogique(questionPedagogique, "text");
   const antiBoucle = await construireConsigneAntiBoucle(
     user,
-    texteUtilisateur,
+    questionPedagogique,
     historique
   );
 
@@ -689,13 +827,17 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
   if (
     analyse.intention === "geographie_rdc" ||
-    estQuestionGeographieRDC(texteUtilisateur, fiche)
+    estQuestionGeographieRDC(questionPedagogique, fiche)
   ) {
     consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
   }
 
-  if (contientMatiereScientifiqueRenforcee(texteUtilisateur)) {
+  if (contientMatiereScientifiqueRenforcee(questionPedagogique)) {
     consigneFinale += `\nLe message concerne une matière scientifique comme chimie, physique, électricité ou mécanique. Réponds avec rigueur, simplement, selon le niveau de l'élève.`;
+  }
+
+  if (prefixeContinuation) {
+    consigneFinale += `\nL'élève veut continuer le même sujet. Ne dis pas que tu as oublié. Continue directement l'explication du sujet indiqué.`;
   }
 
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
@@ -705,28 +847,29 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     consigneFinale += `\n${antiBoucle.consigne}`;
   }
 
-  const reponse = await construireReponseDbWebIa(
+  let reponse = await construireReponseDbWebIa(
     user,
-    texteUtilisateur,
+    questionPedagogique,
     historique,
     fiche,
     consigneFinale
   );
 
   if (reponse && String(reponse).trim()) {
+    reponse = prefixeContinuation ? `${prefixeContinuation}${reponse}` : reponse;
     setLocalCache(cacheKey, reponse);
   }
 
   if (!reponse || !String(reponse).trim()) {
     await logUnansweredQuestion(
       user,
-      texteUtilisateur,
+      questionPedagogique,
       "text",
       "traiterTexte_empty"
     );
   }
 
-  if (!estSoumissionReponse(texteUtilisateur)) {
+  if (!estSoumissionReponse(questionPedagogique)) {
     await resetStudentAttempt(
       user.phone,
       antiBoucle.sujet || analyse.sujet || "general"
@@ -753,5 +896,8 @@ module.exports = {
   construireRappelConsolidation,
   construireFeedbackConsolidation,
   estQuestionUtilisateur,
-  estNouvelleDemandePendantConsolidation
+  estNouvelleDemandePendantConsolidation,
+  estDemandeContinuerMemeSujet,
+  retrouverDernierSujetPedagogique,
+  deduireSujetDepuisQuestion
 };
