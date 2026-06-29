@@ -76,10 +76,63 @@ function classeEstInvalide(classe = "") {
 
 function nettoyerNomBot(texte = "") {
   return String(texte || "")
-    .replace(/\bmwalimu\b/gi, " ")
     .replace(/\bmwalimu edtech\b/gi, " ")
+    .replace(/\bmwalimu\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function contientMatiereScientifiqueRenforcee(texte = "") {
+  const t = String(texte || "").toLowerCase();
+
+  return (
+    t.includes("chimie") ||
+    t.includes("chimique") ||
+    t.includes("réaction chimique") ||
+    t.includes("reaction chimique") ||
+    t.includes("atome") ||
+    t.includes("atomes") ||
+    t.includes("molécule") ||
+    t.includes("molecule") ||
+    t.includes("molécules") ||
+    t.includes("molecules") ||
+    t.includes("mélange") ||
+    t.includes("melange") ||
+    t.includes("corps pur") ||
+    t.includes("acide") ||
+    t.includes("base") ||
+
+    t.includes("physique") ||
+    t.includes("force") ||
+    t.includes("forces") ||
+    t.includes("mouvement") ||
+    t.includes("énergie") ||
+    t.includes("energie") ||
+    t.includes("chaleur") ||
+    t.includes("lumière") ||
+    t.includes("lumiere") ||
+
+    t.includes("électricité") ||
+    t.includes("electricite") ||
+    t.includes("courant") ||
+    t.includes("courant électrique") ||
+    t.includes("courant electrique") ||
+    t.includes("tension") ||
+    t.includes("résistance") ||
+    t.includes("resistance") ||
+    t.includes("circuit") ||
+    t.includes("circuit électrique") ||
+    t.includes("circuit electrique") ||
+
+    t.includes("mécanique") ||
+    t.includes("mecanique") ||
+    t.includes("vitesse") ||
+    t.includes("travail") ||
+    t.includes("levier") ||
+    t.includes("poulie") ||
+    t.includes("machine simple") ||
+    t.includes("machines simples")
+  );
 }
 
 async function traiterTexte(user, texteUtilisateur, historique = []) {
@@ -109,8 +162,9 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
   // 3. Choix de matière : orientation sociale, pas de pédagogie directe
   if (estChoixMatiere(texteUtilisateur) || estChoixMatiere(textePourSocial)) {
-    const reponse = construireReponseChoixMatiere(user, texteUtilisateur)
-      || construireReponseChoixMatiere(user, textePourSocial);
+    const reponse =
+      construireReponseChoixMatiere(user, texteUtilisateur) ||
+      construireReponseChoixMatiere(user, textePourSocial);
 
     return {
       reponse,
@@ -121,7 +175,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
   // 4. Réponse après une question de bien-être
   if (estSecondTourSalutation(historique, textePourSocial)) {
-    const reponse = genererRepriseApresBienEtre(user);
+    const reponse = genererRepriseApresBienEtre(user, historique);
 
     return {
       reponse,
@@ -155,10 +209,17 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     m.role === "user" && estQuestionAcademique(m.content || "")
   );
 
-  if (!conversationDemarree && !estQuestionAcademique(texteUtilisateur)) {
+  const questionScientifiqueRenforcee =
+    contientMatiereScientifiqueRenforcee(texteUtilisateur);
+
+  if (
+    !conversationDemarree &&
+    !estQuestionAcademique(texteUtilisateur) &&
+    !questionScientifiqueRenforcee
+  ) {
     const relances = [
       `Je suis là pour t'aider **${prenomActuel}** 😊 Dis-moi, quelle matière ou quel exercice veux-tu travailler ?`,
-      `N'hésite pas **${prenomActuel}** ! Tu peux me parler de maths, français, histoire, géographie, sciences, civisme ou droit. Qu'est-ce qui t'intéresse ?`,
+      `N'hésite pas **${prenomActuel}** ! Tu peux me parler de maths, français, histoire, géographie, sciences, chimie, physique, électricité, mécanique, civisme ou droit. Qu'est-ce qui t'intéresse ?`,
       `**${prenomActuel}**, je suis prêt à t'expliquer ce que tu veux. Quelle notion veux-tu comprendre aujourd'hui ?`,
       `Alors **${prenomActuel}**, par quoi veux-tu commencer ? Un exercice, une leçon ou une matière précise ?`
     ];
@@ -199,11 +260,14 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   const besoinAnalyseIA =
     estSoumissionReponse(texteUtilisateur) ||
     estQuestionTechnique(texteUtilisateur) ||
+    contientMatiereScientifiqueRenforcee(texteUtilisateur) ||
+
     texteMin.includes("droit") ||
     texteMin.includes("loi") ||
     texteMin.includes("ohada") ||
     texteMin.includes("rdc") ||
     texteMin.includes("congo") ||
+
     texteMin.includes("géographie") ||
     texteMin.includes("geographie") ||
     texteMin.includes("territoire") ||
@@ -213,20 +277,57 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     texteMin.includes("ville") ||
     texteMin.includes("villes") ||
     texteMin.includes("province") ||
+
     texteMin.includes("histoire") ||
     texteMin.includes("indépendance") ||
     texteMin.includes("colonisation") ||
+
     texteMin.includes("biologie") ||
     texteMin.includes("microbiologie") ||
+
+    texteMin.includes("chimie") ||
+    texteMin.includes("chimique") ||
+    texteMin.includes("atome") ||
+    texteMin.includes("molécule") ||
+    texteMin.includes("molecule") ||
+    texteMin.includes("réaction chimique") ||
+    texteMin.includes("reaction chimique") ||
+
+    texteMin.includes("physique") ||
+    texteMin.includes("force") ||
+    texteMin.includes("mouvement") ||
+    texteMin.includes("énergie") ||
+    texteMin.includes("energie") ||
+    texteMin.includes("chaleur") ||
+    texteMin.includes("lumière") ||
+    texteMin.includes("lumiere") ||
+
+    texteMin.includes("électricité") ||
+    texteMin.includes("electricite") ||
+    texteMin.includes("courant") ||
+    texteMin.includes("tension") ||
+    texteMin.includes("résistance") ||
+    texteMin.includes("resistance") ||
+    texteMin.includes("circuit") ||
+
+    texteMin.includes("mécanique") ||
+    texteMin.includes("mecanique") ||
+    texteMin.includes("vitesse") ||
+    texteMin.includes("travail") ||
+    texteMin.includes("levier") ||
+    texteMin.includes("poulie") ||
+
     texteMin.includes("civisme") ||
     texteMin.includes("citoyenneté") ||
     texteMin.includes("citoyennete") ||
     texteMin.includes("étude du milieu") ||
     texteMin.includes("etude du milieu") ||
+
     texteMin.includes("système métrique") ||
     texteMin.includes("systeme metrique") ||
     texteMin.includes("formes géométriques") ||
     texteMin.includes("formes geometriques") ||
+
     texteMin.includes("mer") ||
     texteMin.includes("mers") ||
     texteMin.includes("océan") ||
@@ -257,6 +358,10 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     estQuestionGeographieRDC(texteUtilisateur, fiche)
   ) {
     consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
+  }
+
+  if (contientMatiereScientifiqueRenforcee(texteUtilisateur)) {
+    consigneFinale += `\nLe message concerne une matière scientifique comme chimie, physique, électricité ou mécanique. Réponds avec rigueur, simplement, selon le niveau de l'élève.`;
   }
 
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
@@ -306,5 +411,6 @@ module.exports = {
   getLocalCache,
   setLocalCache,
   classeEstInvalide,
-  nettoyerNomBot
+  nettoyerNomBot,
+  contientMatiereScientifiqueRenforcee
 };
