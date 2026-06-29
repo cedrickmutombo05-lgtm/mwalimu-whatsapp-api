@@ -1,107 +1,222 @@
 
 
 const {
-  nettoyer,
-  normaliserNom,
-  normaliserTexteRelationnel,
-  normaliserTexteMemoire,
-  premierPrenom
+  premierPrenom,
+  normaliserTexteRelationnel
 } = require("../core");
 
-const {
-  updateUserField
-} = require("../db");
+const db = require("../db");
 
 const {
-  estMessagePurementSocial,
   estChoixMatiere,
-  detecterMatiereChoisie,
-  construireReponseChoixMatiere
+  construireReponseChoixMatiere,
+  estMessagePurementSocial
 } = require("./social");
 
-function nettoyerClasse(classe = "") {
-  return normaliserNom(classe)
-    .replace(/[.!?]+$/g, "")
-    .replace(/\s+et\s+(je\s+)?(veux|voudrais|aimerais|souhaite|choisis|prends|vais|peux)\b[\s\S]*$/i, "")
-    .replace(/\s+(je\s+)?veux\s+(etudier|étudier|apprendre|revoir|travailler)\b[\s\S]*$/i, "")
-    .trim();
+function sansAccents(texte = "") {
+  return String(texte || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
-function estNomSimpleValide(texte = "") {
-  const brut = String(texte || "").trim();
+function normaliserIntentions(texte = "") {
+  return sansAccents(normaliserTexteRelationnel(texte))
+    .replace(/[’']/g, " ")
+    .replace(/[.,!?;:()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
 
-  if (!/^[a-zA-ZÀ-ÿ'-]{2,30}(\s+[a-zA-ZÀ-ÿ'-]{2,30})?$/.test(brut)) {
-    return false;
-  }
+function formatterNom(nom = "") {
+  return String(nom || "")
+    .trim()
+    .replace(/[.,!?;:()]/g, "")
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
 
-  const t = normaliserTexteMemoire(brut);
+function classeEstInvalide(classe = "") {
+  const c = normaliserIntentions(classe);
 
-  const interdits = [
-    "bonjour", "bonsoir", "salut", "merci", "ok", "okay", "oui", "non",
-    "fatigue", "fatiguee", "triste", "content", "contente",
-    "huitieme", "septieme", "sixieme", "cinquieme", "quatrieme",
-    "troisieme", "deuxieme", "premiere", "terminale",
-    "geographie", "biologie", "civisme", "histoire", "francais",
-    "math", "maths", "mathematiques", "droit", "science", "sciences"
+  const invalides = [
+    "",
+    "en",
+    "fatigue",
+    "fatiguee",
+    "fatiguee",
+    "je suis fatigue",
+    "je suis fatiguee",
+    "triste",
+    "content",
+    "contente",
+    "decourage",
+    "decouragee",
+    "oui",
+    "non",
+    "ok",
+    "okay",
+    "merci"
   ];
 
-  return !interdits.includes(t);
+  return invalides.includes(c);
+}
+
+function nomEstInvalide(nom = "") {
+  const n = normaliserIntentions(nom);
+
+  const invalides = [
+    "",
+    "eleve",
+    "en",
+    "bonjour",
+    "bonsoir",
+    "salut",
+    "hello",
+    "merci",
+    "ok",
+    "okay",
+    "oui",
+    "non",
+    "fatigue",
+    "fatiguee",
+    "triste",
+    "content",
+    "contente",
+    "decourage",
+    "decouragee",
+    "francais",
+    "geographie",
+    "mathematiques",
+    "math",
+    "maths",
+    "systeme metrique",
+    "grammaire",
+    "conjugaison",
+    "orthographe",
+    "biologie",
+    "histoire",
+    "civisme",
+    "droit",
+    "science",
+    "sciences"
+  ];
+
+  if (invalides.includes(n)) return true;
+  if (n.length < 2 || n.length > 40) return true;
+  if (/\d/.test(n)) return true;
+
+  return false;
 }
 
 function extraireNomDepuisMessage(texte = "") {
   const brut = String(texte || "").trim();
+  const t = normaliserIntentions(brut);
+
+  if (!t) return "";
+
+  if (estChoixMatiere(brut)) return "";
+  if (estMessagePurementSocial(brut)) return "";
+  if (/^je suis en\s+/.test(t)) return "";
+  if (/^je suis fatigue/.test(t)) return "";
 
   const patterns = [
-    /je m['’]?appelle\s+(.+)/i,
-    /mon nom est\s+(.+)/i,
-    /mon prénom est\s+(.+)/i,
-    /mon prenom est\s+(.+)/i,
-    /moi c['’]?est\s+(.+)/i
+    /^(?:je m appelle|je me nomme|mon nom est|mon prenom est|mon prénom est|moi c est|moi je suis|appelle moi)\s+(.+)$/i,
+    /^(?:c est|cest)\s+(.+)$/i,
+    /^(?:je suis)\s+([a-zA-ZÀ-ÿ\s'-]{2,40})$/i
   ];
 
   for (const pattern of patterns) {
     const match = brut.match(pattern);
-
     if (match?.[1]) {
-      const nom = normaliserNom(match[1]).replace(/[.!?]+$/g, "");
-      return estNomSimpleValide(nom) ? nom : "";
+      const candidat = formatterNom(match[1]);
+      if (!nomEstInvalide(candidat)) return candidat;
     }
   }
 
-  if (estNomSimpleValide(brut)) {
-    return normaliserNom(brut).replace(/[.!?]+$/g, "");
+  const simple = brut
+    .replace(/[.,!?;:()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const estNomSimple =
+    /^[\p{L}][\p{L}\s'-]{1,40}$/u.test(simple) &&
+    simple.split(" ").length <= 2;
+
+  if (estNomSimple) {
+    const candidat = formatterNom(simple);
+    if (!nomEstInvalide(candidat)) return candidat;
   }
 
   return "";
 }
 
+function nettoyerClasse(classe = "") {
+  let c = String(classe || "").trim();
+
+  c = c
+    .replace(/[.,!?;:()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const coupeurs = [
+    " je veux ",
+    " je voudrais ",
+    " j aimerais ",
+    " j'aimerais ",
+    " je souhaite ",
+    " et je veux ",
+    " et je voudrais "
+  ];
+
+  const cNorm = normaliserIntentions(c);
+
+  for (const coupeur of coupeurs) {
+    const index = cNorm.indexOf(normaliserIntentions(coupeur));
+    if (index > -1) {
+      c = c.slice(0, index).trim();
+      break;
+    }
+  }
+
+  return c;
+}
+
 function extraireClasseDepuisMessage(texte = "") {
   const brut = String(texte || "").trim();
+  const t = normaliserIntentions(brut);
+
+  if (!t) return "";
+
+  if (/je suis fatigue|je suis triste|je suis content|je suis contente/.test(t)) {
+    return "";
+  }
 
   const patterns = [
-    /je suis en\s+(.+)/i,
-    /je suis\s+en\s+classe\s+de\s+(.+)/i,
-    /ma classe est\s+(.+)/i,
-    /je fais\s+(.+)/i,
-    /classe\s*[:=]\s*(.+)/i
+    /(?:je suis en|je suis au|je suis a la|je suis à la)\s+(.+)$/i,
+    /(?:ma classe est|classe est|classe)\s*:?\s+(.+)$/i,
+    /(?:je fais|je frequente|je fréquente)\s+(.+)$/i
   ];
 
   for (const pattern of patterns) {
     const match = brut.match(pattern);
-
     if (match?.[1]) {
-      const classe = nettoyerClasse(match[1]);
-
-      if (classe && classe.length >= 2 && classe.length <= 80) {
-        return classe;
-      }
+      const candidat = nettoyerClasse(match[1]);
+      if (!classeEstInvalide(candidat)) return candidat;
     }
   }
 
-  const direct = brut.match(/\b(1ère|1ere|1e|2e|3e|4e|5e|6e|7e|8e|huitième|huitieme|septième|septieme|sixième|sixieme|cinquième|cinquieme|quatrième|quatrieme|troisième|troisieme|deuxième|deuxieme|première|premiere|terminale|primaire|secondaire|humanités|humanites)\b/i);
+  const contientClasse =
+    /\b([1-9]|10|11|12)\s*(e|eme|ème|er|ere|ère)\b/i.test(t) ||
+    /\b(sixieme|septieme|huitieme|neuvieme|dixieme|onzieme|douzieme|premiere|terminale)\b/i.test(t) ||
+    /\b(primaire|secondaire|humanite|humanites|annee|section|pedagogie|scientifique|commerciale|litteraire|latin|math physique|bio chimie)\b/i.test(t);
 
-  if (direct?.[0]) {
-    return normaliserNom(direct[0]);
+  if (contientClasse && t.length <= 80) {
+    const candidat = nettoyerClasse(brut);
+    if (!classeEstInvalide(candidat)) return candidat;
   }
 
   return "";
@@ -111,135 +226,204 @@ function extraireReveDepuisMessage(texte = "") {
   const brut = String(texte || "").trim();
 
   const patterns = [
-    /mon rêve est de\s+(.+)/i,
-    /mon reve est de\s+(.+)/i,
-    /je rêve de devenir\s+(.+)/i,
-    /je reve de devenir\s+(.+)/i,
-    /je veux devenir\s+(.+)/i,
-    /j'aimerais devenir\s+(.+)/i,
-    /je voudrais devenir\s+(.+)/i
+    /(?:je veux devenir|je voudrais devenir|j aimerais devenir|j'aimerais devenir|mon reve est de devenir|mon rêve est de devenir)\s+(.+)$/i,
+    /(?:plus tard je veux etre|plus tard je veux être|plus tard je voudrais etre|plus tard je voudrais être)\s+(.+)$/i
   ];
 
   for (const pattern of patterns) {
     const match = brut.match(pattern);
-
     if (match?.[1]) {
-      return nettoyer(match[1]).replace(/[.!?]+$/g, "");
+      return match[1]
+        .replace(/[.,!?;:()]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
     }
   }
 
   return "";
 }
 
-function detecterCommandeSimple(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-
-  if (["aide", "help", "menu"].includes(t)) return "aide";
-  if (["profil", "mon profil"].includes(t)) return "profil";
-  if (["reset", "reinitialiser", "réinitialiser", "recommencer"].includes(t)) return "reset";
-  if (["stop", "pause", "arreter", "arrêter"].includes(t)) return "stop";
-  if (["start", "reprendre", "continuer"].includes(t)) return "start";
-
-  return "";
+function profilAUnNomValide(user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  return Boolean(prenom && prenom !== "élève" && !nomEstInvalide(prenom));
 }
 
-async function traiterIntentionsProfil(user = {}, texte = "") {
-  const choixMatiere = detecterMatiereChoisie(texte);
+function profilAUneClasseValide(user = {}) {
+  return !classeEstInvalide(user?.classe || "");
+}
 
-  if (estChoixMatiere(texte) && user?.nom && user?.classe) {
+async function sauvegarderProfilUtilisateur(user = {}, patch = {}) {
+  const phone =
+    user?.phone ||
+    user?.telephone ||
+    user?.numero ||
+    user?.whatsapp ||
+    user?.wa_id ||
+    "";
+
+  const profil = {
+    ...user,
+    ...patch
+  };
+
+  if (!phone) return profil;
+
+  const fonctionsGenerales = [
+    "updateUserProfile",
+    "updateUserProfil",
+    "updateUser",
+    "updateUtilisateur",
+    "mettreAJourUtilisateur",
+    "mettreAJourProfil",
+    "saveUserProfile",
+    "upsertUser",
+    "createOrUpdateUser"
+  ];
+
+  for (const nomFonction of fonctionsGenerales) {
+    const fn = db?.[nomFonction];
+
+    if (typeof fn !== "function") continue;
+
+    try {
+      if (fn.length >= 4) {
+        const resultat = await fn(
+          phone,
+          profil.nom || "",
+          profil.classe || "",
+          profil.reve || ""
+        );
+
+        return resultat || profil;
+      }
+
+      const resultat = await fn(phone, patch);
+      return resultat || profil;
+    } catch (_) {
+      // On essaie une autre fonction disponible sans bloquer le bot.
+    }
+  }
+
+  try {
+    if (patch.nom && typeof db?.updateUserName === "function") {
+      await db.updateUserName(phone, patch.nom);
+    }
+
+    if (patch.classe && typeof db?.updateUserClasse === "function") {
+      await db.updateUserClasse(phone, patch.classe);
+    }
+
+    if (patch.reve && typeof db?.updateUserReve === "function") {
+      await db.updateUserReve(phone, patch.reve);
+    }
+
+    return profil;
+  } catch (_) {
+    return profil;
+  }
+}
+
+async function traiterIntentionsProfil(user = {}, texteUtilisateur = "") {
+  const texte = String(texteUtilisateur || "").trim();
+
+  if (!texte) {
     return {
       handled: false,
-      user,
-      reponse: ""
+      user
     };
   }
 
-  if (estMessagePurementSocial(texte)) {
+  const dejaNom = profilAUnNomValide(user);
+  const dejaClasse = profilAUneClasseValide(user);
+
+  if (dejaNom && dejaClasse) {
     return {
       handled: false,
-      user,
-      reponse: ""
+      user
     };
   }
 
-  if (!user?.nom) {
+  if (!dejaNom) {
     const nom = extraireNomDepuisMessage(texte);
 
-    if (nom && nom.length >= 2 && nom.length <= 80) {
-      await updateUserField(user.phone, "nom", nom);
+    if (nom) {
+      const userMisAJour = await sauvegarderProfilUtilisateur(user, { nom });
 
       return {
         handled: true,
-        user: { ...user, nom },
-        reponse: `Enchanté **${premierPrenom(nom)}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`
+        user: userMisAJour,
+        reponse: `Enchanté **${nom}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`,
+        fiche: null,
+        bypassFormat: true
       };
     }
 
     return {
-      handled: false,
+      handled: true,
       user,
-      reponse: ""
+      reponse: `Bonsoir 😊 Avant de commencer, quel est ton prénom ?`,
+      fiche: null,
+      bypassFormat: true
     };
   }
 
-  if (!String(user?.classe || "").trim()) {
+  if (!dejaClasse) {
     const classe = extraireClasseDepuisMessage(texte);
 
-    if (classe && classe.length >= 2 && classe.length <= 80) {
-      await updateUserField(user.phone, "classe", classe);
+    if (classe) {
+      const reve = extraireReveDepuisMessage(texte);
+      const patch = reve ? { classe, reve } : { classe };
 
-      const userMisAJour = { ...user, classe };
+      const userMisAJour = await sauvegarderProfilUtilisateur(user, patch);
+      const prenom = premierPrenom(userMisAJour?.nom || user?.nom || "");
+      const reponseChoix = construireReponseChoixMatiere(userMisAJour, texte);
 
-      if (choixMatiere) {
+      if (reponseChoix) {
         return {
           handled: true,
           user: userMisAJour,
-          reponse: `Très bien **${premierPrenom(user.nom || "élève")}** 😊 J'ai noté ta classe : **${classe}**.
-
-${construireReponseChoixMatiere(userMisAJour, texte)}`
+          reponse: `Merci **${prenom}** 😊 Ta classe est notée : **${classe}**.\n\n${reponseChoix}`,
+          fiche: null,
+          bypassFormat: true
         };
       }
 
       return {
         handled: true,
         user: userMisAJour,
-        reponse: `Très bien **${premierPrenom(user.nom || "élève")}** 😊 J'ai noté ta classe : **${classe}**.
-
-Quelle matière veux-tu travailler maintenant ?`
+        reponse: `Merci **${prenom}** 😊 Ta classe est notée : **${classe}**. Quelle matière veux-tu travailler ?`,
+        fiche: null,
+        bypassFormat: true
       };
     }
 
-    return {
-      handled: false,
-      user,
-      reponse: ""
-    };
-  }
-
-  const reve = extraireReveDepuisMessage(texte);
-
-  if (reve && reve.length >= 2 && reve.length <= 120) {
-    await updateUserField(user.phone, "reve", reve);
+    const prenom = premierPrenom(user?.nom || "");
 
     return {
       handled: true,
-      user: { ...user, reve },
-      reponse: `C'est un beau rêve : **${reve}** ✨ Je vais t'aider à apprendre avec sérieux pour avancer vers cet objectif.`
+      user,
+      reponse: `Merci **${prenom}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`,
+      fiche: null,
+      bypassFormat: true
     };
   }
 
   return {
     handled: false,
-    user,
-    reponse: ""
+    user
   };
 }
 
 module.exports = {
-  nettoyerClasse,
+  normaliserIntentions,
+  formatterNom,
+  classeEstInvalide,
+  nomEstInvalide,
   extraireNomDepuisMessage,
   extraireClasseDepuisMessage,
   extraireReveDepuisMessage,
-  detecterCommandeSimple,
+  profilAUnNomValide,
+  profilAUneClasseValide,
+  sauvegarderProfilUtilisateur,
   traiterIntentionsProfil
 };
