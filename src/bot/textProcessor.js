@@ -231,7 +231,6 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
 
   if (!contenu) return "";
 
-  // Source 1 officielle : dernier bloc [CONSOLIDATION]
   const regexConsolidation = /(?:❓\s*)?(?:\*\*)?\[CONSOLIDATION\](?:\*\*)?/gi;
   const positions = [];
   let match;
@@ -257,7 +256,6 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
     if (question) return question;
   }
 
-  // Source 2 : question introduite par ❓, même si le label [CONSOLIDATION] manque
   const questionsEmoji = [...contenu.matchAll(/❓\s*([\s\S]*?\?)/g)];
 
   if (questionsEmoji.length > 0) {
@@ -291,7 +289,6 @@ function detecterConsolidationEnAttente(historique = []) {
       return null;
     }
 
-    // Les anciens rappels ne deviennent jamais la nouvelle source officielle.
     if (estRappelConsolidationAssistant(contenu)) {
       continue;
     }
@@ -422,6 +419,75 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
   const r = normaliserSocial(reponse);
   const qRaw = String(question || "").toLowerCase();
 
+  function contient(texte = "", mot = "") {
+    return normaliserSocial(texte).includes(normaliserSocial(mot));
+  }
+
+  function contientAuMoinsUn(texte = "", mots = []) {
+    return mots.some((mot) => contient(texte, mot));
+  }
+
+  // 0. Liste précise : pays traversés par l’Amazone
+  if (
+    q.includes("amazone") &&
+    q.includes("pays") &&
+    (
+      q.includes("traverse") ||
+      q.includes("travers") ||
+      q.includes("avant d atteindre") ||
+      q.includes("avant d'atteindre")
+    )
+  ) {
+    const mauvaisPays = [
+      "canada",
+      "mexique",
+      "mexique",
+      "cuba",
+      "argentine",
+      "chili",
+      "bolivie",
+      "venezuela",
+      "equateur",
+      "équateur",
+      "uruguay",
+      "paraguay"
+    ];
+
+    const aPerou = contient(r, "perou") || contient(r, "pérou");
+    const aColombie = contient(r, "colombie");
+    const aBresil = contient(r, "bresil") || contient(r, "brésil");
+
+    const contientMauvaisPays = contientAuMoinsUn(r, mauvaisPays);
+
+    if (aPerou && aColombie && aBresil && !contientMauvaisPays) {
+      return {
+        traite: true,
+        ok: true,
+        correction: ""
+      };
+    }
+
+    let correction = "";
+
+    if (contientMauvaisPays) {
+      correction =
+        "Tu as cité au moins un pays qui ne correspond pas à la leçon : l’Amazone ne traverse pas le Canada, le Mexique ni Cuba.";
+    } else if (aBresil || aPerou || aColombie) {
+      correction =
+        "Tu as cité au moins un bon pays, mais la réponse n’est pas encore complète.";
+    } else {
+      correction =
+        "La réponse n’est pas encore correcte pour cette question précise.";
+    }
+
+    return {
+      traite: true,
+      ok: false,
+      correction:
+        `${correction}\n\nLes trois pays à retenir ici sont : **le Pérou, la Colombie et le Brésil**.`
+    };
+  }
+
   // 1. Acide / basique selon H+ et OH-
   const parleIonsAcideBase =
     (q.includes("h") || qRaw.includes("h+")) &&
@@ -509,7 +575,7 @@ function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
       traite: true,
       ok: false,
       correction:
-        "Ici, “basique” veut dire simple, ordinaire ou de base. Pense à un objet ou une chose simple du quotidien : une chemise simple, de l’eau, du pain, un t-shirt simple."
+        "Ici, “basique” veut dire simple, ordinaire ou de base. Pense à un objet ou une chose simple du quotidien : une chemise simple, de l’eau, du pain ou un t-shirt simple."
     };
   }
 
