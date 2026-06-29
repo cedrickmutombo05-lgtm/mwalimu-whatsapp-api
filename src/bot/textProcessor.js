@@ -140,32 +140,76 @@ function contientMatiereScientifiqueRenforcee(texte = "") {
   );
 }
 
+function estPhraseInterneIA(texte = "") {
+  const t = String(texte || "").toLowerCase();
+
+  return (
+    t.includes("tool_code") ||
+    t.includes("google_search") ||
+    t.includes("queries=") ||
+    t.includes("thought") ||
+    t.includes("here's a plan") ||
+    t.includes("heres a plan") ||
+    t.includes("the user wants") ||
+    t.includes("i need to") ||
+    t.includes("i will") ||
+    t.includes("i should") ||
+    t.includes("provided context") ||
+    t.includes("mwalimu edtech persona") ||
+    t.includes("ask one or two") ||
+    t.includes("dora's understanding") ||
+    t.includes("core concepts") ||
+    t.includes("start with") ||
+    t.includes("include") ||
+    t.includes("for a student") ||
+    t.includes("bonjour dora,")
+  );
+}
+
+function estQuestionConsolidationValide(texte = "") {
+  const q = String(texte || "").trim();
+
+  if (!q) return false;
+  if (estPhraseInterneIA(q)) return false;
+  if (q.length < 10 || q.length > 220) return false;
+
+  return (
+    q.includes("?") ||
+    /^explique/i.test(q) ||
+    /^dis/i.test(q) ||
+    /^peux-tu/i.test(q) ||
+    /^donne/i.test(q)
+  );
+}
+
 function extraireQuestionConsolidationDepuisTexte(texte = "") {
   const contenu = String(texte || "");
+
+  if (!contenu) return "";
 
   const blocMatch = contenu.match(/(?:❓\s*)?\[CONSOLIDATION\]\s*([\s\S]*)/i);
 
   if (blocMatch?.[1]) {
     const bloc = blocMatch[1]
-      .split(/\n(?=\*\*\*«|👉|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement)/i)[0]
+      .split(/\n(?=\*\*\*«|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement|tool_code|thought|Voici un plan|Here)/i)[0]
       .trim();
 
     const lignes = bloc
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean)
+      .filter((l) => !estPhraseInterneIA(l))
       .filter((l) => !/^\*\*\*«/.test(l))
-      .filter((l) => !/^👉/.test(l))
-      .filter((l) => !/^🌟|^⭐/.test(l));
+      .filter((l) => !/^🌟|^⭐/.test(l))
+      .map((l) => l.replace(/^[-•👉\s*]+/, "").trim())
+      .filter(Boolean);
 
-    const questionAvecPoint = lignes.find((l) => l.includes("?"));
+    const questionAvecPoint = lignes.find((l) =>
+      estQuestionConsolidationValide(l)
+    );
 
     if (questionAvecPoint) {
-      return questionAvecPoint.replace(/^[-•👉\s]+/, "").trim();
-    }
-
-    if (lignes[0]) {
-      return lignes[0].replace(/^[-•👉\s]+/, "").trim();
+      return questionAvecPoint;
     }
   }
 
@@ -175,7 +219,11 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
     contenu.match(/essaie encore\s*:?\s*(.+)$/im);
 
   if (rappelMatch?.[1]) {
-    return rappelMatch[1].trim();
+    const q = rappelMatch[1].trim();
+
+    if (estQuestionConsolidationValide(q)) {
+      return q;
+    }
   }
 
   return "";
@@ -220,14 +268,30 @@ function estMessageFatigueOuPause(texte = "") {
   );
 }
 
+function estQuestionUtilisateur(texte = "") {
+  const t = normaliserSocial(texte);
+
+  if (!t) return false;
+
+  return (
+    t.includes("?") ||
+    /^(quel|quelle|quels|quelles)\s+/.test(t) ||
+    /^(quel est|quelle est|quels sont|quelles sont)/.test(t) ||
+    /^(qui est|qui sont|ou est|où est|ou se trouve|où se trouve)/.test(t) ||
+    /^(pourquoi|comment|combien|quand|que signifie|qu est ce que|c est quoi)/.test(t) ||
+    /^(donne moi|explique moi|explique|parle moi|cite moi)/.test(t)
+  );
+}
+
 function estNouvelleDemandePendantConsolidation(texte = "") {
   const t = normaliserSocial(texte);
 
   if (estChoixMatiere(texte)) return true;
+  if (estQuestionUtilisateur(texte)) return true;
 
   return (
     /^(je veux|je voudrais|j aimerais|je souhaite|explique|donne moi|parle moi|on fait|on peut faire)/.test(t) ||
-    /qu est ce que|c est quoi|pourquoi|comment|quels sont|quelle est/.test(t)
+    /qu est ce que|c est quoi|pourquoi|comment|quels sont|quelle est|quel est|qui est|ou est|où est|quel pays|quelle ville|quel territoire/.test(t)
   );
 }
 
@@ -235,6 +299,7 @@ function estTentativeReponseConsolidation(texte = "") {
   const t = normaliserSocial(texte);
 
   if (!t) return false;
+  if (estQuestionUtilisateur(texte)) return false;
   if (estChoixMatiere(texte)) return false;
   if (estMessageRemerciement(texte)) return false;
   if (estMessageSalutation(texte)) return false;
@@ -281,11 +346,15 @@ function evaluerReponseConsolidation(question = "", reponse = "") {
       "donne",
       "avec",
       "mots",
-      "qu est",
       "quelle",
+      "quelles",
+      "quels",
       "pourquoi",
       "comment",
-      "consolidation"
+      "consolidation",
+      "principale",
+      "difference",
+      "différence"
     ].includes(m));
 
   const score = motsQuestion.filter((mot) => t.includes(mot)).length;
@@ -359,7 +428,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   const prenomActuel = premierPrenom(user?.nom || "");
   const classeActuelle = String(user?.classe || "").trim();
 
-  // 1. Sécurité profil : prénom obligatoire
   if (!user?.nom || !prenomActuel || prenomActuel === "élève") {
     return {
       reponse: `Bonsoir 😊 Avant de commencer, quel est ton prénom ?`,
@@ -368,7 +436,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 2. Sécurité profil : classe obligatoire
   if (classeEstInvalide(classeActuelle)) {
     return {
       reponse: `Merci **${prenomActuel}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`,
@@ -377,7 +444,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 3. Règle précepteur : consolidation obligatoire avant de changer de sujet
   const consolidation = detecterConsolidationEnAttente(historique);
 
   if (consolidation?.question) {
@@ -422,7 +488,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 4. Choix de matière : orientation sociale, pas de pédagogie directe
   if (estChoixMatiere(texteUtilisateur) || estChoixMatiere(textePourSocial)) {
     const reponse =
       construireReponseChoixMatiere(user, texteUtilisateur) ||
@@ -435,7 +500,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 5. Réponse après une question de bien-être
   if (estSecondTourSalutation(historique, textePourSocial)) {
     const reponse = genererRepriseApresBienEtre(user, historique);
 
@@ -446,7 +510,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 6. Messages sociaux simples : pas de VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
   if (
     estMessagePurementSocial(texteUtilisateur) ||
     estMessagePurementSocial(textePourSocial)
@@ -466,7 +529,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     }
   }
 
-  // 7. Si l’élève parle sans poser encore une vraie question académique
   const conversationDemarree = historique.some((m) =>
     m.role === "user" && estQuestionAcademique(m.content || "")
   );
@@ -493,7 +555,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  // 8. Cache pédagogique
   const cacheKey = makeLocalCacheKey(user, texteUtilisateur);
   const cached = getLocalCache(cacheKey);
 
@@ -627,7 +688,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   }
 
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
-
   consigneFinale += `\nÀ la fin de l'explication, pose toujours une seule question de consolidation claire. L'élève devra y répondre avant de passer à autre chose.`;
 
   if (antiBoucle.consigne) {
@@ -680,5 +740,7 @@ module.exports = {
   extraireQuestionConsolidationDepuisTexte,
   detecterConsolidationEnAttente,
   construireRappelConsolidation,
-  construireFeedbackConsolidation
+  construireFeedbackConsolidation,
+  estQuestionUtilisateur,
+  estNouvelleDemandePendantConsolidation
 };
