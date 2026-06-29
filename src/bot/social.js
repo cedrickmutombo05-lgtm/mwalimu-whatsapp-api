@@ -246,16 +246,25 @@ function detecterMatiereChoisie(texte = "") {
     "je veux étudier",
     "je vais etudier",
     "je vais étudier",
+    "je voudrais etudier",
+    "je voudrais étudier",
+    "j aimerais etudier",
+    "j'aimerais étudier",
+    "je souhaite etudier",
+    "je souhaite étudier",
+
     "je veux apprendre",
     "je voudrais apprendre",
     "j aimerais apprendre",
     "j'aimerais apprendre",
     "je souhaite apprendre",
+
     "je veux revoir",
     "je voudrais revoir",
     "j aimerais revoir",
     "j'aimerais revoir",
     "je souhaite revoir",
+
     "je veux reviser",
     "je veux réviser",
     "je veux travailler",
@@ -263,6 +272,7 @@ function detecterMatiereChoisie(texte = "") {
     "j aimerais travailler",
     "j'aimerais travailler",
     "je souhaite travailler",
+
     "oui je vais etudier",
     "oui je vais étudier",
     "oui je veux etudier",
@@ -271,6 +281,7 @@ function detecterMatiereChoisie(texte = "") {
     "oui je veux reviser",
     "oui je veux réviser",
     "oui je veux travailler",
+
     "je choisis",
     "je prends",
     "on fait",
@@ -284,20 +295,18 @@ function detecterMatiereChoisie(texte = "") {
     "on peut faire",
     "on peut etudier",
     "on peut étudier",
-    
-"je voudrais etudier",
-"je voudrais étudier",
-"j aimerais etudier",
-"j'aimerais étudier",
-"je souhaite etudier",
-"je souhaite étudier",
-"me tente",
-"ca me tente",
-"ça me tente",
-"m interesse",
-"m intéresse",
-"m'intéresse",
- ];
+
+    "me tente",
+    "ca me tente",
+    "ça me tente",
+    "m interesse",
+    "m intéresse",
+    "m'intéresse",
+    "je suis tente par",
+    "je suis tenté par",
+    "je suis tentee par",
+    "je suis tentée par"
+  ];
 
   const aIntentionChoix = intentionsChoix.some((mot) =>
     t.includes(normaliserSocial(mot))
@@ -335,6 +344,45 @@ Nous allons travailler **${matiere.label}**.
 Tu veux commencer par :
 ${themes}
 ${matiere.themes.length + 1}. une question de ton choix ?`;
+}
+
+function retrouverDerniereMatiereOrientation(historique = []) {
+  const messages = [...historique].reverse();
+
+  for (const msg of messages) {
+    const contenu = String(msg?.content || "");
+
+    const matchAssistant = contenu.match(/Nous allons travailler\s+\*{1,2}([^*]+)\*{1,2}/i);
+    if (matchAssistant?.[1]) {
+      return matchAssistant[1].trim();
+    }
+
+    if (msg?.role === "user") {
+      const matiere = detecterMatiereChoisie(contenu);
+      if (matiere?.label) return matiere.label;
+    }
+  }
+
+  return "";
+}
+
+function dernierMessageInviteRepos(historique = []) {
+  const dernierAssistant = [...historique]
+    .reverse()
+    .find((m) => m.role === "assistant");
+
+  if (!dernierAssistant) return false;
+
+  const texte = normaliserSocial(dernierAssistant.content || "");
+
+  return (
+    texte.includes("repose toi") ||
+    texte.includes("repris un peu d energie") ||
+    texte.includes("reprendra calmement") ||
+    texte.includes("reprendrons calmement") ||
+    texte.includes("continuera calmement") ||
+    texte.includes("continuerons calmement")
+  );
 }
 
 function estMessagePurementSocial(texte = "") {
@@ -548,7 +596,7 @@ function genererRepriseApresBienEtre(user = {}) {
   ]);
 }
 
-function construireReponseHumaineSimple(user = {}, texte = "") {
+function construireReponseHumaineSimple(user = {}, texte = "", historique = []) {
   const choixMatiere = construireReponseChoixMatiere(user, texte);
   if (choixMatiere) return choixMatiere;
 
@@ -556,8 +604,16 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
   const t = normaliserSocial(texte);
   const heure = new Date().getHours();
+  const invitationRepos = dernierMessageInviteRepos(historique);
+  const derniereMatiere = retrouverDerniereMatiereOrientation(historique);
 
   if (estMessageRemerciement(t)) {
+    if (invitationRepos) {
+      return derniereMatiere
+        ? `Je t'en prie ${appel} 😊 Repose-toi bien. Quand tu auras repris un peu d'énergie, on reprendra **${derniereMatiere}** calmement.`
+        : `Je t'en prie ${appel} 😊 Repose-toi bien. Quand tu auras repris un peu d'énergie, on reprendra calmement.`;
+    }
+
     return pick([
       `Avec plaisir ${appel} 😊 Si tu as une question, je suis là.`,
       `Je t'en prie ${appel} 🤗 Dis-moi si tu veux revoir quelque chose.`,
@@ -567,7 +623,9 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
   }
 
   if (/je suis fatiguee|je suis fatigue/.test(t)) {
-    return `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu auras repris un peu d'énergie, on continuera calmement.`;
+    return derniereMatiere
+      ? `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu auras repris un peu d'énergie, on reprendra **${derniereMatiere}** calmement.`
+      : `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu auras repris un peu d'énergie, on continuera calmement.`;
   }
 
   if (/je suis triste|je suis decouragee|je suis decourage/.test(t)) {
@@ -587,7 +645,9 @@ function construireReponseHumaineSimple(user = {}, texte = "") {
   }
 
   if (/on reprend demain/.test(t)) {
-    return `D'accord ${appel} 😊 Repose-toi bien. Demain, nous reprendrons calmement.`;
+    return derniereMatiere
+      ? `D'accord ${appel} 😊 Repose-toi bien. Demain, nous reprendrons **${derniereMatiere}** calmement.`
+      : `D'accord ${appel} 😊 Repose-toi bien. Demain, nous reprendrons calmement.`;
   }
 
   if (/je t aime bien mwalimu|tu es fort|tu es forte/.test(t)) {
@@ -667,6 +727,8 @@ module.exports = {
   detecterMatiereChoisie,
   estChoixMatiere,
   construireReponseChoixMatiere,
+  retrouverDerniereMatiereOrientation,
+  dernierMessageInviteRepos,
   estMessagePurementSocial,
   estMessageRelationnelSimple,
   estMessageSalutation,
