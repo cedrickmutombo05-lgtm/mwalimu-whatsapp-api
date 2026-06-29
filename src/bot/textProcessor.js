@@ -171,7 +171,7 @@ function estQuestionConsolidationValide(texte = "") {
 
   if (!q) return false;
   if (estPhraseInterneIA(q)) return false;
-  if (q.length < 10 || q.length > 220) return false;
+  if (q.length < 10 || q.length > 260) return false;
 
   return (
     q.includes("?") ||
@@ -182,47 +182,81 @@ function estQuestionConsolidationValide(texte = "") {
   );
 }
 
+function nettoyerLigneConsolidation(ligne = "") {
+  return String(ligne || "")
+    .replace(/^[-•👉\s*]+/, "")
+    .replace(/^\*\*/, "")
+    .replace(/\*\*$/, "")
+    .trim();
+}
+
+function extraireDerniereQuestionDepuisBlocConsolidation(bloc = "") {
+  const lignes = String(bloc || "")
+    .split("\n")
+    .map(nettoyerLigneConsolidation)
+    .filter(Boolean)
+    .filter((l) => !estPhraseInterneIA(l))
+    .filter((l) => !/^\*\*\*«/.test(l))
+    .filter((l) => !/^🌟|^⭐/.test(l))
+    .filter((l) => !/^mot d'encouragement/i.test(l));
+
+  const ligneQuestion = lignes.find((l) => estQuestionConsolidationValide(l));
+
+  if (ligneQuestion) {
+    return ligneQuestion;
+  }
+
+  const texte = lignes.join(" ").trim();
+  const matchQuestion = texte.match(/([^.!?]*\?)/);
+
+  if (matchQuestion?.[1] && estQuestionConsolidationValide(matchQuestion[1])) {
+    return matchQuestion[1].trim();
+  }
+
+  return "";
+}
+
 function extraireQuestionConsolidationDepuisTexte(texte = "") {
   const contenu = String(texte || "");
 
   if (!contenu) return "";
 
-  const blocMatch = contenu.match(/(?:❓\s*)?\[CONSOLIDATION\]\s*([\s\S]*)/i);
+  const regexConsolidation = /(?:❓\s*)?(?:\*\*)?\[CONSOLIDATION\](?:\*\*)?/gi;
+  const positions = [];
+  let match;
 
-  if (blocMatch?.[1]) {
-    const bloc = blocMatch[1]
-      .split(/\n(?=\*\*\*«|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement|tool_code|thought|Voici un plan|Here)/i)[0]
-      .trim();
-
-    const lignes = bloc
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .filter((l) => !estPhraseInterneIA(l))
-      .filter((l) => !/^\*\*\*«/.test(l))
-      .filter((l) => !/^🌟|^⭐/.test(l))
-      .map((l) => l.replace(/^[-•👉\s*]+/, "").trim())
-      .filter(Boolean);
-
-    const questionAvecPoint = lignes.find((l) =>
-      estQuestionConsolidationValide(l)
-    );
-
-    if (questionAvecPoint) {
-      return questionAvecPoint;
-    }
+  while ((match = regexConsolidation.exec(contenu)) !== null) {
+    positions.push({
+      index: match.index,
+      end: regexConsolidation.lastIndex
+    });
   }
 
-  const rappelMatch =
-    contenu.match(/👉\s*(.+)$/im) ||
-    contenu.match(/question de consolidation\s*:?\s*(.+)$/im) ||
-    contenu.match(/essaie encore\s*:?\s*(.+)$/im);
+  if (positions.length > 0) {
+    const dernierePosition = positions[positions.length - 1];
 
-  if (rappelMatch?.[1]) {
-    const q = rappelMatch[1].trim();
+    let bloc = contenu.slice(dernierePosition.end);
 
-    if (estQuestionConsolidationValide(q)) {
-      return q;
+    bloc = bloc
+      .split(/\n(?=\*\*\*«|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement|tool_code|thought|Voici un plan|Here|🔶|✅)/i)[0]
+      .trim();
+
+    const question = extraireDerniereQuestionDepuisBlocConsolidation(bloc);
+
+    if (question) {
+      return question;
+    }
+
+    return "";
+  }
+
+  const rappels = [...contenu.matchAll(/👉\s*(.+)$/gim)];
+
+  if (rappels.length > 0) {
+    const dernier = rappels[rappels.length - 1]?.[1]?.trim() || "";
+
+    if (estQuestionConsolidationValide(dernier)) {
+      return dernier;
     }
   }
 
@@ -244,6 +278,10 @@ function detecterConsolidationEnAttente(historique = []) {
       /nous pouvons maintenant passer/i.test(contenu)
     ) {
       return null;
+    }
+
+    if (!/\[CONSOLIDATION\]|👉/i.test(contenu)) {
+      continue;
     }
 
     const question = extraireQuestionConsolidationDepuisTexte(contenu);
@@ -276,7 +314,6 @@ function estQuestionUtilisateur(texte = "") {
   return (
     t.includes("?") ||
     /^(quel|quelle|quels|quelles)\s+/.test(t) ||
-    /^(quel est|quelle est|quels sont|quelles sont)/.test(t) ||
     /^(qui est|qui sont|ou est|où est|ou se trouve|où se trouve)/.test(t) ||
     /^(pourquoi|comment|combien|quand|que signifie|qu est ce que|c est quoi)/.test(t) ||
     /^(donne moi|explique moi|explique|parle moi|cite moi)/.test(t)
