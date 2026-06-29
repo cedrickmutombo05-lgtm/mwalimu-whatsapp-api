@@ -135,6 +135,94 @@ const MATIERES_ORIENTATION = {
     ]
   },
 
+  chimie: {
+    label: "chimie",
+    aliases: [
+      "chimie",
+      "chimique",
+      "reactions chimiques",
+      "réactions chimiques",
+      "atome",
+      "atomes",
+      "molecule",
+      "molécule",
+      "molecules",
+      "molécules"
+    ],
+    themes: [
+      "la matière",
+      "les mélanges",
+      "les corps purs",
+      "les réactions chimiques",
+      "les acides et les bases"
+    ]
+  },
+
+  physique: {
+    label: "physique",
+    aliases: [
+      "physique",
+      "force",
+      "forces",
+      "mouvement",
+      "energie",
+      "énergie",
+      "chaleur",
+      "lumiere",
+      "lumière"
+    ],
+    themes: [
+      "les forces",
+      "le mouvement",
+      "l’énergie",
+      "la chaleur",
+      "la lumière"
+    ]
+  },
+
+  electricite: {
+    label: "électricité",
+    aliases: [
+      "electricite",
+      "électricité",
+      "courant electrique",
+      "courant électrique",
+      "tension",
+      "resistance",
+      "résistance",
+      "circuit electrique",
+      "circuit électrique"
+    ],
+    themes: [
+      "le courant électrique",
+      "la tension",
+      "la résistance",
+      "le circuit électrique",
+      "la sécurité électrique"
+    ]
+  },
+
+  mecanique: {
+    label: "mécanique",
+    aliases: [
+      "mecanique",
+      "mécanique",
+      "vitesse",
+      "travail",
+      "machine simple",
+      "machines simples",
+      "levier",
+      "poulie"
+    ],
+    themes: [
+      "le mouvement",
+      "la vitesse",
+      "les forces",
+      "le travail",
+      "les machines simples"
+    ]
+  },
+
   civisme: {
     label: "civisme / éducation à la citoyenneté",
     aliases: [
@@ -210,35 +298,55 @@ function normaliserSocial(texte = "") {
     .trim();
 }
 
+function retirerArticleMatiere(label = "") {
+  return normaliserSocial(label)
+    .replace(/^(le|la|les|l)\s+/i, "")
+    .trim();
+}
+
 function articleMatiere(label = "") {
-  const l = String(label || "").trim().toLowerCase();
+  const brut = String(label || "").trim();
+  const l = retirerArticleMatiere(brut);
 
   if (!l) return "";
 
   const articles = {
     "français": "le français",
+    "geographie": "la géographie",
     "géographie": "la géographie",
+    "mathematiques": "les mathématiques",
     "mathématiques": "les mathématiques",
+    "formes geometriques": "les formes géométriques",
     "formes géométriques": "les formes géométriques",
+    "systeme metrique": "le système métrique",
     "système métrique": "le système métrique",
+    "problemes": "les problèmes",
     "problèmes": "les problèmes",
     "biologie": "la biologie",
     "microbiologie": "la microbiologie",
+    "chimie": "la chimie",
+    "physique": "la physique",
+    "electricite": "l’électricité",
+    "électricité": "l’électricité",
+    "mecanique": "la mécanique",
+    "mécanique": "la mécanique",
+    "civisme / education a la citoyennete": "le civisme / l’éducation à la citoyenneté",
     "civisme / éducation à la citoyenneté": "le civisme / l’éducation à la citoyenneté",
+    "etude du milieu": "l’étude du milieu",
     "étude du milieu": "l’étude du milieu",
     "histoire": "l’histoire",
     "droit": "le droit",
     "sciences": "les sciences"
   };
 
-  return articles[l] || label;
+  return articles[l] || brut;
 }
 
 function retrouverMatiereParLabel(label = "") {
-  const l = normaliserSocial(label);
+  const l = retirerArticleMatiere(label);
 
   for (const matiere of Object.values(MATIERES_ORIENTATION)) {
-    if (normaliserSocial(matiere.label) === l) {
+    if (retirerArticleMatiere(matiere.label) === l) {
       return matiere;
     }
   }
@@ -383,7 +491,7 @@ ${themes}
 ${matiere.themes.length + 1}. une question de ton choix ?`;
 }
 
-function construireRepriseMatiereEnSouffrance(user = {}, label = "", salutation = "") {
+function construireRepriseMatiereEnSouffrance(user = {}, label = "", salutation = "Bon retour") {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
 
@@ -392,7 +500,7 @@ function construireRepriseMatiereEnSouffrance(user = {}, label = "", salutation 
 
   if (!matiere) {
     return `${salutation} ${appel} 😊 Heureux de te retrouver.
-Nous avions laissé **${nomAvecArticle}** en attente. On peut reprendre calmement.`;
+Nous avions laissé **${nomAvecArticle}** en attente. On reprend calmement.`;
   }
 
   const themes = matiere.themes
@@ -400,7 +508,7 @@ Nous avions laissé **${nomAvecArticle}** en attente. On peut reprendre calmemen
     .join("\n");
 
   return `${salutation} ${appel} 😊 Heureux de te retrouver.
-Nous avions laissé **${nomAvecArticle}** en attente. On peut reprendre calmement.
+Nous avions laissé **${nomAvecArticle}** en attente. On reprend calmement.
 
 Tu veux commencer par :
 ${themes}
@@ -415,19 +523,17 @@ function retrouverDerniereMatiereOrientation(historique = []) {
 
     const matchAssistant = contenu.match(/Nous allons travailler\s+\*{1,2}([^*]+)\*{1,2}/i);
     if (matchAssistant?.[1]) {
-      return matchAssistant[1].trim();
+      return retirerArticleMatiere(matchAssistant[1]);
     }
 
     const matchReprise = contenu.match(/on reprendra\s+\*{1,2}([^*]+)\*{1,2}/i);
     if (matchReprise?.[1]) {
-      return matchReprise[1].trim();
+      return retirerArticleMatiere(matchReprise[1]);
     }
 
     const matchAttente = contenu.match(/Nous avions laissé\s+\*{1,2}(.*?)\*{1,2}\s+en attente/i);
     if (matchAttente?.[1]) {
-      return matchAttente[1]
-        .replace(/^(le|la|les|l’|l')\s+/i, "")
-        .trim();
+      return retirerArticleMatiere(matchAttente[1]);
     }
 
     if (msg?.role === "user") {
@@ -458,11 +564,63 @@ function dernierMessageInviteRepos(historique = []) {
   );
 }
 
+function estMessageRetourTravail(texte = "") {
+  const t = normaliserSocial(texte);
+  if (!t) return false;
+
+  return (
+    estMessageSalutation(t) ||
+    [
+      "je suis la",
+      "je suis là",
+      "je suis de retour",
+      "me voici",
+      "me revoici",
+      "je suis disponible",
+      "je suis pret",
+      "je suis prêt",
+      "je suis prete",
+      "je suis prête",
+      "je suis pret maintenant",
+      "je suis prêt maintenant",
+      "je suis prete maintenant",
+      "je suis prête maintenant",
+      "on peut reprendre",
+      "nous pouvons reprendre",
+      "reprenons",
+      "reprenons maintenant",
+      "on continue",
+      "on peut continuer",
+      "je peux continuer",
+      "je veux continuer",
+      "je peux reprendre",
+      "je veux reprendre",
+      "allons y",
+      "allons-y",
+      "c est bon",
+      "c'est bon",
+      "tres bien",
+      "très bien",
+      "ca va",
+      "ça va",
+      "ca va bien",
+      "ça va bien",
+      "je vais bien",
+      "je vais tres bien",
+      "je vais très bien",
+      "je me sens bien",
+      "je me porte bien"
+    ].includes(t)
+  );
+}
+
 function estMessagePurementSocial(texte = "") {
   const t = normaliserSocial(texte);
   if (!t) return false;
 
   if (estChoixMatiere(texte)) return true;
+
+  if (estMessageRetourTravail(t)) return true;
 
   if (/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)$/i.test(t)) return true;
 
@@ -478,7 +636,7 @@ function estMessagePurementSocial(texte = "") {
 
   if (/^(je vais bien|je vais tres bien|je vais super bien|je vais bien merci|je vais tres bien merci|je me porte bien|je me porte tres bien|je me porte super bien|je me sens bien|je me sens tres bien|je me sens super bien|tranquille|tranquille merci|pas mal|pas mal merci|au top|au top merci|ca roule|ca roule merci|imboko|imboko merci|bien merci|bien et toi|je vais bien et toi|je me porte bien et toi|oui je vais bien|oui je vais tres bien|oui je me porte bien|oui ca va|oui ca va merci)$/i.test(t)) return true;
 
-  if (/^(je suis fatigue|je suis fatiguee|je suis triste|je suis content|je suis contente|je suis decourage|je suis decouragee|je veux parler un peu|tu es la|on reprend demain|je t aime bien mwalimu|tu es fort|tu es forte)$/i.test(t)) return true;
+  if (/^(je suis fatigue|je suis fatiguee|je suis triste|je suis content|je suis contente|je suis decourage|je suis decouragee|je veux parler un peu|tu es la|je suis la|je suis de retour|me voici|me revoici|je suis disponible|je suis pret|je suis prete|on peut reprendre|on peut continuer|je t aime bien mwalimu|tu es fort|tu es forte)$/i.test(t)) return true;
 
   if (/^(oui\s+)?(ma journee|la journee|ca)\s+s\s+est\s+bien\s+(passee|passe)$/i.test(t)) return true;
 
@@ -585,6 +743,9 @@ function estReponseRelationnelleSimpleIA(texte = "") {
 function dernierMessageEstQuestionBienEtre(historique = []) {
   if (!historique.length) return false;
 
+  const derniereMatiere = retrouverDerniereMatiereOrientation(historique);
+  if (derniereMatiere) return false;
+
   const dernierAssistant = [...historique].reverse().find((m) => m.role === "assistant");
   if (!dernierAssistant) return false;
 
@@ -611,6 +772,12 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
 }
 
 function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
+  const derniereMatiere = retrouverDerniereMatiereOrientation(historique);
+
+  if (derniereMatiere) {
+    return false;
+  }
+
   if (!dernierMessageEstQuestionBienEtre(historique)) return false;
 
   const t = normaliserSocial(texteUtilisateur);
@@ -658,7 +825,13 @@ function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
   return t.length < 140 && reponsesCourtes.includes(t);
 }
 
-function genererRepriseApresBienEtre(user = {}) {
+function genererRepriseApresBienEtre(user = {}, historique = []) {
+  const derniereMatiere = retrouverDerniereMatiereOrientation(historique);
+
+  if (derniereMatiere) {
+    return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Très bien");
+  }
+
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
 
@@ -679,6 +852,57 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
   const heure = new Date().getHours();
   const invitationRepos = dernierMessageInviteRepos(historique);
   const derniereMatiere = retrouverDerniereMatiereOrientation(historique);
+
+  if (derniereMatiere && estMessageRetourTravail(t)) {
+    if (t.includes("bon apres midi")) {
+      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bon après-midi");
+    }
+
+    if (t.includes("bonsoir")) {
+      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonsoir");
+    }
+
+    if (t.includes("bonne journee")) {
+      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonne journée");
+    }
+
+    if (t.includes("bonne soiree")) {
+      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonne soirée");
+    }
+
+    if (t.includes("a demain")) {
+      return `À demain ${appel} 👋 Nous reprendrons **${articleMatiere(derniereMatiere)}** calmement.`;
+    }
+
+    if (
+      t.includes("je suis la") ||
+      t.includes("je suis de retour") ||
+      t.includes("me voici") ||
+      t.includes("me revoici") ||
+      t.includes("je suis disponible") ||
+      t.includes("je suis pret") ||
+      t.includes("je suis prete") ||
+      t.includes("on peut reprendre") ||
+      t.includes("on peut continuer") ||
+      t.includes("reprenons") ||
+      t.includes("allons y") ||
+      t.includes("c est bon")
+    ) {
+      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bon retour");
+    }
+
+    if (
+      t.includes("tres bien") ||
+      t.includes("ca va") ||
+      t.includes("je vais bien") ||
+      t.includes("je me sens bien") ||
+      t.includes("je me porte bien")
+    ) {
+      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Très bien");
+    }
+
+    return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonjour");
+  }
 
   if (estMessageRemerciement(t)) {
     if (invitationRepos) {
@@ -732,30 +956,6 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
   }
 
   if (estMessageSalutation(t)) {
-    if (invitationRepos && derniereMatiere) {
-      if (t.includes("bon apres midi")) {
-        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bon après-midi");
-      }
-
-      if (t.includes("bonsoir")) {
-        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonsoir");
-      }
-
-      if (t.includes("bonne journee")) {
-        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonne journée");
-      }
-
-      if (t.includes("bonne soiree")) {
-        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonne soirée");
-      }
-
-      if (t.includes("a demain")) {
-        return `À demain ${appel} 👋 Nous reprendrons **${articleMatiere(derniereMatiere)}** calmement.`;
-      }
-
-      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonjour");
-    }
-
     if (/(bonjour|salut|bjr|mbote|yo|cc|slt)/i.test(t)) {
       if (heure < 12) {
         return pick([
@@ -821,6 +1021,7 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
 module.exports = {
   MATIERES_ORIENTATION,
   normaliserSocial,
+  retirerArticleMatiere,
   articleMatiere,
   retrouverMatiereParLabel,
   detecterMatiereChoisie,
@@ -829,6 +1030,7 @@ module.exports = {
   construireRepriseMatiereEnSouffrance,
   retrouverDerniereMatiereOrientation,
   dernierMessageInviteRepos,
+  estMessageRetourTravail,
   estMessagePurementSocial,
   estMessageRelationnelSimple,
   estMessageSalutation,
