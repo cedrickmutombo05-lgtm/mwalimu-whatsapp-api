@@ -202,9 +202,11 @@ const MATIERES_ORIENTATION = {
   }
 };
 
+
 function normaliserSocial(texte = "") {
   return normaliserTexteRelationnel(texte)
     .replace(/[’']/g, " ")
+    .replace(/\bmwalimu\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 }
