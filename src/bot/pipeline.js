@@ -64,6 +64,7 @@ function extraireTexteMessage(msg = {}) {
 
 function extraireMediaId(msg = {}) {
   const type = extraireTypeMessage(msg);
+
   return (
     msg?.[type]?.id ||
     msg?.audio?.id ||
@@ -72,22 +73,6 @@ function extraireMediaId(msg = {}) {
     msg?.messages?.[0]?.[type]?.id ||
     ""
   );
-}
-
-async function appelerFonction(moduleObj, noms = [], ...args) {
-  for (const nom of noms) {
-    const fn = moduleObj?.[nom];
-
-    if (typeof fn !== "function") continue;
-
-    try {
-      return await fn(...args);
-    } catch (err) {
-      throw err;
-    }
-  }
-
-  return null;
 }
 
 async function chargerUtilisateur(phone = "") {
@@ -245,7 +230,7 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
         return sortie.reponse;
       }
     } catch (_) {
-      // On garde la réponse brute si le formatage échoue.
+      // On essaie l'autre forme.
     }
 
     try {
@@ -264,7 +249,7 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
         return sortie.reponse;
       }
     } catch (_) {
-      // On garde la réponse brute si le formatage échoue.
+      // On garde la réponse brute.
     }
   }
 
@@ -275,6 +260,7 @@ async function envoyerMessageSafe(phone = "", message = "") {
   if (!phone || !message) return false;
 
   const noms = [
+    "envoyerWhatsApp",
     "sendTextMessage",
     "sendWhatsAppMessage",
     "sendMessage",
@@ -494,5 +480,6 @@ module.exports = {
   extraireMediaId,
   chargerUtilisateur,
   getHistoriqueSafe,
-  appendHistoriqueSafe
+  appendHistoriqueSafe,
+  envoyerMessageSafe
 };
