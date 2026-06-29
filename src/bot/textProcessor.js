@@ -63,7 +63,7 @@ function setLocalCache(key, value) {
 function classeEstInvalide(classe = "") {
   const c = String(classe || "").trim().toLowerCase();
 
-  const invalides = [
+  return [
     "",
     "en",
     "fatigue",
@@ -74,9 +74,7 @@ function classeEstInvalide(classe = "") {
     "je suis fatiguee",
     "je suis fatigué",
     "je suis fatiguée"
-  ];
-
-  return invalides.includes(c);
+  ].includes(c);
 }
 
 function nettoyerNomBot(texte = "") {
@@ -171,7 +169,7 @@ function estQuestionConsolidationValide(texte = "") {
 
   if (!q) return false;
   if (estPhraseInterneIA(q)) return false;
-  if (q.length < 10 || q.length > 260) return false;
+  if (q.length < 10 || q.length > 280) return false;
 
   return (
     q.includes("?") ||
@@ -232,35 +230,19 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
     });
   }
 
-  if (positions.length > 0) {
-    const dernierePosition = positions[positions.length - 1];
-
-    let bloc = contenu.slice(dernierePosition.end);
-
-    bloc = bloc
-      .split(/\n(?=\*\*\*«|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement|tool_code|thought|Voici un plan|Here|🔶|✅)/i)[0]
-      .trim();
-
-    const question = extraireDerniereQuestionDepuisBlocConsolidation(bloc);
-
-    if (question) {
-      return question;
-    }
-
+  if (positions.length === 0) {
     return "";
   }
 
-  const rappels = [...contenu.matchAll(/👉\s*(.+)$/gim)];
+  const dernierePosition = positions[positions.length - 1];
 
-  if (rappels.length > 0) {
-    const dernier = rappels[rappels.length - 1]?.[1]?.trim() || "";
+  let bloc = contenu.slice(dernierePosition.end);
 
-    if (estQuestionConsolidationValide(dernier)) {
-      return dernier;
-    }
-  }
+  bloc = bloc
+    .split(/\n(?=\*\*\*«|🌟|⭐|🔴|🟡|🔵|Mot d'encouragement|tool_code|thought|Voici un plan|Here|🔶|✅)/i)[0]
+    .trim();
 
-  return "";
+  return extraireDerniereQuestionDepuisBlocConsolidation(bloc);
 }
 
 function detecterConsolidationEnAttente(historique = []) {
@@ -280,7 +262,10 @@ function detecterConsolidationEnAttente(historique = []) {
       return null;
     }
 
-    if (!/\[CONSOLIDATION\]|👉/i.test(contenu)) {
+    // Très important :
+    // On ignore les anciens rappels contenant seulement 👉.
+    // La seule source officielle est le dernier vrai bloc [CONSOLIDATION].
+    if (!/\[CONSOLIDATION\]/i.test(contenu)) {
       continue;
     }
 
@@ -621,13 +606,11 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     estSoumissionReponse(texteUtilisateur) ||
     estQuestionTechnique(texteUtilisateur) ||
     contientMatiereScientifiqueRenforcee(texteUtilisateur) ||
-
     texteMin.includes("droit") ||
     texteMin.includes("loi") ||
     texteMin.includes("ohada") ||
     texteMin.includes("rdc") ||
     texteMin.includes("congo") ||
-
     texteMin.includes("géographie") ||
     texteMin.includes("geographie") ||
     texteMin.includes("territoire") ||
@@ -637,14 +620,11 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     texteMin.includes("ville") ||
     texteMin.includes("villes") ||
     texteMin.includes("province") ||
-
     texteMin.includes("histoire") ||
     texteMin.includes("indépendance") ||
     texteMin.includes("colonisation") ||
-
     texteMin.includes("biologie") ||
     texteMin.includes("microbiologie") ||
-
     texteMin.includes("chimie") ||
     texteMin.includes("chimique") ||
     texteMin.includes("atome") ||
@@ -652,7 +632,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     texteMin.includes("molecule") ||
     texteMin.includes("réaction chimique") ||
     texteMin.includes("reaction chimique") ||
-
     texteMin.includes("physique") ||
     texteMin.includes("force") ||
     texteMin.includes("mouvement") ||
@@ -661,7 +640,6 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     texteMin.includes("chaleur") ||
     texteMin.includes("lumière") ||
     texteMin.includes("lumiere") ||
-
     texteMin.includes("électricité") ||
     texteMin.includes("electricite") ||
     texteMin.includes("courant") ||
@@ -669,25 +647,21 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     texteMin.includes("résistance") ||
     texteMin.includes("resistance") ||
     texteMin.includes("circuit") ||
-
     texteMin.includes("mécanique") ||
     texteMin.includes("mecanique") ||
     texteMin.includes("vitesse") ||
     texteMin.includes("travail") ||
     texteMin.includes("levier") ||
     texteMin.includes("poulie") ||
-
     texteMin.includes("civisme") ||
     texteMin.includes("citoyenneté") ||
     texteMin.includes("citoyennete") ||
     texteMin.includes("étude du milieu") ||
     texteMin.includes("etude du milieu") ||
-
     texteMin.includes("système métrique") ||
     texteMin.includes("systeme metrique") ||
     texteMin.includes("formes géométriques") ||
     texteMin.includes("formes geometriques") ||
-
     texteMin.includes("mer") ||
     texteMin.includes("mers") ||
     texteMin.includes("océan") ||
