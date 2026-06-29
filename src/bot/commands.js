@@ -123,7 +123,7 @@ function construireListeMatieres(user = {}) {
 
   return `Très bien ${appel} 😊
 
-Voici quelques matières que tu peux travailler avec Mwalimu :
+Voici les matières que tu peux travailler avec Mwalimu :
 
 1. français
 2. mathématiques
@@ -132,12 +132,18 @@ Voici quelques matières que tu peux travailler avec Mwalimu :
 5. sciences
 6. biologie
 7. microbiologie
-8. civisme
-9. étude du milieu
-10. droit
+8. chimie
+9. physique
+10. électricité
+11. mécanique
+12. civisme
+13. étude du milieu
+14. droit
 
 Tu peux écrire par exemple :
-**Je voudrais revoir le français**`;
+**Je voudrais revoir la chimie**
+ou
+**Je voudrais étudier la physique**`;
 }
 
 async function traiterCommande(user = {}, texte = "") {
@@ -170,9 +176,13 @@ Tu peux me dire ce que tu veux travailler aujourd'hui.`,
 4. Faire un exercice
 5. Corriger une réponse
 6. Demander ton profil
+7. Voir la liste des matières
 
-Exemple :
-**Je voudrais revoir le français**`,
+Exemples :
+**Je voudrais revoir le français**
+**Je voudrais revoir la chimie**
+**Je voudrais étudier la physique**
+**La géographie me tente**`,
       fiche: null,
       bypassFormat: true
     };
