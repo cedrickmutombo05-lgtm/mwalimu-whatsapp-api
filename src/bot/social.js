@@ -202,13 +202,48 @@ const MATIERES_ORIENTATION = {
   }
 };
 
-
 function normaliserSocial(texte = "") {
   return normaliserTexteRelationnel(texte)
     .replace(/[’']/g, " ")
     .replace(/\bmwalimu\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function articleMatiere(label = "") {
+  const l = String(label || "").trim().toLowerCase();
+
+  if (!l) return "";
+
+  const articles = {
+    "français": "le français",
+    "géographie": "la géographie",
+    "mathématiques": "les mathématiques",
+    "formes géométriques": "les formes géométriques",
+    "système métrique": "le système métrique",
+    "problèmes": "les problèmes",
+    "biologie": "la biologie",
+    "microbiologie": "la microbiologie",
+    "civisme / éducation à la citoyenneté": "le civisme / l’éducation à la citoyenneté",
+    "étude du milieu": "l’étude du milieu",
+    "histoire": "l’histoire",
+    "droit": "le droit",
+    "sciences": "les sciences"
+  };
+
+  return articles[l] || label;
+}
+
+function retrouverMatiereParLabel(label = "") {
+  const l = normaliserSocial(label);
+
+  for (const matiere of Object.values(MATIERES_ORIENTATION)) {
+    if (normaliserSocial(matiere.label) === l) {
+      return matiere;
+    }
+  }
+
+  return null;
 }
 
 function detecterMatiereChoisie(texte = "") {
@@ -348,6 +383,30 @@ ${themes}
 ${matiere.themes.length + 1}. une question de ton choix ?`;
 }
 
+function construireRepriseMatiereEnSouffrance(user = {}, label = "", salutation = "") {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  const matiere = retrouverMatiereParLabel(label);
+  const nomAvecArticle = articleMatiere(label);
+
+  if (!matiere) {
+    return `${salutation} ${appel} 😊 Heureux de te retrouver.
+Nous avions laissé **${nomAvecArticle}** en attente. On peut reprendre calmement.`;
+  }
+
+  const themes = matiere.themes
+    .map((theme, index) => `${index + 1}. ${theme}`)
+    .join("\n");
+
+  return `${salutation} ${appel} 😊 Heureux de te retrouver.
+Nous avions laissé **${nomAvecArticle}** en attente. On peut reprendre calmement.
+
+Tu veux commencer par :
+${themes}
+${matiere.themes.length + 1}. une question de ton choix ?`;
+}
+
 function retrouverDerniereMatiereOrientation(historique = []) {
   const messages = [...historique].reverse();
 
@@ -357,6 +416,18 @@ function retrouverDerniereMatiereOrientation(historique = []) {
     const matchAssistant = contenu.match(/Nous allons travailler\s+\*{1,2}([^*]+)\*{1,2}/i);
     if (matchAssistant?.[1]) {
       return matchAssistant[1].trim();
+    }
+
+    const matchReprise = contenu.match(/on reprendra\s+\*{1,2}([^*]+)\*{1,2}/i);
+    if (matchReprise?.[1]) {
+      return matchReprise[1].trim();
+    }
+
+    const matchAttente = contenu.match(/Nous avions laissé\s+\*{1,2}(.*?)\*{1,2}\s+en attente/i);
+    if (matchAttente?.[1]) {
+      return matchAttente[1]
+        .replace(/^(le|la|les|l’|l')\s+/i, "")
+        .trim();
     }
 
     if (msg?.role === "user") {
@@ -612,7 +683,7 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
   if (estMessageRemerciement(t)) {
     if (invitationRepos) {
       return derniereMatiere
-        ? `Je t'en prie ${appel} 😊 Repose-toi bien. Quand tu auras repris un peu d'énergie, on reprendra **${derniereMatiere}** calmement.`
+        ? `Je t'en prie ${appel} 😊 Repose-toi bien. Quand tu auras repris un peu d'énergie, on reprendra **${articleMatiere(derniereMatiere)}** calmement.`
         : `Je t'en prie ${appel} 😊 Repose-toi bien. Quand tu auras repris un peu d'énergie, on reprendra calmement.`;
     }
 
@@ -626,7 +697,7 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
 
   if (/je suis fatiguee|je suis fatigue/.test(t)) {
     return derniereMatiere
-      ? `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu auras repris un peu d'énergie, on reprendra **${derniereMatiere}** calmement.`
+      ? `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu auras repris un peu d'énergie, on reprendra **${articleMatiere(derniereMatiere)}** calmement.`
       : `Je comprends ${appel} 😊 Repose-toi un peu. Quand tu auras repris un peu d'énergie, on continuera calmement.`;
   }
 
@@ -648,7 +719,7 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
 
   if (/on reprend demain/.test(t)) {
     return derniereMatiere
-      ? `D'accord ${appel} 😊 Repose-toi bien. Demain, nous reprendrons **${derniereMatiere}** calmement.`
+      ? `D'accord ${appel} 😊 Repose-toi bien. Demain, nous reprendrons **${articleMatiere(derniereMatiere)}** calmement.`
       : `D'accord ${appel} 😊 Repose-toi bien. Demain, nous reprendrons calmement.`;
   }
 
@@ -661,6 +732,30 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
   }
 
   if (estMessageSalutation(t)) {
+    if (invitationRepos && derniereMatiere) {
+      if (t.includes("bon apres midi")) {
+        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bon après-midi");
+      }
+
+      if (t.includes("bonsoir")) {
+        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonsoir");
+      }
+
+      if (t.includes("bonne journee")) {
+        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonne journée");
+      }
+
+      if (t.includes("bonne soiree")) {
+        return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonne soirée");
+      }
+
+      if (t.includes("a demain")) {
+        return `À demain ${appel} 👋 Nous reprendrons **${articleMatiere(derniereMatiere)}** calmement.`;
+      }
+
+      return construireRepriseMatiereEnSouffrance(user, derniereMatiere, "Bonjour");
+    }
+
     if (/(bonjour|salut|bjr|mbote|yo|cc|slt)/i.test(t)) {
       if (heure < 12) {
         return pick([
@@ -726,9 +821,12 @@ function construireReponseHumaineSimple(user = {}, texte = "", historique = []) 
 module.exports = {
   MATIERES_ORIENTATION,
   normaliserSocial,
+  articleMatiere,
+  retrouverMatiereParLabel,
   detecterMatiereChoisie,
   estChoixMatiere,
   construireReponseChoixMatiere,
+  construireRepriseMatiereEnSouffrance,
   retrouverDerniereMatiereOrientation,
   dernierMessageInviteRepos,
   estMessagePurementSocial,
