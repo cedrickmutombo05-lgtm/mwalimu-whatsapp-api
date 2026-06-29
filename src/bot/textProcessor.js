@@ -94,47 +94,33 @@ function contientMatiereScientifiqueRenforcee(texte = "") {
     t.includes("réaction chimique") ||
     t.includes("reaction chimique") ||
     t.includes("atome") ||
-    t.includes("atomes") ||
     t.includes("molécule") ||
-    t.includes("molecule") ||
-    t.includes("molécules") ||
-    t.includes("molecules") ||
     t.includes("mélange") ||
     t.includes("melange") ||
     t.includes("corps pur") ||
     t.includes("acide") ||
     t.includes("base") ||
-
     t.includes("physique") ||
     t.includes("force") ||
-    t.includes("forces") ||
     t.includes("mouvement") ||
     t.includes("énergie") ||
     t.includes("energie") ||
     t.includes("chaleur") ||
     t.includes("lumière") ||
     t.includes("lumiere") ||
-
     t.includes("électricité") ||
     t.includes("electricite") ||
     t.includes("courant") ||
-    t.includes("courant électrique") ||
-    t.includes("courant electrique") ||
     t.includes("tension") ||
     t.includes("résistance") ||
     t.includes("resistance") ||
     t.includes("circuit") ||
-    t.includes("circuit électrique") ||
-    t.includes("circuit electrique") ||
-
     t.includes("mécanique") ||
     t.includes("mecanique") ||
     t.includes("vitesse") ||
     t.includes("travail") ||
     t.includes("levier") ||
-    t.includes("poulie") ||
-    t.includes("machine simple") ||
-    t.includes("machines simples")
+    t.includes("poulie")
   );
 }
 
@@ -159,8 +145,47 @@ function estPhraseInterneIA(texte = "") {
     t.includes("core concepts") ||
     t.includes("start with") ||
     t.includes("include") ||
-    t.includes("for a student") ||
-    t.includes("bonjour dora,")
+    t.includes("for a student")
+  );
+}
+
+function estAccuseReceptionSimple(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t === "d accord" ||
+    t === "daccord" ||
+    t === "ok" ||
+    t === "okay" ||
+    t === "bien compris" ||
+    t === "compris" ||
+    t === "c est compris" ||
+    t === "cest compris" ||
+    t === "c est bon" ||
+    t === "cest bon" ||
+    t === "message recu" ||
+    t === "message reçu" ||
+    t === "message bien recu" ||
+    t === "message bien reçu" ||
+    t === "bien recu" ||
+    t === "bien reçu" ||
+    t === "recu" ||
+    t === "reçu" ||
+    t === "cool" ||
+    t === "c est cool" ||
+    t === "cest cool" ||
+    t === "c est tres cool" ||
+    t === "c est très cool" ||
+    t === "cest tres cool" ||
+    t === "cest très cool" ||
+    t === "ca marche" ||
+    t === "ça marche" ||
+    t === "entendu" ||
+    t === "note" ||
+    t === "noté" ||
+    t === "parfait" ||
+    t === "tres bien" ||
+    t === "très bien"
   );
 }
 
@@ -172,6 +197,33 @@ function estRappelConsolidationAssistant(texte = "") {
     t.includes("avant de passer") &&
     t.includes("question de consolidation")
   );
+}
+
+function estPauseAccordeeAssistant(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("repose toi") &&
+    (
+      t.includes("quand tu seras pret") ||
+      t.includes("quand tu seras prete") ||
+      t.includes("quand tu seras prêt") ||
+      t.includes("quand tu seras prête")
+    ) &&
+    t.includes("question de consolidation")
+  );
+}
+
+function dernierMessageAssistantEstPauseAccordee(historique = []) {
+  const messages = [...historique].reverse();
+
+  for (const msg of messages) {
+    if (msg?.role !== "assistant") continue;
+
+    return estPauseAccordeeAssistant(msg?.content || "");
+  }
+
+  return false;
 }
 
 function estQuestionConsolidationValide(texte = "") {
@@ -212,9 +264,7 @@ function extraireDerniereQuestionDepuisBloc(bloc = "") {
 
   const ligneQuestion = lignes.find((l) => estQuestionConsolidationValide(l));
 
-  if (ligneQuestion) {
-    return ligneQuestion;
-  }
+  if (ligneQuestion) return ligneQuestion;
 
   const texte = lignes.join(" ").trim();
   const matchQuestion = texte.match(/([^.!?]*\?)/);
@@ -293,6 +343,10 @@ function detecterConsolidationEnAttente(historique = []) {
       continue;
     }
 
+    if (estPauseAccordeeAssistant(contenu)) {
+      continue;
+    }
+
     if (!/\[CONSOLIDATION\]|❓/i.test(contenu)) {
       continue;
     }
@@ -316,6 +370,18 @@ function estMessageFatigueOuPause(texte = "") {
   return (
     /je suis fatigue|je suis fatiguee|je suis malade|je ne me sens pas bien/.test(t) ||
     /je dois partir|je pars|a demain|bonne nuit|on reprend demain/.test(t)
+  );
+}
+
+function estFormeFeminineFatigue(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("fatiguee") ||
+    t.includes("fatiguée") ||
+    t.includes("malade") ||
+    t.includes("prete") ||
+    t.includes("prête")
   );
 }
 
@@ -349,6 +415,7 @@ function estTentativeReponseConsolidation(texte = "") {
   const t = normaliserSocial(texte);
 
   if (!t) return false;
+  if (estAccuseReceptionSimple(texte)) return false;
   if (estQuestionUtilisateur(texte)) return false;
   if (estChoixMatiere(texte)) return false;
   if (estMessageRemerciement(texte)) return false;
@@ -360,415 +427,134 @@ function estTentativeReponseConsolidation(texte = "") {
   return t.split(/\s+/).filter(Boolean).length >= 1;
 }
 
-function affirmationAcideOuBasique(reponse = "") {
-  const r = normaliserSocial(reponse);
+function minusculePremiereLettre(texte = "") {
+  const t = String(texte || "").trim();
 
-  const ditAcide =
-    r.includes("acide") &&
-    !/pas acide|non acide|n est pas acide|nest pas acide/.test(r);
+  if (!t) return "";
 
-  const ditBasique =
-    r.includes("basique") &&
-    !/pas basique|non basique|n est pas basique|nest pas basique/.test(r);
-
-  return {
-    ditAcide,
-    ditBasique
-  };
+  return t.charAt(0).toLowerCase() + t.slice(1);
 }
 
-function reponseContientUnExempleValable(reponse = "") {
-  const r = normaliserSocial(reponse);
-
-  if (!r) return false;
-
-  const horsSujetEvidents = [
-    "salete",
-    "saleté",
-    "mensonge",
-    "voler",
-    "guerre",
-    "maladie",
-    "insulte",
-    "haine",
-    "violence"
-  ];
-
-  if (horsSujetEvidents.some((mot) => r.includes(mot))) {
-    return false;
-  }
-
-  const mots = r.split(/\s+/).filter(Boolean);
-
-  if (mots.length >= 1 && mots.length <= 12) {
-    return true;
-  }
-
-  return (
-    r.includes("simple") ||
-    r.includes("ordinaire") ||
-    r.includes("courant") ||
-    r.includes("de base") ||
-    r.includes("sans decoration") ||
-    r.includes("sans décoration")
-  );
+function retirerPointInterrogationFinal(texte = "") {
+  return String(texte || "")
+    .replace(/\?+\s*$/g, "")
+    .trim();
 }
 
-function evaluerCasSpecifiqueConsolidation(question = "", reponse = "") {
+function transformerQuestionAuFutur(question = "", user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  let q = retirerPointInterrogationFinal(question);
+
+  q = q
+    .replace(/peux[-\s]?tu\s+m['’]?expliquer/gi, "tu m’expliqueras")
+    .replace(/peux[-\s]?tu\s+me\s+dire/gi, "tu me diras")
+    .replace(/peux[-\s]?tu\s+me\s+donner/gi, "tu me donneras")
+    .replace(/peux[-\s]?tu\s+me\s+citer/gi, "tu me citeras")
+    .replace(/peux[-\s]?tu\s+citer/gi, "tu citeras")
+    .replace(/^explique[-\s]?moi/gi, "tu m’expliqueras")
+    .replace(/^donne[-\s]?moi/gi, "tu me donneras")
+    .replace(/^dis[-\s]?moi/gi, "tu me diras")
+    .replace(/^cite[-\s]?moi/gi, "tu me citeras")
+    .trim();
+
+  if (
+    prenom &&
+    prenom !== "élève" &&
+    !new RegExp(`^${prenom}\\s*,`, "i").test(q)
+  ) {
+    q = `${prenom}, ${minusculePremiereLettre(q)}`;
+  }
+
+  return `${q}.`;
+}
+
+function extraireContexteDerniereLecon(historique = []) {
+  const messages = [...historique].reverse();
+
+  for (const msg of messages) {
+    if (msg?.role !== "assistant") continue;
+
+    const contenu = String(msg?.content || "");
+
+    if (estRappelConsolidationAssistant(contenu)) continue;
+    if (estPauseAccordeeAssistant(contenu)) continue;
+    if (/consolidation validée/i.test(contenu)) continue;
+
+    if (/\[VÉCU\]|\[SAVOIR\]|\[CONSOLIDATION\]|❓/i.test(contenu)) {
+      return contenu.slice(0, 4000);
+    }
+  }
+
+  return "";
+}
+
+function extraireJsonDepuisTexte(texte = "") {
+  const brut = String(texte || "").trim();
+
+  try {
+    return JSON.parse(brut);
+  } catch (_) {
+    // on continue
+  }
+
+  const match = brut.match(/\{[\s\S]*\}/);
+
+  if (!match?.[0]) return null;
+
+  try {
+    return JSON.parse(match[0]);
+  } catch (_) {
+    return null;
+  }
+}
+
+function normaliserStatutEvaluation(statut = "") {
+  const s = normaliserSocial(statut);
+
+  if (s.includes("correct") && !s.includes("incorrect")) return "correct";
+  if (s.includes("partiel")) return "partiel";
+  if (s.includes("hors")) return "hors_sujet";
+  if (s.includes("incorrect") || s.includes("faux")) return "incorrect";
+
+  return "incorrect";
+}
+
+function evaluationLocaleSecours(question = "", reponse = "") {
   const q = normaliserSocial(question);
   const r = normaliserSocial(reponse);
-  const qRaw = String(question || "").toLowerCase();
 
-  function contient(texte = "", mot = "") {
-    return normaliserSocial(texte).includes(normaliserSocial(mot));
-  }
-
-  function contientAuMoinsUn(texte = "", mots = []) {
-    return mots.some((mot) => contient(texte, mot));
-  }
-
-  // 0. Liste précise : pays traversés par l’Amazone
-  if (
-    q.includes("amazone") &&
-    q.includes("pays") &&
-    (
-      q.includes("traverse") ||
-      q.includes("travers") ||
-      q.includes("avant d atteindre") ||
-      q.includes("avant d'atteindre")
-    )
-  ) {
-    const mauvaisPays = [
-      "canada",
-      "mexique",
-      "mexique",
-      "cuba",
-      "argentine",
-      "chili",
-      "bolivie",
-      "venezuela",
-      "equateur",
-      "équateur",
-      "uruguay",
-      "paraguay"
-    ];
-
-    const aPerou = contient(r, "perou") || contient(r, "pérou");
-    const aColombie = contient(r, "colombie");
-    const aBresil = contient(r, "bresil") || contient(r, "brésil");
-
-    const contientMauvaisPays = contientAuMoinsUn(r, mauvaisPays);
-
-    if (aPerou && aColombie && aBresil && !contientMauvaisPays) {
-      return {
-        traite: true,
-        ok: true,
-        correction: ""
-      };
-    }
-
-    let correction = "";
-
-    if (contientMauvaisPays) {
-      correction =
-        "Tu as cité au moins un pays qui ne correspond pas à la leçon : l’Amazone ne traverse pas le Canada, le Mexique ni Cuba.";
-    } else if (aBresil || aPerou || aColombie) {
-      correction =
-        "Tu as cité au moins un bon pays, mais la réponse n’est pas encore complète.";
-    } else {
-      correction =
-        "La réponse n’est pas encore correcte pour cette question précise.";
-    }
-
+  if (!r) {
     return {
-      traite: true,
-      ok: false,
-      correction:
-        `${correction}\n\nLes trois pays à retenir ici sont : **le Pérou, la Colombie et le Brésil**.`
+      statut: "incorrect",
+      explication: "La réponse est vide.",
+      reponse_attendue: "",
+      question_a_reposer: question
     };
   }
 
-  // 1. Acide / basique selon H+ et OH-
-  const parleIonsAcideBase =
-    (q.includes("h") || qRaw.includes("h+")) &&
-    (q.includes("oh") || qRaw.includes("oh-")) &&
-    q.includes("acide") &&
-    q.includes("basique");
-
-  if (parleIonsAcideBase) {
-    const beaucoupH =
-      /beaucoup[^.!?]*(h\s*\+)/i.test(qRaw) ||
-      q.includes("beaucoup d ions h") ||
-      q.includes("beaucoup ions h");
-
-    const beaucoupOH =
-      /beaucoup[^.!?]*(oh\s*-)/i.test(qRaw) ||
-      q.includes("beaucoup d ions oh") ||
-      q.includes("beaucoup ions oh");
-
-    const { ditAcide, ditBasique } = affirmationAcideOuBasique(reponse);
-
-    if (beaucoupH) {
-      if (ditAcide && !ditBasique) {
-        return { traite: true, ok: true, correction: "" };
-      }
-
-      if (ditBasique && !ditAcide) {
-        return {
-          traite: true,
-          ok: false,
-          correction:
-            "Ici, une solution qui contient beaucoup d’ions H+ et très peu d’ions OH- est **acide**, et non basique."
-        };
-      }
-
-      return {
-        traite: true,
-        ok: false,
-        correction:
-          "Ici, il faut retenir ceci : beaucoup d’ions H+ indique une solution **acide**."
-      };
-    }
-
-    if (beaucoupOH) {
-      if (ditBasique && !ditAcide) {
-        return { traite: true, ok: true, correction: "" };
-      }
-
-      if (ditAcide && !ditBasique) {
-        return {
-          traite: true,
-          ok: false,
-          correction:
-            "Ici, une solution qui contient beaucoup d’ions OH- est **basique**, et non acide."
-        };
-      }
-
-      return {
-        traite: true,
-        ok: false,
-        correction:
-          "Ici, il faut retenir ceci : beaucoup d’ions OH- indique une solution **basique**."
-      };
-    }
-  }
-
-  // 2. Exemple de quelque chose de basique au sens commun
-  if (
-    q.includes("exemple") &&
-    q.includes("basique") &&
-    (
-      q.includes("vie de tous les jours") ||
-      q.includes("sens commun") ||
-      q.includes("tous les jours")
-    )
-  ) {
-    if (reponseContientUnExempleValable(reponse)) {
-      return {
-        traite: true,
-        ok: true,
-        correction: ""
-      };
-    }
-
+  if (estAccuseReceptionSimple(reponse)) {
     return {
-      traite: true,
-      ok: false,
-      correction:
-        "Ici, “basique” veut dire simple, ordinaire ou de base. Pense à un objet ou une chose simple du quotidien : une chemise simple, de l’eau, du pain ou un t-shirt simple."
-    };
-  }
-
-  // 3. Sens littéral / sens caché
-  if (
-    q.includes("sens direct") ||
-    q.includes("sens litteral") ||
-    q.includes("sens littéral") ||
-    q.includes("sens cache") ||
-    q.includes("sens caché")
-  ) {
-    if (
-      r.includes("comprehension") ||
-      r.includes("compréhension") ||
-      r.includes("comprendre") ||
-      r.includes("eviter") ||
-      r.includes("éviter") ||
-      r.includes("malentendu") ||
-      r.includes("confusion") ||
-      r.includes("sens")
-    ) {
-      return { traite: true, ok: true, correction: "" };
-    }
-
-    return {
-      traite: true,
-      ok: false,
-      correction:
-        "Comprendre d’abord le sens direct permet d’éviter les confusions avant de chercher un éventuel sens caché."
-    };
-  }
-
-  // 4. Différence procaryote / eucaryote
-  if (
-    q.includes("procaryote") &&
-    q.includes("eucaryote") &&
-    (q.includes("difference") || q.includes("différence"))
-  ) {
-    const parleNoyau = r.includes("noyau");
-    const parleProc = r.includes("procaryote");
-    const parleEuc = r.includes("eucaryote");
-
-    if (parleNoyau && (parleProc || parleEuc)) {
-      return { traite: true, ok: true, correction: "" };
-    }
-
-    return {
-      traite: true,
-      ok: false,
-      correction:
-        "La différence essentielle est que la cellule eucaryote possède un noyau, tandis que la cellule procaryote n’a pas de vrai noyau."
-    };
-  }
-
-  // 5. Réaction chimique / changement physique
-  if (
-    q.includes("reaction chimique") &&
-    q.includes("changement physique")
-  ) {
-    const ideeReaction =
-      r.includes("nouveau produit") ||
-      r.includes("nouveaux produits") ||
-      r.includes("nouvelle substance") ||
-      r.includes("nouvelles substances") ||
-      r.includes("transformation") ||
-      r.includes("reactifs") ||
-      r.includes("réactifs");
-
-    const ideePhysique =
-      r.includes("pas de nouvelle substance") ||
-      r.includes("ne cree pas") ||
-      r.includes("ne crée pas") ||
-      r.includes("forme change") ||
-      r.includes("etat change") ||
-      r.includes("état change");
-
-    if (ideeReaction || ideePhysique) {
-      return { traite: true, ok: true, correction: "" };
-    }
-
-    return {
-      traite: true,
-      ok: false,
-      correction:
-        "La réaction chimique forme de nouvelles substances, tandis qu’un changement physique change surtout l’état ou la forme sans créer une nouvelle substance."
-    };
-  }
-
-  // 6. Réactifs vers produits
-  if (
-    q.includes("reactifs") &&
-    q.includes("produits")
-  ) {
-    if (
-      r.includes("produit") ||
-      r.includes("produits") ||
-      r.includes("nouvelle substance") ||
-      r.includes("nouvelles substances") ||
-      r.includes("transforment") ||
-      r.includes("transformation")
-    ) {
-      return { traite: true, ok: true, correction: "" };
-    }
-
-    return {
-      traite: true,
-      ok: false,
-      correction:
-        "Quand des réactifs se transforment, ils donnent de nouveaux produits : c’est le signe d’une réaction chimique."
-    };
-  }
-
-  // 7. Définition simple de la cellule
-  if (
-    q.includes("cellule") &&
-    (
-      q.includes("qu est ce") ||
-      q.includes("definition") ||
-      q.includes("définition") ||
-      q.includes("explique")
-    )
-  ) {
-    const ideeCellule =
-      r.includes("cellule") ||
-      (
-        (r.includes("unite") || r.includes("unité") || r.includes("base")) &&
-        (r.includes("vivant") || r.includes("vie") || r.includes("etre vivant") || r.includes("être vivant"))
-      );
-
-    if (ideeCellule) {
-      return { traite: true, ok: true, correction: "" };
-    }
-
-    return {
-      traite: true,
-      ok: false,
-      correction:
-        "Une cellule est la plus petite unité de base du vivant."
-    };
-  }
-
-  return {
-    traite: false,
-    ok: false,
-    correction: ""
-  };
-}
-
-function evaluerReponseConsolidation(question = "", reponse = "") {
-  const t = normaliserSocial(reponse);
-
-  if (!t) {
-    return {
-      ok: false,
-      raison: "vide",
-      correction: ""
+      statut: "hors_sujet",
+      explication: "Ce message est seulement un accusé de réception, pas une réponse au fond.",
+      reponse_attendue: "",
+      question_a_reposer: question
     };
   }
 
   if (
-    /je ne sais pas|j ai oublie|j'ai oublié|aucune idee|aucune idée|je n ai pas compris|je n'ai pas compris/.test(t)
+    /je ne sais pas|j ai oublie|j'ai oublié|aucune idee|aucune idée|je n ai pas compris|je n'ai pas compris/.test(r)
   ) {
     return {
-      ok: false,
-      raison: "aveu_incomprehension",
-      correction:
-        "Ce n’est pas grave. On va reprendre doucement l’idée avant de continuer."
+      statut: "incorrect",
+      explication: "L’élève reconnaît qu’il n’a pas encore compris.",
+      reponse_attendue: "",
+      question_a_reposer: question
     };
   }
 
-  const specifique = evaluerCasSpecifiqueConsolidation(question, reponse);
+  const motsReponse = r.split(/\s+/).filter((m) => m.length > 2);
 
-  if (specifique.traite) {
-    return {
-      ok: specifique.ok,
-      raison: specifique.ok ? "bonne_reponse_specifique" : "erreur_specifique",
-      correction: specifique.correction || ""
-    };
-  }
-
-  const mots = t.split(/\s+/).filter((m) => m.length > 2);
-
-  if (mots.length === 0) {
-    return {
-      ok: false,
-      raison: "trop_vague",
-      correction: ""
-    };
-  }
-
-  const questionNorm = normaliserSocial(question);
-
-  const motsQuestion = questionNorm
+  const motsQuestion = q
     .split(/\s+/)
     .filter((m) => m.length >= 5)
     .filter((m) => ![
@@ -790,39 +576,112 @@ function evaluerReponseConsolidation(question = "", reponse = "") {
       "exemple"
     ].includes(m));
 
-  const score = motsQuestion.filter((mot) => t.includes(mot)).length;
+  const score = motsQuestion.filter((mot) => r.includes(mot)).length;
 
-  if (score >= 1 && mots.length >= 1) {
+  if (score >= 1 && motsReponse.length >= 1) {
     return {
-      ok: true,
-      raison: "courte_mais_pertinente",
-      correction: ""
-    };
-  }
-
-  if (motsQuestion.length >= 2 && score === 0) {
-    return {
-      ok: false,
-      raison: "hors_sujet_possible",
-      correction:
-        "Ta réponse semble s’éloigner de la question posée. Revenons à la question précise."
-    };
-  }
-
-  if (mots.length >= 3) {
-    return {
-      ok: true,
-      raison: "suffisant",
-      correction: ""
+      statut: "partiel",
+      explication: "La réponse contient une idée proche, mais doit être vérifiée avec prudence.",
+      reponse_attendue: "",
+      question_a_reposer: question
     };
   }
 
   return {
-    ok: false,
-    raison: "trop_vague",
-    correction:
-      "Ta réponse est encore un peu trop vague. Essaie de donner l’idée principale en quelques mots simples."
+    statut: "incorrect",
+    explication: "La réponse ne permet pas encore de confirmer la compréhension.",
+    reponse_attendue: "",
+    question_a_reposer: question
   };
+}
+
+async function evaluerConsolidationAvecIA(user = {}, question = "", reponseEleve = "", historique = []) {
+  const lecon = extraireContexteDerniereLecon(historique);
+  const prenom = premierPrenom(user?.nom || "") || "l’élève";
+  const classe = user?.classe || "non précisée";
+
+  const consigne = `
+Tu es le correcteur pédagogique strict de Mwalimu EdTech.
+
+Mission :
+Évaluer uniquement la réponse de l'élève à la question de consolidation.
+
+Règles absolues :
+1. Ne valide jamais une réponse fausse.
+2. Ne valide jamais une liste incomplète quand la question demande plusieurs éléments.
+3. Ne valide jamais une liste qui contient un élément faux, même si un élément est juste.
+4. Si la question demande des pays, noms, dates, capitales, fleuves, nombres ou éléments précis, vérifie l'exactitude factuelle avec rigueur.
+5. Si l’outil web ou Google Search est disponible dans ton environnement, utilise-le mentalement ou via la recherche disponible pour vérifier les faits factuels.
+6. Si la question porte sur la compréhension, accepte les propres mots de l'élève si l'idée est correcte.
+7. Une réponse courte peut être correcte.
+8. Une réponse longue peut être fausse.
+9. Un simple accusé de réception comme "d'accord", "bien compris", "message reçu", "cool" n'est pas une réponse au fond.
+10. Ne pose aucune nouvelle question.
+11. Ne change jamais la question de consolidation.
+12. Retourne uniquement un JSON valide, sans Markdown, sans explication hors JSON.
+
+Statuts autorisés :
+- "correct"
+- "partiel"
+- "incorrect"
+- "hors_sujet"
+
+Format JSON obligatoire :
+{
+  "statut": "correct|partiel|incorrect|hors_sujet",
+  "explication": "explication courte, tendre et pédagogique",
+  "reponse_attendue": "réponse attendue ou idée attendue",
+  "question_a_reposer": "la même question de consolidation"
+}
+`;
+
+  const prompt = `
+Élève : ${prenom}
+Classe : ${classe}
+
+LEÇON DONNÉE AVANT LA CONSOLIDATION :
+${lecon || "Aucune leçon disponible. Évalue alors avec tes connaissances pédagogiques fiables."}
+
+QUESTION DE CONSOLIDATION EXACTE :
+${question}
+
+RÉPONSE DE L'ÉLÈVE :
+${reponseEleve}
+
+Évalue la réponse.
+Retourne uniquement le JSON demandé.
+`;
+
+  try {
+    const brut = await construireReponseDbWebIa(
+      user,
+      prompt,
+      historique.slice(-8),
+      null,
+      consigne
+    );
+
+    const json = extraireJsonDepuisTexte(brut);
+
+    if (!json) {
+      return evaluationLocaleSecours(question, reponseEleve);
+    }
+
+    const statut = normaliserStatutEvaluation(json.statut);
+
+    return {
+      statut,
+      explication: String(json.explication || "").trim(),
+      reponse_attendue: String(json.reponse_attendue || "").trim(),
+      question_a_reposer: String(json.question_a_reposer || question).trim() || question
+    };
+  } catch (error) {
+    logInfo("evaluation_consolidation_ia_error", {
+      error: error?.message || String(error)
+    });
+
+    return evaluationLocaleSecours(question, reponseEleve);
+  }
 }
 
 function construireRappelConsolidation(user = {}, question = "") {
@@ -833,50 +692,94 @@ function construireRappelConsolidation(user = {}, question = "") {
 
 Avant de passer à autre chose, répondons d'abord à la petite question de consolidation.
 
-C'est important pour vérifier que tu as vraiment compris. Je te le demande comme un grand frère qui veut te voir progresser avec sérénité.
+C'est important pour vérifier que tu as vraiment compris. Je te le demande comme un précepteur qui veut te voir progresser avec sérénité.
 
 👉 ${question}`;
 }
 
-function construireReponsePauseAvecConsolidation(user = {}, question = "") {
+function construireReponsePauseAvecConsolidation(user = {}, question = "", texteUtilisateur = "") {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+  const pret = estFormeFeminineFatigue(texteUtilisateur) ? "prête" : "prêt";
+  const questionFuture = transformerQuestionAuFutur(question, user);
 
   return `Je comprends ${appel} 😊 Repose-toi un peu.
 
-Quand tu seras prêt, on reprendra calmement, mais on commencera d'abord par répondre à la petite question de consolidation restée en attente :
+Quand tu seras ${pret}, on reprendra calmement. Nous commencerons par la petite question de consolidation restée en attente :
 
-👉 ${question}`;
+👉 ${questionFuture}`;
 }
 
-function construireFeedbackConsolidation(user = {}, question = "", reponseEleve = "") {
+function construireConfirmationPauseAccordee(user = {}) {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
 
-  const evaluation = evaluerReponseConsolidation(question, reponseEleve);
+  return `Parfait ${appel} 😊
 
-  if (evaluation.ok) {
+Repose-toi tranquillement. La question reste simplement en attente, et nous la reprendrons quand tu seras prêt(e).`;
+}
+
+async function construireFeedbackConsolidation(user = {}, question = "", reponseEleve = "", historique = []) {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  const evaluation = await evaluerConsolidationAvecIA(
+    user,
+    question,
+    reponseEleve,
+    historique
+  );
+
+  const questionAReposer = evaluation.question_a_reposer || question;
+  const explication = evaluation.explication || "L’idée n’est pas encore suffisamment correcte.";
+  const attendue = evaluation.reponse_attendue
+    ? `\n\nÀ retenir : **${evaluation.reponse_attendue}**`
+    : "";
+
+  if (evaluation.statut === "correct") {
     return `✅ Consolidation validée.
 
 Très bien ${appel} 😊
-Ta réponse est juste. Elle peut être courte ou longue : l'essentiel, c'est que l'idée soit correcte.
+Ta réponse est juste. Elle peut être courte ou formulée avec tes propres mots : l’essentiel, c’est que l’idée soit correcte.
 
 Nous pouvons maintenant passer à autre chose ou continuer le même sujet.
 
 Quelle matière veux-tu travailler maintenant ?`;
   }
 
-  const correction = evaluation.correction
-    ? `\n\n${evaluation.correction}`
-    : "";
+  if (evaluation.statut === "partiel") {
+    return `C’est partiellement juste ${appel} 😊
 
-  return `Pas encore exactement ${appel} 😊
+Tu as compris une partie de l’idée, et c’est déjà un bon progrès.
 
-Tu as fait l'effort de répondre, et c'est déjà bien. Mais ici, l'idée n'est pas encore correcte.${correction}
+${explication}${attendue}
+
+Reprenons calmement la même question :
+
+👉 ${questionAReposer}`;
+  }
+
+  if (evaluation.statut === "hors_sujet") {
+    return `Pas encore ${appel} 😊
+
+Ta réponse ne répond pas encore au fond de la question.
+
+${explication}${attendue}
 
 Reprenons calmement :
 
-👉 ${question}`;
+👉 ${questionAReposer}`;
+  }
+
+  return `Pas encore exactement ${appel} 😊
+
+Tu as fait l’effort de répondre, et c’est déjà bien. Mais ici, l’idée n’est pas encore correcte.
+
+${explication}${attendue}
+
+Reprenons calmement :
+
+👉 ${questionAReposer}`;
 }
 
 function estDemandeContinuerMemeSujet(texte = "") {
@@ -957,6 +860,7 @@ function retrouverDernierSujetPedagogique(historique = []) {
     const contenu = String(msg?.content || "");
 
     if (estRappelConsolidationAssistant(contenu)) continue;
+    if (estPauseAccordeeAssistant(contenu)) continue;
 
     const question = extraireQuestionConsolidationDepuisTexte(contenu);
 
@@ -1019,9 +923,32 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
   const consolidation = detecterConsolidationEnAttente(historique);
 
   if (consolidation?.question) {
+    if (
+      dernierMessageAssistantEstPauseAccordee(historique) &&
+      estAccuseReceptionSimple(textePourSocial)
+    ) {
+      return {
+        reponse: construireConfirmationPauseAccordee(user),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
     if (estMessageFatigueOuPause(textePourSocial)) {
       return {
-        reponse: construireReponsePauseAvecConsolidation(user, consolidation.question),
+        reponse: construireReponsePauseAvecConsolidation(
+          user,
+          consolidation.question,
+          textePourSocial
+        ),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    if (estAccuseReceptionSimple(textePourSocial)) {
+      return {
+        reponse: construireRappelConsolidation(user, consolidation.question),
         fiche: null,
         bypassFormat: true
       };
@@ -1042,12 +969,15 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     }
 
     if (estTentativeReponseConsolidation(textePourSocial)) {
+      const feedback = await construireFeedbackConsolidation(
+        user,
+        consolidation.question,
+        textePourSocial,
+        historique
+      );
+
       return {
-        reponse: construireFeedbackConsolidation(
-          user,
-          consolidation.question,
-          textePourSocial
-        ),
+        reponse: feedback,
         fiche: null,
         bypassFormat: true
       };
@@ -1055,6 +985,17 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
 
     return {
       reponse: construireRappelConsolidation(user, consolidation.question),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  if (
+    dernierMessageAssistantEstPauseAccordee(historique) &&
+    estAccuseReceptionSimple(textePourSocial)
+  ) {
+    return {
+      reponse: construireConfirmationPauseAccordee(user),
       fiche: null,
       bypassFormat: true
     };
@@ -1335,8 +1276,11 @@ module.exports = {
   extraireQuestionConsolidationDepuisTexte,
   detecterConsolidationEnAttente,
   construireRappelConsolidation,
+  construireReponsePauseAvecConsolidation,
+  construireConfirmationPauseAccordee,
   construireFeedbackConsolidation,
-  evaluerReponseConsolidation,
+  evaluerConsolidationAvecIA,
+  estAccuseReceptionSimple,
   estQuestionUtilisateur,
   estNouvelleDemandePendantConsolidation,
   estDemandeContinuerMemeSujet,
