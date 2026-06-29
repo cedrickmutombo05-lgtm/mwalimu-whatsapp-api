@@ -30,6 +30,28 @@ try {
   imageProcessor = {};
 }
 
+const HEADER_MWALIMU = `🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excellence 🇨🇩*
+────────────────`;
+
+function contientHeaderMwalimu(texte = "") {
+  const t = String(texte || "");
+  return (
+    t.includes("🔴🟡🔵") ||
+    /Mwalimu EdTech\s*:\s*Ton Mentor/i.test(t)
+  );
+}
+
+function ajouterHeaderPedagogique(texte = "") {
+  const reponse = String(texte || "").trim();
+
+  if (!reponse) return "";
+  if (contientHeaderMwalimu(reponse)) return reponse;
+
+  return `${HEADER_MWALIMU}
+
+${reponse}`;
+}
+
 function extrairePhone(msg = {}) {
   return (
     msg.from ||
@@ -200,6 +222,9 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
     return "";
   }
 
+  // Important :
+  // Les réponses sociales, commandes, profil, choix de matière et repos
+  // gardent bypassFormat:true, donc PAS de header.
   if (result.bypassFormat) {
     return reponseBrute;
   }
@@ -223,11 +248,11 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
       const sortie = await fn(reponseBrute, user, question, result.fiche || null);
 
       if (typeof sortie === "string" && sortie.trim()) {
-        return sortie;
+        return ajouterHeaderPedagogique(sortie);
       }
 
       if (sortie?.reponse) {
-        return sortie.reponse;
+        return ajouterHeaderPedagogique(sortie.reponse);
       }
     } catch (_) {
       // On essaie l'autre forme.
@@ -242,18 +267,20 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
       });
 
       if (typeof sortie === "string" && sortie.trim()) {
-        return sortie;
+        return ajouterHeaderPedagogique(sortie);
       }
 
       if (sortie?.reponse) {
-        return sortie.reponse;
+        return ajouterHeaderPedagogique(sortie.reponse);
       }
     } catch (_) {
       // On garde la réponse brute.
     }
   }
 
-  return reponseBrute;
+  // Sécurité finale :
+  // Si formatting.js ne met pas le header, pipeline.js le remet.
+  return ajouterHeaderPedagogique(reponseBrute);
 }
 
 async function envoyerMessageSafe(phone = "", message = "") {
@@ -481,5 +508,7 @@ module.exports = {
   chargerUtilisateur,
   getHistoriqueSafe,
   appendHistoriqueSafe,
-  envoyerMessageSafe
+  envoyerMessageSafe,
+  ajouterHeaderPedagogique,
+  contientHeaderMwalimu
 };
