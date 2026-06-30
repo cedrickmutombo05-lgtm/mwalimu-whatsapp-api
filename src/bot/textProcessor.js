@@ -204,13 +204,22 @@ function estPauseAccordeeAssistant(texte = "") {
 
   return (
     t.includes("repose toi") &&
+    t.includes("question de consolidation") &&
     (
       t.includes("quand tu seras pret") ||
       t.includes("quand tu seras prete") ||
       t.includes("quand tu seras prêt") ||
       t.includes("quand tu seras prête")
-    ) &&
-    t.includes("question de consolidation")
+    )
+  );
+}
+
+function estConfirmationPauseAccordeeAssistant(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("repose toi tranquillement") &&
+    t.includes("question reste simplement en attente")
   );
 }
 
@@ -220,7 +229,27 @@ function dernierMessageAssistantEstPauseAccordee(historique = []) {
   for (const msg of messages) {
     if (msg?.role !== "assistant") continue;
 
-    return estPauseAccordeeAssistant(msg?.content || "");
+    return (
+      estPauseAccordeeAssistant(msg?.content || "") ||
+      estConfirmationPauseAccordeeAssistant(msg?.content || "")
+    );
+  }
+
+  return false;
+}
+
+function dernierePauseEtaitFeminine(historique = []) {
+  const messages = [...historique].reverse();
+
+  for (const msg of messages) {
+    if (msg?.role !== "assistant") continue;
+
+    const contenu = String(msg?.content || "");
+
+    if (estPauseAccordeeAssistant(contenu)) {
+      const t = normaliserSocial(contenu);
+      return t.includes("seras prete") || t.includes("seras prête");
+    }
   }
 
   return false;
@@ -320,7 +349,113 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
   return "";
 }
 
-function detecterConsolidationEnAttente(historique = []) {
+function escapeRegExp(texte = "") {
+  return String(texte).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function retirerPrenomInitial(texte = "", user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+
+  if (!prenom || prenom === "élève") {
+    return String(texte || "").trim();
+  }
+
+  const regex = new RegExp(`^${escapeRegExp(prenom)}\\s*,\\s*`, "i");
+
+  return String(texte || "").replace(regex, "").trim();
+}
+
+function minusculePremiereLettre(texte = "") {
+  const t = String(texte || "").trim();
+
+  if (!t) return "";
+
+  return t.charAt(0).toLowerCase() + t.slice(1);
+}
+
+function retirerPointFinal(texte = "") {
+  return String(texte || "")
+    .replace(/[?.!]+\s*$/g, "")
+    .trim();
+}
+
+function transformerQuestionAuFutur(question = "", user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  let q = retirerPointFinal(question);
+
+  q = retirerPrenomInitial(q, user);
+
+  q = q
+    .replace(/^peux[-\s]?tu\s+m['’]?expliquer/gi, "tu m’expliqueras")
+    .replace(/^peux[-\s]?tu\s+me\s+dire/gi, "tu me diras")
+    .replace(/^peux[-\s]?tu\s+me\s+donner/gi, "tu me donneras")
+    .replace(/^peux[-\s]?tu\s+me\s+citer/gi, "tu me citeras")
+    .replace(/^peux[-\s]?tu\s+citer/gi, "tu citeras")
+    .replace(/^explique[-\s]?moi/gi, "tu m’expliqueras")
+    .replace(/^donne[-\s]?moi/gi, "tu me donneras")
+    .replace(/^dis[-\s]?moi/gi, "tu me diras")
+    .replace(/^cite[-\s]?moi/gi, "tu me citeras")
+    .trim();
+
+  if (
+    prenom &&
+    prenom !== "élève" &&
+    !new RegExp(`^${escapeRegExp(prenom)}\\s*,`, "i").test(q)
+  ) {
+    q = `${prenom}, ${minusculePremiereLettre(q)}`;
+  }
+
+  return `${q}.`;
+}
+
+function transformerQuestionAuPresent(question = "", user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  let q = retirerPointFinal(question);
+
+  q = retirerPrenomInitial(q, user);
+
+  q = q
+    .replace(/^tu\s+m['’]?expliqueras/gi, "peux-tu m’expliquer")
+    .replace(/^tu\s+me\s+diras/gi, "peux-tu me dire")
+    .replace(/^tu\s+me\s+donneras/gi, "peux-tu me donner")
+    .replace(/^tu\s+me\s+citeras/gi, "peux-tu me citer")
+    .replace(/^tu\s+citeras/gi, "peux-tu citer")
+    .trim();
+
+  if (!/^peux[-\s]?tu|^explique|^donne|^dis|^cite/i.test(q)) {
+    q = `peux-tu me répondre à ceci : ${q}`;
+  }
+
+  if (
+    prenom &&
+    prenom !== "élève" &&
+    !new RegExp(`^${escapeRegExp(prenom)}\\s*,`, "i").test(q)
+  ) {
+    q = `${prenom}, ${minusculePremiereLettre(q)}`;
+  }
+
+  return `${q} ?`;
+}
+
+function extraireQuestionDepuisPauseAccordee(texte = "", user = {}) {
+  const contenu = String(texte || "");
+  const lignes = contenu
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const ligneFleche = lignes.find((l) => l.trim().startsWith("👉"));
+
+  if (!ligneFleche) return "";
+
+  const futur = nettoyerLigneConsolidation(ligneFleche);
+
+  if (!futur) return "";
+
+  return transformerQuestionAuPresent(futur, user);
+}
+
+function detecterConsolidationEnAttente(historique = [], user = {}) {
   const messages = [...historique].reverse();
 
   for (const msg of messages) {
@@ -339,11 +474,25 @@ function detecterConsolidationEnAttente(historique = []) {
       return null;
     }
 
-    if (estRappelConsolidationAssistant(contenu)) {
+    if (estPauseAccordeeAssistant(contenu)) {
+      const questionPause = extraireQuestionDepuisPauseAccordee(contenu, user);
+
+      if (questionPause) {
+        return {
+          question: questionPause,
+          source: contenu,
+          depuisPause: true
+        };
+      }
+
       continue;
     }
 
-    if (estPauseAccordeeAssistant(contenu)) {
+    if (estConfirmationPauseAccordeeAssistant(contenu)) {
+      continue;
+    }
+
+    if (estRappelConsolidationAssistant(contenu)) {
       continue;
     }
 
@@ -356,7 +505,8 @@ function detecterConsolidationEnAttente(historique = []) {
     if (question) {
       return {
         question,
-        source: contenu
+        source: contenu,
+        depuisPause: false
       };
     }
   }
@@ -411,6 +561,45 @@ function estNouvelleDemandePendantConsolidation(texte = "") {
   );
 }
 
+function estDemandeRepriseQuestionPendante(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("question etait restee pendante") ||
+    t.includes("question était restée pendante") ||
+    t.includes("question restee pendante") ||
+    t.includes("question restée pendante") ||
+    t.includes("question en attente") ||
+    t.includes("question pendante") ||
+    t.includes("reprenons la question") ||
+    t.includes("reprendre la question") ||
+    t.includes("la question d avant") ||
+    t.includes("la question d'avant")
+  );
+}
+
+function estMessageRepriseApresPause(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    estMessageRetourTravail(texte) ||
+    t.includes("je suis de retour") ||
+    t.includes("me voici") ||
+    t.includes("je suis revenue") ||
+    t.includes("je suis revenu") ||
+    t.includes("je suis prete") ||
+    t.includes("je suis prête") ||
+    t.includes("je suis pret") ||
+    t.includes("je suis prêt") ||
+    t.includes("on reprend") ||
+    t.includes("nous reprenons") ||
+    t.includes("reprenons") ||
+    t.includes("continuons") ||
+    t.includes("bonsoir") ||
+    t.includes("bonjour")
+  );
+}
+
 function estTentativeReponseConsolidation(texte = "") {
   const t = normaliserSocial(texte);
 
@@ -422,50 +611,10 @@ function estTentativeReponseConsolidation(texte = "") {
   if (estMessageSalutation(texte)) return false;
   if (estMessageCourtHumain(texte)) return false;
   if (estMessageRetourTravail(texte)) return false;
+  if (estDemandeRepriseQuestionPendante(texte)) return false;
   if (estNouvelleDemandePendantConsolidation(texte)) return false;
 
   return t.split(/\s+/).filter(Boolean).length >= 1;
-}
-
-function minusculePremiereLettre(texte = "") {
-  const t = String(texte || "").trim();
-
-  if (!t) return "";
-
-  return t.charAt(0).toLowerCase() + t.slice(1);
-}
-
-function retirerPointInterrogationFinal(texte = "") {
-  return String(texte || "")
-    .replace(/\?+\s*$/g, "")
-    .trim();
-}
-
-function transformerQuestionAuFutur(question = "", user = {}) {
-  const prenom = premierPrenom(user?.nom || "");
-  let q = retirerPointInterrogationFinal(question);
-
-  q = q
-    .replace(/peux[-\s]?tu\s+m['’]?expliquer/gi, "tu m’expliqueras")
-    .replace(/peux[-\s]?tu\s+me\s+dire/gi, "tu me diras")
-    .replace(/peux[-\s]?tu\s+me\s+donner/gi, "tu me donneras")
-    .replace(/peux[-\s]?tu\s+me\s+citer/gi, "tu me citeras")
-    .replace(/peux[-\s]?tu\s+citer/gi, "tu citeras")
-    .replace(/^explique[-\s]?moi/gi, "tu m’expliqueras")
-    .replace(/^donne[-\s]?moi/gi, "tu me donneras")
-    .replace(/^dis[-\s]?moi/gi, "tu me diras")
-    .replace(/^cite[-\s]?moi/gi, "tu me citeras")
-    .trim();
-
-  if (
-    prenom &&
-    prenom !== "élève" &&
-    !new RegExp(`^${prenom}\\s*,`, "i").test(q)
-  ) {
-    q = `${prenom}, ${minusculePremiereLettre(q)}`;
-  }
-
-  return `${q}.`;
 }
 
 function extraireContexteDerniereLecon(historique = []) {
@@ -478,6 +627,7 @@ function extraireContexteDerniereLecon(historique = []) {
 
     if (estRappelConsolidationAssistant(contenu)) continue;
     if (estPauseAccordeeAssistant(contenu)) continue;
+    if (estConfirmationPauseAccordeeAssistant(contenu)) continue;
     if (/consolidation validée/i.test(contenu)) continue;
 
     if (/\[VÉCU\]|\[SAVOIR\]|\[CONSOLIDATION\]|❓/i.test(contenu)) {
@@ -697,6 +847,19 @@ C'est important pour vérifier que tu as vraiment compris. Je te le demande comm
 👉 ${question}`;
 }
 
+function construireRepriseApresPauseAvecConsolidation(user = {}, question = "") {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  return `Bon retour ${appel} 😊
+
+Nous reprenons calmement là où nous nous étions arrêtés.
+
+La petite question de consolidation était restée en attente :
+
+👉 ${question}`;
+}
+
 function construireReponsePauseAvecConsolidation(user = {}, question = "", texteUtilisateur = "") {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
@@ -710,13 +873,14 @@ Quand tu seras ${pret}, on reprendra calmement. Nous commencerons par la petite 
 👉 ${questionFuture}`;
 }
 
-function construireConfirmationPauseAccordee(user = {}) {
+function construireConfirmationPauseAccordee(user = {}, historique = []) {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+  const pret = dernierePauseEtaitFeminine(historique) ? "prête" : "prêt";
 
   return `Parfait ${appel} 😊
 
-Repose-toi tranquillement. La question reste simplement en attente, et nous la reprendrons quand tu seras prêt(e).`;
+Repose-toi tranquillement. La question reste simplement en attente, et nous la reprendrons quand tu seras ${pret}.`;
 }
 
 async function construireFeedbackConsolidation(user = {}, question = "", reponseEleve = "", historique = []) {
@@ -861,6 +1025,7 @@ function retrouverDernierSujetPedagogique(historique = []) {
 
     if (estRappelConsolidationAssistant(contenu)) continue;
     if (estPauseAccordeeAssistant(contenu)) continue;
+    if (estConfirmationPauseAccordeeAssistant(contenu)) continue;
 
     const question = extraireQuestionConsolidationDepuisTexte(contenu);
 
@@ -920,7 +1085,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     };
   }
 
-  const consolidation = detecterConsolidationEnAttente(historique);
+  const consolidation = detecterConsolidationEnAttente(historique, user);
 
   if (consolidation?.question) {
     if (
@@ -928,7 +1093,24 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
       estAccuseReceptionSimple(textePourSocial)
     ) {
       return {
-        reponse: construireConfirmationPauseAccordee(user),
+        reponse: construireConfirmationPauseAccordee(user, historique),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    if (
+      consolidation.depuisPause &&
+      (
+        estMessageRepriseApresPause(textePourSocial) ||
+        estDemandeRepriseQuestionPendante(textePourSocial)
+      )
+    ) {
+      return {
+        reponse: construireRepriseApresPauseAvecConsolidation(
+          user,
+          consolidation.question
+        ),
         fiche: null,
         bypassFormat: true
       };
@@ -955,9 +1137,22 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     }
 
     if (
+      estDemandeRepriseQuestionPendante(textePourSocial) ||
+      estMessageRetourTravail(textePourSocial)
+    ) {
+      return {
+        reponse: construireRepriseApresPauseAvecConsolidation(
+          user,
+          consolidation.question
+        ),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    if (
       estMessageRemerciement(textePourSocial) ||
       estMessageSalutation(textePourSocial) ||
-      estMessageRetourTravail(textePourSocial) ||
       estMessageCourtHumain(textePourSocial) ||
       estNouvelleDemandePendantConsolidation(textePourSocial)
     ) {
@@ -995,7 +1190,7 @@ async function traiterTexte(user, texteUtilisateur, historique = []) {
     estAccuseReceptionSimple(textePourSocial)
   ) {
     return {
-      reponse: construireConfirmationPauseAccordee(user),
+      reponse: construireConfirmationPauseAccordee(user, historique),
       fiche: null,
       bypassFormat: true
     };
@@ -1278,6 +1473,7 @@ module.exports = {
   construireRappelConsolidation,
   construireReponsePauseAvecConsolidation,
   construireConfirmationPauseAccordee,
+  construireRepriseApresPauseAvecConsolidation,
   construireFeedbackConsolidation,
   evaluerConsolidationAvecIA,
   estAccuseReceptionSimple,
