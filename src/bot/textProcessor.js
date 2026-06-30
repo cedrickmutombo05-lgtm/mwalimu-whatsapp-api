@@ -16,7 +16,6 @@ const {
 
 const {
   estChoixMatiere,
-  construireReponseChoixMatiere,
   estMessagePurementSocial,
   estSecondTourSalutation,
   genererRepriseApresBienEtre,
@@ -227,9 +226,7 @@ function estMatiereLargeProbable(texte = "") {
     t.includes("civisme") ||
     t.includes("droit") ||
     t.includes("science") ||
-    t.includes("anglais") ||
-    t.includes("systeme metrique") ||
-    t.includes("système métrique")
+    t.includes("anglais")
   );
 }
 
@@ -237,8 +234,6 @@ function estDemandeApprentissageAvecObjetPrecis(texte = "") {
   if (!estIntentionApprendre(texte)) return false;
   if (!contientObjetApprentissage(texte)) return false;
 
-  // Si c'est une grande matière seulement, on peut encore orienter.
-  // Si c'est un sous-thème ou une notion précise, on laisse tutor.js enseigner directement.
   return !estMatiereLargeProbable(texte);
 }
 
@@ -1145,6 +1140,21 @@ function construireQuestionContinuationSujet(sujet = "") {
   return `Continue l'explication pédagogique sur : ${s}. Ajoute un exemple simple, puis pose une seule question de consolidation claire à l'élève.`;
 }
 
+function construireQuestionMatiereChoisie(texteUtilisateur = "") {
+  return `L'élève vient de choisir cette matière, ce domaine ou ce thème : ${texteUtilisateur}
+
+MISSION PÉDAGOGIQUE :
+- Ne propose pas une liste préfabriquée venant d'un menu enregistré.
+- Ne dépends pas d'une liste codée dans le programme.
+- Agis comme un vrai enseignant capable d'organiser lui-même son cours.
+- Analyse la matière choisie selon sa logique scolaire correcte.
+- Distingue clairement : matière, branche, domaine, objet d'étude et notion.
+- Si la matière contient plusieurs domaines, présente-les avec précision sans confondre les branches avec les objets étudiés.
+- Choisis ensuite une entrée simple, adaptée au niveau de l'élève.
+- Commence directement l'enseignement.
+- Termine par une seule vraie question de consolidation liée à ce que tu viens d'enseigner.`;
+}
+
 async function traiterTexte(user, texteUtilisateur, historique = []) {
   const texteSocial = nettoyerNomBot(texteUtilisateur);
   const textePourSocial = texteSocial || texteUtilisateur;
@@ -1316,18 +1326,9 @@ Dis-moi simplement la matière, la leçon ou la notion que tu veux commencer, et
 
   if (
     !prefixeContinuation &&
-    estChoixMatiere(texteUtilisateur) &&
-    !estDemandeApprentissageAvecObjetPrecis(texteUtilisateur)
+    estChoixMatiere(texteUtilisateur)
   ) {
-    const reponse = construireReponseChoixMatiere(user, texteUtilisateur);
-
-    if (reponse) {
-      return {
-        reponse,
-        fiche: null,
-        bypassFormat: true
-      };
-    }
+    questionPedagogique = construireQuestionMatiereChoisie(texteUtilisateur);
   }
 
   if (!prefixeContinuation && estSecondTourSalutation(historique, textePourSocial)) {
@@ -1376,9 +1377,6 @@ Dis-moi simplement la matière, la leçon ou la notion que tu veux commencer, et
     };
   }
 
-  // Point important :
-  // À partir d'ici, tout message porteur d'une matière, d'une notion ou d'un sous-thème
-  // est laissé à tutor.js. On ne bloque plus l'élève parce qu'il n'a pas utilisé la phrase attendue.
   if (
     !prefixeContinuation &&
     estMessageCourtThemeProbable(textePourSocial) &&
@@ -1519,6 +1517,8 @@ Dis-moi simplement la matière, la leçon ou la notion que tu veux commencer, et
   }
 
   consigneFinale += `\nSi le message de l'élève exprime une intention d'apprendre, de commencer, de travailler ou de choisir une notion, commence directement l'enseignement de cette notion. Ne demande pas à l'élève d'utiliser une formule précise.`;
+  consigneFinale += `\nSi l'élève choisit une matière large, organise toi-même cette matière avec intelligence pédagogique. Ne fais pas appel à une liste préfabriquée.`;
+  consigneFinale += `\nDistingue toujours matière, branche, domaine, objet d'étude et notion. Ne confonds pas un objet étudié avec une branche scientifique.`;
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
   consigneFinale += `\nÀ la fin de l'explication, pose toujours une seule vraie question de consolidation claire. Utilise le format exact : ❓ [CONSOLIDATION]. L'élève devra y répondre avant de passer à autre chose.`;
 
