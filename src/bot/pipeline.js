@@ -2,12 +2,17 @@
 
 const db = require("../db");
 const whatsapp = require("../services/whatsapp");
-
 const { logInfo, logError } = require("../core/logger");
-
 const { traiterTexte } = require("./textProcessor");
 const { traiterCommande } = require("./commands");
 const { traiterIntentionsProfil } = require("./intentions");
+
+let onboardingProcessor = {};
+try {
+  onboardingProcessor = require("./onboarding");
+} catch (_) {
+  onboardingProcessor = {};
+}
 
 let formatting = {};
 try {
@@ -35,7 +40,6 @@ const HEADER_MWALIMU = `🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excelle
 
 function contientHeaderMwalimu(texte = "") {
   const t = String(texte || "");
-
   return (
     t.includes("🔴🟡🔵") ||
     /Mwalimu EdTech\s*:\s*Ton Mentor/i.test(t)
@@ -44,12 +48,9 @@ function contientHeaderMwalimu(texte = "") {
 
 function ajouterHeaderPedagogique(texte = "") {
   const reponse = String(texte || "").trim();
-
   if (!reponse) return "";
   if (contientHeaderMwalimu(reponse)) return reponse;
-
   return `${HEADER_MWALIMU}
-
 ${reponse}`;
 }
 
@@ -71,7 +72,6 @@ function contientFuiteInterneIA(texte = "") {
     t.includes("i should") ||
     t.includes("provided context") ||
     t.includes("mwalimu edtech persona") ||
-
     t.includes("use a warm") ||
     t.includes("rigorous, pedagogical") ||
     t.includes("benevolent tone") ||
@@ -98,7 +98,6 @@ function contientFuiteInterneIA(texte = "") {
     t.includes("core concepts") ||
     t.includes("do not mention") ||
     t.includes("do not reveal") ||
-
     /"\s*[^"]+\s+huitième\s+rdc\s*"/i.test(t) ||
     /définition.+huitième.+rdc/i.test(t) ||
     /definition.+huitieme.+rdc/i.test(t)
@@ -107,7 +106,6 @@ function contientFuiteInterneIA(texte = "") {
 
 function nettoyerFuiteInterneIA(texte = "") {
   let t = String(texte || "").trim();
-
   if (!t) return "";
   if (!contientFuiteInterneIA(t)) return t;
 
@@ -118,7 +116,10 @@ function nettoyerFuiteInterneIA(texte = "") {
     ""
   );
 
-  t = t.replace(/\bthought\b[\s\S]*?(?=(🔵|🟡|🔴|❓|\[VÉCU\]|\[SAVOIR\]|\[INSPIRATION\]|\[CONSOLIDATION\]|Bonjour|D'accord|Très bien|En fait|La |Le |Les |Un |Une |Voici))/i, "");
+  t = t.replace(
+    /\bthought\b[\s\S]*?(?=(🔵|🟡|🔴|❓|\[VÉCU\]|\[SAVOIR\]|\[INSPIRATION\]|\[CONSOLIDATION\]|Bonjour|D'accord|Très bien|En fait|La |Le |Les |Un |Une |Voici))/i,
+    ""
+  );
 
   const lignesInterdites = [
     /tool_code/i,
@@ -133,7 +134,6 @@ function nettoyerFuiteInterneIA(texte = "") {
     /i should/i,
     /provided context/i,
     /mwalimu edtech persona/i,
-
     /use a warm/i,
     /rigorous, pedagogical/i,
     /benevolent tone/i,
@@ -160,7 +160,6 @@ function nettoyerFuiteInterneIA(texte = "") {
     /core concepts/i,
     /do not mention/i,
     /do not reveal/i,
-
     /définition.+huitième.+rdc/i,
     /definition.+huitieme.+rdc/i,
     /réaction chimique.+huitième/i,
@@ -189,13 +188,8 @@ function nettoyerFuiteInterneIA(texte = "") {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  if (contientFuiteInterneIA(t)) {
-    return "";
-  }
-
-  if (t.length < 40) {
-    return "";
-  }
+  if (contientFuiteInterneIA(t)) return "";
+  if (t.length < 40) return "";
 
   return t;
 }
@@ -210,6 +204,7 @@ function construireReponseSecurite(user = {}, question = "") {
 Une erreur de formulation s'est glissée dans la réponse précédente. Reprenons calmement.
 
 Réécris simplement ta demande, par exemple :
+
 **Explique-moi cela simplement.**`;
 }
 
@@ -259,9 +254,7 @@ function extraireMediaId(msg = {}) {
 }
 
 async function chargerUtilisateur(phone = "") {
-  if (!phone) {
-    return { phone };
-  }
+  if (!phone) return { phone };
 
   const noms = [
     "getOrCreateUser",
@@ -276,12 +269,10 @@ async function chargerUtilisateur(phone = "") {
 
   for (const nom of noms) {
     const fn = db?.[nom];
-
     if (typeof fn !== "function") continue;
 
     try {
       const user = await fn(phone);
-
       if (user) {
         return {
           ...user,
@@ -307,7 +298,6 @@ async function getHistoriqueSafe(phone = "") {
 
   for (const nom of noms) {
     const fn = db?.[nom];
-
     if (typeof fn !== "function") continue;
 
     try {
@@ -333,16 +323,11 @@ async function appendHistoriqueSafe(phone = "", role = "", content = "") {
 
   for (const nom of noms) {
     const fn = db?.[nom];
-
     if (typeof fn !== "function") continue;
 
     try {
       const historique = await fn(phone, role, content);
-
-      if (Array.isArray(historique)) {
-        return historique;
-      }
-
+      if (Array.isArray(historique)) return historique;
       return await getHistoriqueSafe(phone);
     } catch (_) {
       // On continue.
@@ -350,6 +335,50 @@ async function appendHistoriqueSafe(phone = "", role = "", content = "") {
   }
 
   return await getHistoriqueSafe(phone);
+}
+
+async function traiterOnboardingSafe(phone = "", user = {}, texteUtilisateur = "") {
+  const noms = [
+    "traiterOnboarding",
+    "handleOnboarding",
+    "traiterProfilInitial",
+    "gererOnboarding"
+  ];
+
+  for (const nom of noms) {
+    const fn = onboardingProcessor?.[nom];
+    if (typeof fn !== "function") continue;
+
+    try {
+      const resultat = await fn(phone, user, texteUtilisateur);
+
+      if (resultat?.handled) {
+        logInfo("onboarding_handled", {
+          phone,
+          handler: nom,
+          hasResponse: Boolean(resultat?.reponse)
+        });
+
+        return resultat;
+      }
+
+      return {
+        handled: false,
+        user: resultat?.user || user
+      };
+    } catch (err) {
+      logError("onboarding_error", err, { phone, handler: nom });
+      return {
+        handled: false,
+        user
+      };
+    }
+  }
+
+  return {
+    handled: false,
+    user
+  };
 }
 
 function extraireReponseDepuisResultat(result = {}) {
@@ -379,9 +408,7 @@ function resultatSimple(reponse = "") {
 async function formaterReponseSiNecessaire(result = {}, user = {}, question = "") {
   const reponseBrute = extraireReponseDepuisResultat(result);
 
-  if (!reponseBrute) {
-    return "";
-  }
+  if (!reponseBrute) return "";
 
   const reponseNettoyeeDirecte = nettoyerFuiteInterneIA(reponseBrute);
 
@@ -405,7 +432,6 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
 
   for (const nom of noms) {
     const fn = formatting?.[nom];
-
     if (typeof fn !== "function") continue;
 
     try {
@@ -418,6 +444,7 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
 
       if (typeof sortie === "string" && sortie.trim()) {
         const propre = nettoyerFuiteInterneIA(sortie);
+
         return ajouterHeaderPedagogique(
           propre || construireReponseSecurite(user, question)
         );
@@ -425,6 +452,7 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
 
       if (sortie?.reponse) {
         const propre = nettoyerFuiteInterneIA(sortie.reponse);
+
         return ajouterHeaderPedagogique(
           propre || construireReponseSecurite(user, question)
         );
@@ -443,6 +471,7 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
 
       if (typeof sortie === "string" && sortie.trim()) {
         const propre = nettoyerFuiteInterneIA(sortie);
+
         return ajouterHeaderPedagogique(
           propre || construireReponseSecurite(user, question)
         );
@@ -450,6 +479,7 @@ async function formaterReponseSiNecessaire(result = {}, user = {}, question = ""
 
       if (sortie?.reponse) {
         const propre = nettoyerFuiteInterneIA(sortie.reponse);
+
         return ajouterHeaderPedagogique(
           propre || construireReponseSecurite(user, question)
         );
@@ -478,7 +508,6 @@ async function envoyerMessageSafe(phone = "", message = "") {
 
   for (const nom of noms) {
     const fn = whatsapp?.[nom];
-
     if (typeof fn !== "function") continue;
 
     try {
@@ -505,7 +534,6 @@ async function traiterAudioSafe(user = {}, msg = {}, historique = []) {
 
   for (const nom of noms) {
     const fn = audioProcessor?.[nom];
-
     if (typeof fn !== "function") continue;
 
     try {
@@ -536,7 +564,6 @@ async function traiterImageSafe(user = {}, msg = {}, historique = []) {
 
   for (const nom of noms) {
     const fn = imageProcessor?.[nom];
-
     if (typeof fn !== "function") continue;
 
     try {
@@ -565,6 +592,7 @@ async function traiterMessageEntrant(msg = {}) {
   }
 
   let user = await chargerUtilisateur(phone);
+
   user = {
     ...user,
     phone
@@ -572,6 +600,7 @@ async function traiterMessageEntrant(msg = {}) {
 
   let questionUtilisateur = "";
   let historique = await getHistoriqueSafe(phone);
+
   let result = {
     reponse: "",
     fiche: null,
@@ -586,8 +615,6 @@ async function traiterMessageEntrant(msg = {}) {
         return null;
       }
 
-      historique = await appendHistoriqueSafe(phone, "user", questionUtilisateur);
-
       const commande = await traiterCommande(user, questionUtilisateur);
 
       if (commande?.handled) {
@@ -597,10 +624,72 @@ async function traiterMessageEntrant(msg = {}) {
           bypassFormat: true
         };
       } else {
+        const onboarding = await traiterOnboardingSafe(
+          phone,
+          user,
+          questionUtilisateur
+        );
+
+        if (onboarding?.handled) {
+          user = {
+            ...(onboarding.user || user),
+            phone
+          };
+
+          if (onboarding.reponse) {
+            result = {
+              reponse: onboarding.reponse,
+              fiche: onboarding.fiche || null,
+              bypassFormat: true
+            };
+
+            const reponseFinale = await formaterReponseSiNecessaire(
+              result,
+              user,
+              questionUtilisateur
+            );
+
+            if (reponseFinale) {
+              await envoyerMessageSafe(phone, reponseFinale);
+              await appendHistoriqueSafe(phone, "user", questionUtilisateur);
+              await appendHistoriqueSafe(phone, "assistant", reponseFinale);
+            }
+
+            return {
+              ok: true,
+              phone,
+              msgType,
+              onboarding: true,
+              reponse: reponseFinale || ""
+            };
+          }
+
+          return {
+            ok: true,
+            phone,
+            msgType,
+            onboarding: true
+          };
+        }
+
+        user = {
+          ...(onboarding?.user || user),
+          phone
+        };
+
+        historique = await appendHistoriqueSafe(
+          phone,
+          "user",
+          questionUtilisateur
+        );
+
         const profil = await traiterIntentionsProfil(user, questionUtilisateur);
 
         if (profil?.handled) {
-          user = profil.user || user;
+          user = {
+            ...(profil.user || user),
+            phone
+          };
 
           result = {
             reponse: profil.reponse,
@@ -613,11 +702,23 @@ async function traiterMessageEntrant(msg = {}) {
       }
     } else if (msgType === "audio" || msgType === "voice") {
       questionUtilisateur = "[audio]";
-      historique = await appendHistoriqueSafe(phone, "user", questionUtilisateur);
+
+      historique = await appendHistoriqueSafe(
+        phone,
+        "user",
+        questionUtilisateur
+      );
+
       result = await traiterAudioSafe(user, msg, historique);
     } else if (msgType === "image") {
       questionUtilisateur = "[image]";
-      historique = await appendHistoriqueSafe(phone, "user", questionUtilisateur);
+
+      historique = await appendHistoriqueSafe(
+        phone,
+        "user",
+        questionUtilisateur
+      );
+
       result = await traiterImageSafe(user, msg, historique);
     } else {
       result = resultatSimple(
@@ -688,6 +789,7 @@ module.exports = {
   getHistoriqueSafe,
   appendHistoriqueSafe,
   envoyerMessageSafe,
+  traiterOnboardingSafe,
   ajouterHeaderPedagogique,
   contientHeaderMwalimu,
   contientFuiteInterneIA,
