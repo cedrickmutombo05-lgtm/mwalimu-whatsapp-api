@@ -50,6 +50,7 @@ function ajouterHeaderPedagogique(texte = "") {
   const reponse = String(texte || "").trim();
   if (!reponse) return "";
   if (contientHeaderMwalimu(reponse)) return reponse;
+
   return `${HEADER_MWALIMU}
 ${reponse}`;
 }
@@ -106,6 +107,7 @@ function contientFuiteInterneIA(texte = "") {
 
 function nettoyerFuiteInterneIA(texte = "") {
   let t = String(texte || "").trim();
+
   if (!t) return "";
   if (!contientFuiteInterneIA(t)) return t;
 
@@ -273,6 +275,7 @@ async function chargerUtilisateur(phone = "") {
 
     try {
       const user = await fn(phone);
+
       if (user) {
         return {
           ...user,
@@ -327,7 +330,9 @@ async function appendHistoriqueSafe(phone = "", role = "", content = "") {
 
     try {
       const historique = await fn(phone, role, content);
+
       if (Array.isArray(historique)) return historique;
+
       return await getHistoriqueSafe(phone);
     } catch (_) {
       // On continue.
@@ -367,7 +372,11 @@ async function traiterOnboardingSafe(phone = "", user = {}, texteUtilisateur = "
         user: resultat?.user || user
       };
     } catch (err) {
-      logError("onboarding_error", err, { phone, handler: nom });
+      logError("onboarding_error", err, {
+        phone,
+        handler: nom
+      });
+
       return {
         handled: false,
         user
@@ -379,6 +388,37 @@ async function traiterOnboardingSafe(phone = "", user = {}, texteUtilisateur = "
     handled: false,
     user
   };
+}
+
+function normaliserPipeline(texte = "") {
+  return String(texte || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.,!?;:()"']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function estVraieIntentionProfil(texte = "") {
+  const t = normaliserPipeline(texte);
+
+  if (!t) return false;
+
+  return (
+    t.includes("mon prenom") ||
+    t.includes("mon nom") ||
+    t.includes("je m appelle") ||
+    t.includes("ma classe") ||
+    /^je suis en\s+([1-9]|premiere|deuxieme|troisieme|quatrieme|cinquieme|sixieme|terminale|humanite|humanites|primaire|secondaire)/i.test(t) ||
+    t.includes("mon reve") ||
+    t.includes("je veux devenir") ||
+    t.includes("je voudrais devenir") ||
+    t.includes("j aimerais devenir") ||
+    t.includes("je souhaite devenir") ||
+    t.includes("changer mon profil") ||
+    t.includes("modifier mon profil")
+  );
 }
 
 function extraireReponseDepuisResultat(result = {}) {
@@ -587,7 +627,10 @@ async function traiterMessageEntrant(msg = {}) {
   const msgType = extraireTypeMessage(msg);
 
   if (!phone) {
-    logInfo("message_sans_phone", { msgType });
+    logInfo("message_sans_phone", {
+      msgType
+    });
+
     return null;
   }
 
@@ -683,21 +726,36 @@ async function traiterMessageEntrant(msg = {}) {
           questionUtilisateur
         );
 
-        const profil = await traiterIntentionsProfil(user, questionUtilisateur);
+        if (estVraieIntentionProfil(questionUtilisateur)) {
+          const profil = await traiterIntentionsProfil(
+            user,
+            questionUtilisateur
+          );
 
-        if (profil?.handled) {
-          user = {
-            ...(profil.user || user),
-            phone
-          };
+          if (profil?.handled) {
+            user = {
+              ...(profil.user || user),
+              phone
+            };
 
-          result = {
-            reponse: profil.reponse,
-            fiche: profil.fiche || null,
-            bypassFormat: true
-          };
+            result = {
+              reponse: profil.reponse,
+              fiche: profil.fiche || null,
+              bypassFormat: true
+            };
+          } else {
+            result = await traiterTexte(
+              user,
+              questionUtilisateur,
+              historique
+            );
+          }
         } else {
-          result = await traiterTexte(user, questionUtilisateur, historique);
+          result = await traiterTexte(
+            user,
+            questionUtilisateur,
+            historique
+          );
         }
       }
     } else if (msgType === "audio" || msgType === "voice") {
@@ -709,7 +767,11 @@ async function traiterMessageEntrant(msg = {}) {
         questionUtilisateur
       );
 
-      result = await traiterAudioSafe(user, msg, historique);
+      result = await traiterAudioSafe(
+        user,
+        msg,
+        historique
+      );
     } else if (msgType === "image") {
       questionUtilisateur = "[image]";
 
@@ -719,7 +781,11 @@ async function traiterMessageEntrant(msg = {}) {
         questionUtilisateur
       );
 
-      result = await traiterImageSafe(user, msg, historique);
+      result = await traiterImageSafe(
+        user,
+        msg,
+        historique
+      );
     } else {
       result = resultatSimple(
         "J'ai bien reçu ton message 😊 Pour l'instant, envoie-moi ta question en texte, audio ou image."
@@ -790,6 +856,7 @@ module.exports = {
   appendHistoriqueSafe,
   envoyerMessageSafe,
   traiterOnboardingSafe,
+  estVraieIntentionProfil,
   ajouterHeaderPedagogique,
   contientHeaderMwalimu,
   contientFuiteInterneIA,
