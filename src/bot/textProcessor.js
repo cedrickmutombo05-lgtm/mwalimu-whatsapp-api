@@ -152,40 +152,131 @@ function estPhraseInterneIA(texte = "") {
 function estAccuseReceptionSimple(texte = "") {
   const t = normaliserSocial(texte);
 
+  if (!t) return false;
+  if (t.includes("?")) return false;
+
+  const mots = t.split(/\s+/).filter(Boolean);
+
+  if (mots.length > 5) return false;
+
   return (
-    t === "d accord" ||
-    t === "daccord" ||
-    t === "ok" ||
-    t === "okay" ||
-    t === "bien compris" ||
-    t === "compris" ||
-    t === "c est compris" ||
-    t === "cest compris" ||
-    t === "c est bon" ||
-    t === "cest bon" ||
-    t === "message recu" ||
-    t === "message reçu" ||
-    t === "message bien recu" ||
-    t === "message bien reçu" ||
-    t === "bien recu" ||
-    t === "bien reçu" ||
-    t === "recu" ||
-    t === "reçu" ||
-    t === "cool" ||
-    t === "c est cool" ||
-    t === "cest cool" ||
-    t === "c est tres cool" ||
-    t === "c est très cool" ||
-    t === "cest tres cool" ||
-    t === "cest très cool" ||
-    t === "ca marche" ||
-    t === "ça marche" ||
-    t === "entendu" ||
-    t === "note" ||
-    t === "noté" ||
-    t === "parfait" ||
-    t === "tres bien" ||
-    t === "très bien"
+    /^(ok|okay|d accord|daccord|compris|bien compris|entendu|parfait|cool|merci|noté|note)$/.test(t) ||
+    t.includes("message recu") ||
+    t.includes("message reçu") ||
+    t.includes("bien recu") ||
+    t.includes("bien reçu") ||
+    t.includes("c est bon") ||
+    t.includes("cest bon") ||
+    t.includes("ca marche") ||
+    t.includes("ça marche") ||
+    t.includes("c est clair") ||
+    t.includes("cest clair") ||
+    t.includes("c est compris") ||
+    t.includes("cest compris")
+  );
+}
+
+function estIntentionApprendre(texte = "") {
+  const t = normaliserSocial(texte);
+
+  if (!t) return false;
+
+  return (
+    /\b(apprendre|etudier|étudier|travailler|revoir|commencer|continuer|faire|pratiquer|exercer|choisir|prendre|reprendre)\b/.test(t) ||
+    /\b(je veux|je voudrais|j aimerais|je souhaite|on commence|commencons|commençons|on fait|faisons|je choisis|je prends)\b/.test(t)
+  );
+}
+
+function retirerMotsIntentionApprendre(texte = "") {
+  return normaliserSocial(texte)
+    .replace(/\b(je veux|je voudrais|j aimerais|je souhaite|on veut|on peut|on va|nous allons)\b/g, " ")
+    .replace(/\b(apprendre|etudier|étudier|travailler|revoir|commencer|continuer|faire|pratiquer|exercer|choisir|prendre|reprendre|commencons|commençons|faisons)\b/g, " ")
+    .replace(/\b(avec|sur|le|la|les|un|une|du|de|des|ce|cette|ces|cours|matiere|matière|lecon|leçon|chapitre|theme|thème|sujet)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function contientObjetApprentissage(texte = "") {
+  const reste = retirerMotsIntentionApprendre(texte);
+  const motsUtiles = reste
+    .split(/\s+/)
+    .filter((m) => m.length >= 3);
+
+  return motsUtiles.length >= 1;
+}
+
+function estIntentionApprendreSansObjet(texte = "") {
+  return estIntentionApprendre(texte) && !contientObjetApprentissage(texte);
+}
+
+function estMatiereLargeProbable(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("francais") ||
+    t.includes("français") ||
+    t.includes("mathematique") ||
+    t.includes("mathématique") ||
+    t.includes("maths") ||
+    t.includes("geographie") ||
+    t.includes("géographie") ||
+    t.includes("histoire") ||
+    t.includes("biologie") ||
+    t.includes("chimie") ||
+    t.includes("physique") ||
+    t.includes("civisme") ||
+    t.includes("droit") ||
+    t.includes("science") ||
+    t.includes("anglais") ||
+    t.includes("systeme metrique") ||
+    t.includes("système métrique")
+  );
+}
+
+function estDemandeApprentissageAvecObjetPrecis(texte = "") {
+  if (!estIntentionApprendre(texte)) return false;
+  if (!contientObjetApprentissage(texte)) return false;
+
+  // Si c'est une grande matière seulement, on peut encore orienter.
+  // Si c'est un sous-thème ou une notion précise, on laisse tutor.js enseigner directement.
+  return !estMatiereLargeProbable(texte);
+}
+
+function estMessageCourtThemeProbable(texte = "") {
+  const t = normaliserSocial(texte);
+
+  if (!t) return false;
+  if (t.includes("?")) return false;
+  if (estAccuseReceptionSimple(texte)) return false;
+  if (estMessageSalutation(texte)) return false;
+  if (estMessageRemerciement(texte)) return false;
+  if (estMessageFatigueOuPause(texte)) return false;
+
+  const mots = t.split(/\s+/).filter(Boolean);
+
+  return mots.length >= 1 && mots.length <= 5;
+}
+
+function estMessageVagueSansObjet(texte = "") {
+  const t = normaliserSocial(texte);
+
+  if (!t) return true;
+  if (estAccuseReceptionSimple(texte)) return false;
+  if (estMessageSalutation(texte)) return false;
+  if (estMessageRemerciement(texte)) return false;
+  if (estMessageFatigueOuPause(texte)) return false;
+
+  if (estIntentionApprendreSansObjet(texte)) return true;
+
+  return (
+    t === "cours" ||
+    t === "matiere" ||
+    t === "matière" ||
+    t === "lecon" ||
+    t === "leçon" ||
+    t === "exercice" ||
+    t === "commencer" ||
+    t === "on commence"
   );
 }
 
@@ -220,6 +311,20 @@ function estConfirmationPauseAccordeeAssistant(texte = "") {
   return (
     t.includes("repose toi tranquillement") &&
     t.includes("question reste simplement en attente")
+  );
+}
+
+function estRepriseConsolidationAssistant(texte = "") {
+  const t = normaliserSocial(texte);
+
+  return (
+    t.includes("question de consolidation") &&
+    (
+      t.includes("etait restee en attente") ||
+      t.includes("était restée en attente") ||
+      t.includes("restee en attente") ||
+      t.includes("restée en attente")
+    )
   );
 }
 
@@ -349,6 +454,19 @@ function extraireQuestionConsolidationDepuisTexte(texte = "") {
   return "";
 }
 
+function extraireQuestionDepuisLigneFleche(texte = "") {
+  const lignes = String(texte || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const ligneFleche = lignes.find((l) => l.startsWith("👉"));
+
+  if (!ligneFleche) return "";
+
+  return nettoyerLigneConsolidation(ligneFleche);
+}
+
 function escapeRegExp(texte = "") {
   return String(texte).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -438,17 +556,7 @@ function transformerQuestionAuPresent(question = "", user = {}) {
 }
 
 function extraireQuestionDepuisPauseAccordee(texte = "", user = {}) {
-  const contenu = String(texte || "");
-  const lignes = contenu
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const ligneFleche = lignes.find((l) => l.trim().startsWith("👉"));
-
-  if (!ligneFleche) return "";
-
-  const futur = nettoyerLigneConsolidation(ligneFleche);
+  const futur = extraireQuestionDepuisLigneFleche(texte);
 
   if (!futur) return "";
 
@@ -480,6 +588,20 @@ function detecterConsolidationEnAttente(historique = [], user = {}) {
       if (questionPause) {
         return {
           question: questionPause,
+          source: contenu,
+          depuisPause: true
+        };
+      }
+
+      continue;
+    }
+
+    if (estRepriseConsolidationAssistant(contenu)) {
+      const questionReprise = extraireQuestionDepuisLigneFleche(contenu);
+
+      if (questionReprise) {
+        return {
+          question: questionReprise,
           source: contenu,
           depuisPause: true
         };
@@ -554,10 +676,10 @@ function estNouvelleDemandePendantConsolidation(texte = "") {
 
   if (estChoixMatiere(texte)) return true;
   if (estQuestionUtilisateur(texte)) return true;
+  if (estIntentionApprendre(texte) && contientObjetApprentissage(texte)) return true;
 
   return (
-    /^(je veux|je voudrais|j aimerais|je souhaite|explique|donne moi|parle moi|on fait|on peut faire)/.test(t) ||
-    /qu est ce que|c est quoi|pourquoi|comment|quels sont|quelle est|quel est|qui est|ou est|où est|quel pays|quelle ville|quel territoire/.test(t)
+    /qu est ce que|c est quoi|pourquoi|comment|quels sont|quelle est|quel est|qui est|ou est|où est/.test(t)
   );
 }
 
@@ -565,16 +687,14 @@ function estDemandeRepriseQuestionPendante(texte = "") {
   const t = normaliserSocial(texte);
 
   return (
-    t.includes("question etait restee pendante") ||
-    t.includes("question était restée pendante") ||
-    t.includes("question restee pendante") ||
-    t.includes("question restée pendante") ||
     t.includes("question en attente") ||
     t.includes("question pendante") ||
     t.includes("reprenons la question") ||
     t.includes("reprendre la question") ||
     t.includes("la question d avant") ||
-    t.includes("la question d'avant")
+    t.includes("la question d'avant") ||
+    t.includes("question restée") ||
+    t.includes("question restee")
   );
 }
 
@@ -607,6 +727,7 @@ function estTentativeReponseConsolidation(texte = "") {
   if (estAccuseReceptionSimple(texte)) return false;
   if (estQuestionUtilisateur(texte)) return false;
   if (estChoixMatiere(texte)) return false;
+  if (estIntentionApprendre(texte) && contientObjetApprentissage(texte)) return false;
   if (estMessageRemerciement(texte)) return false;
   if (estMessageSalutation(texte)) return false;
   if (estMessageCourtHumain(texte)) return false;
@@ -628,6 +749,7 @@ function extraireContexteDerniereLecon(historique = []) {
     if (estRappelConsolidationAssistant(contenu)) continue;
     if (estPauseAccordeeAssistant(contenu)) continue;
     if (estConfirmationPauseAccordeeAssistant(contenu)) continue;
+    if (estRepriseConsolidationAssistant(contenu)) continue;
     if (/consolidation validée/i.test(contenu)) continue;
 
     if (/\[VÉCU\]|\[SAVOIR\]|\[CONSOLIDATION\]|❓/i.test(contenu)) {
@@ -670,7 +792,6 @@ function normaliserStatutEvaluation(statut = "") {
 }
 
 function evaluationLocaleSecours(question = "", reponse = "") {
-  const q = normaliserSocial(question);
   const r = normaliserSocial(reponse);
 
   if (!r) {
@@ -702,44 +823,9 @@ function evaluationLocaleSecours(question = "", reponse = "") {
     };
   }
 
-  const motsReponse = r.split(/\s+/).filter((m) => m.length > 2);
-
-  const motsQuestion = q
-    .split(/\s+/)
-    .filter((m) => m.length >= 5)
-    .filter((m) => ![
-      "explique",
-      "donne",
-      "avec",
-      "mots",
-      "quelle",
-      "quelles",
-      "quels",
-      "pourquoi",
-      "comment",
-      "consolidation",
-      "principale",
-      "difference",
-      "différence",
-      "peux",
-      "dire",
-      "exemple"
-    ].includes(m));
-
-  const score = motsQuestion.filter((mot) => r.includes(mot)).length;
-
-  if (score >= 1 && motsReponse.length >= 1) {
-    return {
-      statut: "partiel",
-      explication: "La réponse contient une idée proche, mais doit être vérifiée avec prudence.",
-      reponse_attendue: "",
-      question_a_reposer: question
-    };
-  }
-
   return {
     statut: "incorrect",
-    explication: "La réponse ne permet pas encore de confirmer la compréhension.",
+    explication: "La réponse doit être vérifiée par le correcteur pédagogique avant validation.",
     reponse_attendue: "",
     question_a_reposer: question
   };
@@ -758,17 +844,16 @@ Mission :
 
 Règles absolues :
 1. Ne valide jamais une réponse fausse.
-2. Ne valide jamais une liste incomplète quand la question demande plusieurs éléments.
-3. Ne valide jamais une liste qui contient un élément faux, même si un élément est juste.
-4. Si la question demande des pays, noms, dates, capitales, fleuves, nombres ou éléments précis, vérifie l'exactitude factuelle avec rigueur.
-5. Si l’outil web ou Google Search est disponible dans ton environnement, utilise-le mentalement ou via la recherche disponible pour vérifier les faits factuels.
-6. Si la question porte sur la compréhension, accepte les propres mots de l'élève si l'idée est correcte.
-7. Une réponse courte peut être correcte.
-8. Une réponse longue peut être fausse.
-9. Un simple accusé de réception comme "d'accord", "bien compris", "message reçu", "cool" n'est pas une réponse au fond.
-10. Ne pose aucune nouvelle question.
-11. Ne change jamais la question de consolidation.
-12. Retourne uniquement un JSON valide, sans Markdown, sans explication hors JSON.
+2. Si la question demande une liste ou plusieurs éléments, vérifie toute la réponse.
+3. Une liste incomplète ou contenant un élément faux ne doit pas être validée.
+4. Si la question demande un fait précis, vérifie avec rigueur.
+5. Si la question porte sur la compréhension, accepte les propres mots de l'élève si l'idée est correcte.
+6. Une réponse courte peut être correcte.
+7. Une réponse longue peut être fausse.
+8. Un accusé de réception n'est pas une réponse au fond.
+9. Ne pose aucune nouvelle question.
+10. Ne change jamais la question de consolidation.
+11. Retourne uniquement un JSON valide, sans Markdown, sans explication hors JSON.
 
 Statuts autorisés :
 - "correct"
@@ -1026,6 +1111,7 @@ function retrouverDernierSujetPedagogique(historique = []) {
     if (estRappelConsolidationAssistant(contenu)) continue;
     if (estPauseAccordeeAssistant(contenu)) continue;
     if (estConfirmationPauseAccordeeAssistant(contenu)) continue;
+    if (estRepriseConsolidationAssistant(contenu)) continue;
 
     const question = extraireQuestionConsolidationDepuisTexte(contenu);
 
@@ -1217,17 +1303,31 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
 
   if (
     !prefixeContinuation &&
-    (estChoixMatiere(texteUtilisateur) || estChoixMatiere(textePourSocial))
+    estIntentionApprendreSansObjet(textePourSocial)
   ) {
-    const reponse =
-      construireReponseChoixMatiere(user, texteUtilisateur) ||
-      construireReponseChoixMatiere(user, textePourSocial);
-
     return {
-      reponse,
+      reponse: `Très bien **${prenomActuel}** 😊
+
+Dis-moi simplement la matière, la leçon ou la notion que tu veux commencer, et je t’enseigne directement.`,
       fiche: null,
       bypassFormat: true
     };
+  }
+
+  if (
+    !prefixeContinuation &&
+    estChoixMatiere(texteUtilisateur) &&
+    !estDemandeApprentissageAvecObjetPrecis(texteUtilisateur)
+  ) {
+    const reponse = construireReponseChoixMatiere(user, texteUtilisateur);
+
+    if (reponse) {
+      return {
+        reponse,
+        fiche: null,
+        bypassFormat: true
+      };
+    }
   }
 
   if (!prefixeContinuation && estSecondTourSalutation(historique, textePourSocial)) {
@@ -1262,24 +1362,11 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
     }
   }
 
-  const conversationDemarree = historique.some((m) =>
-    m.role === "user" && estQuestionAcademique(m.content || "")
-  );
-
-  const questionScientifiqueRenforcee =
-    contientMatiereScientifiqueRenforcee(questionPedagogique);
-
-  if (
-    !prefixeContinuation &&
-    !conversationDemarree &&
-    !estQuestionAcademique(questionPedagogique) &&
-    !questionScientifiqueRenforcee
-  ) {
+  if (!prefixeContinuation && estMessageVagueSansObjet(textePourSocial)) {
     const relances = [
-      `Je suis là pour t'aider **${prenomActuel}** 😊 Dis-moi, quelle matière ou quel exercice veux-tu travailler ?`,
-      `N'hésite pas **${prenomActuel}** ! Tu peux me parler de maths, français, histoire, géographie, sciences, chimie, physique, électricité, mécanique, civisme ou droit. Qu'est-ce qui t'intéresse ?`,
-      `**${prenomActuel}**, je suis prêt à t'expliquer ce que tu veux. Quelle notion veux-tu comprendre aujourd'hui ?`,
-      `Alors **${prenomActuel}**, par quoi veux-tu commencer ? Un exercice, une leçon ou une matière précise ?`
+      `Je suis là pour t'aider **${prenomActuel}** 😊 Donne-moi simplement la matière ou la notion que tu veux apprendre.`,
+      `Très bien **${prenomActuel}**. Écris seulement le nom de la leçon ou du thème, et je commence l’explication.`,
+      `D'accord **${prenomActuel}** 😊 Quelle notion veux-tu travailler maintenant ?`
     ];
 
     return {
@@ -1287,6 +1374,17 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
       fiche: null,
       bypassFormat: true
     };
+  }
+
+  // Point important :
+  // À partir d'ici, tout message porteur d'une matière, d'une notion ou d'un sous-thème
+  // est laissé à tutor.js. On ne bloque plus l'élève parce qu'il n'a pas utilisé la phrase attendue.
+  if (
+    !prefixeContinuation &&
+    estMessageCourtThemeProbable(textePourSocial) &&
+    !estMatiereLargeProbable(textePourSocial)
+  ) {
+    questionPedagogique = `Enseigne directement cette notion ou ce sous-thème choisi par l'élève : ${texteUtilisateur}`;
   }
 
   const cacheKey = makeLocalCacheKey(user, questionPedagogique);
@@ -1322,6 +1420,8 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
     estSoumissionReponse(questionPedagogique) ||
     estQuestionTechnique(questionPedagogique) ||
     contientMatiereScientifiqueRenforcee(questionPedagogique) ||
+    estIntentionApprendre(questionPedagogique) ||
+    estMessageCourtThemeProbable(questionPedagogique) ||
     texteMin.includes("droit") ||
     texteMin.includes("loi") ||
     texteMin.includes("ohada") ||
@@ -1411,15 +1511,16 @@ Nous continuons avec le même sujet : **${dernierSujet}**.
   }
 
   if (contientMatiereScientifiqueRenforcee(questionPedagogique)) {
-    consigneFinale += `\nLe message concerne une matière scientifique comme chimie, physique, électricité ou mécanique. Réponds avec rigueur, simplement, selon le niveau de l'élève.`;
+    consigneFinale += `\nLe message concerne une matière scientifique. Réponds avec rigueur, simplement, selon le niveau de l'élève.`;
   }
 
   if (prefixeContinuation) {
     consigneFinale += `\nL'élève veut continuer le même sujet. Ne dis pas que tu as oublié. Continue directement l'explication du sujet indiqué.`;
   }
 
+  consigneFinale += `\nSi le message de l'élève exprime une intention d'apprendre, de commencer, de travailler ou de choisir une notion, commence directement l'enseignement de cette notion. Ne demande pas à l'élève d'utiliser une formule précise.`;
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
-  consigneFinale += `\nÀ la fin de l'explication, pose toujours une seule question de consolidation claire. Utilise le format exact : ❓ [CONSOLIDATION]. L'élève devra y répondre avant de passer à autre chose.`;
+  consigneFinale += `\nÀ la fin de l'explication, pose toujours une seule vraie question de consolidation claire. Utilise le format exact : ❓ [CONSOLIDATION]. L'élève devra y répondre avant de passer à autre chose.`;
 
   if (antiBoucle.consigne) {
     consigneFinale += `\n${antiBoucle.consigne}`;
@@ -1477,6 +1578,7 @@ module.exports = {
   construireFeedbackConsolidation,
   evaluerConsolidationAvecIA,
   estAccuseReceptionSimple,
+  estIntentionApprendre,
   estQuestionUtilisateur,
   estNouvelleDemandePendantConsolidation,
   estDemandeContinuerMemeSujet,
