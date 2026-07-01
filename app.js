@@ -1944,7 +1944,7 @@ function estRelationnelExactCourt(texte = "") {
 }
 
 /* =========================================================
-   estReponseJourneeBienEtre (AJOUTÉE)
+   estReponseJourneeBienEtre (VERSION AMÉLIORÉE)
 ========================================================= */
 function estReponseJourneeBienEtre(texte = "") {
   const t = normaliserTexteRelationnel(texte);
@@ -1952,22 +1952,33 @@ function estReponseJourneeBienEtre(texte = "") {
 
   const exacts = [
     "ma journee s est bien passee",
+    "ma journee s est bien passe",
     "la journee s est bien passee",
+    "la journee s est bien passe",
     "elle s est bien passee",
+    "elle s est bien passe",
     "s est bien passee",
+    "s est bien passe",
+    "ca s est bien passe",
+    "ça s est bien passe",
+    "c est bien passe",
     "tout s est bien passe",
     "c etait bien",
     "c etait tres bien",
     "ma journee etait bien",
-    "ma journee etait tres bien"
+    "ma journee etait tres bien",
+    "journee bien passee",
+    "journee bien passe"
   ];
 
   return (
     exacts.includes(t) ||
-    /^ma journee s est bien passee\b/.test(t) ||
-    /^la journee s est bien passee\b/.test(t) ||
-    /^elle s est bien passee\b/.test(t) ||
-    /^s est bien passee\b/.test(t) ||
+    /^ma journee s est bien passe(e)?\b/.test(t) ||
+    /^la journee s est bien passe(e)?\b/.test(t) ||
+    /^elle s est bien passe(e)?\b/.test(t) ||
+    /^s est bien passe(e)?\b/.test(t) ||
+    /^ca s est bien passe\b/.test(t) ||
+    /^c est bien passe\b/.test(t) ||
     /^tout s est bien passe\b/.test(t)
   );
 }
@@ -2144,7 +2155,7 @@ async function traiterTexte(user, texteUtilisateur, historique) {
 }
 
 /* =========================================================
-   TRAITEMENT AUDIO (avec les deux modifications)
+   TRAITEMENT AUDIO
 ========================================================= */
 async function traiterAudio(user, msg, historique) {
   const audioId = msg.audio?.id;
