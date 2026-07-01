@@ -1,18 +1,10 @@
 
+
 // src/bot/onboarding.js
 
-const {
-  getUser,
-  createUser,
-  updateUserField,
-  resetAllStudentAttempts
-} = require("../db");
+const db = require("../db");
 
-const {
-  envoyerWhatsApp
-} = require("../services/whatsapp");
-
-function normaliserTexte(texte = "") {
+function normaliser(texte = "") {
   return String(texte || "")
     .toLowerCase()
     .normalize("NFD")
@@ -22,256 +14,357 @@ function normaliserTexte(texte = "") {
     .trim();
 }
 
-function nettoyerNom(texte = "") {
-  let t = String(texte || "").trim();
-
-  t = t
-    .replace(/^(mon\s+prenom\s+est|mon\s+prénom\s+est|mon\s+nom\s+est|je\s+m'appelle|je\s+me\s+nomme|moi\s+c'est|moi\s+cest|je\s+suis)\s+/i, "")
-    .replace(/[.,!?;:()"']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!t) return "";
-
-  const motsInterdits = [
-    "classe",
-    "annee",
-    "année",
-    "humanite",
-    "humanité",
-    "secondaire",
-    "primaire",
-    "je veux devenir",
-    "devenir"
-  ];
-
-  const n = normaliserTexte(t);
-  if (motsInterdits.some((m) => n.includes(m))) return "";
-
-  return t
-    .split(" ")
+function titre(texte = "") {
+  return String(texte || "")
+    .trim()
+    .split(/\s+/)
     .filter(Boolean)
-    .map((mot) => mot.charAt(0).toUpperCase() + mot.slice(1).toLowerCase())
+    .map((m) => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase())
     .join(" ");
 }
 
-function nettoyerClasse(texte = "") {
-  let t = String(texte || "").trim();
+function estCommandeProfil(texte = "") {
+  const t = normaliser(texte);
 
-  t = t
-    .replace(/^(je\s+suis\s+en|je\s+fais|ma\s+classe\s+est|classe)\s+/i, "")
-    .replace(/\b5\s*ème\b/gi, "5e")
-    .replace(/\b5\s*eme\b/gi, "5e")
-    .replace(/\b6\s*ème\b/gi, "6e")
-    .replace(/\b6\s*eme\b/gi, "6e")
-    .replace(/\b1\s*ère\b/gi, "1ère")
-    .replace(/\b1\s*ere\b/gi, "1ère")
-    .replace(/\bhumanite\b/gi, "humanités")
-    .replace(/\bhumanité\b/gi, "humanités")
-    .replace(/\spedagogique\b/gi, " pédagogique")
+  return (
+    t === "/profil" ||
+    t === "/ profil" ||
+    t === "profil" ||
+    t === "modifier profil" ||
+    t === "changer profil" ||
+    t === "refaire profil"
+  );
+}
+
+function estMessageSocial(texte = "") {
+  const t = normaliser(texte);
+
+  return [
+    "",
+    "bonjour",
+    "bonjour mwalimu",
+    "bonsoir",
+    "bonsoir mwalimu",
+    "salut",
+    "salut mwalimu",
+    "merci",
+    "ok",
+    "okay",
+    "d accord",
+    "ca va",
+    "bien",
+    "tres bien"
+  ].includes(t);
+}
+
+function sembleClasse(texte = "") {
+  const t = normaliser(texte);
+
+  return (
+    t.includes("je suis en") ||
+    t.includes("ma classe") ||
+    t.includes("classe") ||
+    t.includes("annee") ||
+    t.includes("humanite") ||
+    t.includes("humanites") ||
+    t.includes("primaire") ||
+    t.includes("secondaire") ||
+    t.includes("pedagogique") ||
+    /\b[1-9]\s*(e|eme|ere|er)?\b/.test(t)
+  );
+}
+
+function sembleReve(texte = "") {
+  const t = normaliser(texte);
+
+  return (
+    t.includes("je veux devenir") ||
+    t.includes("je voudrais devenir") ||
+    t.includes("j aimerais devenir") ||
+    t.includes("je souhaite devenir") ||
+    t.includes("mon reve") ||
+    t.includes("mon projet")
+  );
+}
+
+function nettoyerNom(texte = "") {
+  if (estMessageSocial(texte)) return "";
+  if (estCommandeProfil(texte)) return "";
+  if (sembleClasse(texte)) return "";
+  if (sembleReve(texte)) return "";
+
+  let t = String(texte || "")
+    .replace(/^mon\s+pr[eé]nom\s+est\s+/i, "")
+    .replace(/^mon\s+nom\s+est\s+/i, "")
+    .replace(/^je\s+m['’]?appelle\s+/i, "")
+    .replace(/^je\s+me\s+nomme\s+/i, "")
+    .replace(/^moi\s+c['’]?est\s+/i, "")
     .replace(/[.,!?;:()"']/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  const n = normaliserTexte(t);
+  const n = normaliser(t);
 
-  const indicesClasse = [
-    "primaire",
-    "secondaire",
-    "humanite",
-    "humanites",
-    "annee",
-    "classe",
-    "pedagogique",
-    "commerciale",
-    "scientifique",
-    "litteraire",
-    "mecanique",
-    "electricite",
-    "biochimie",
-    "college",
-    "lycee"
-  ];
+  if (!n) return "";
+  if (n.length < 2) return "";
+  if (n.includes("bonjour")) return "";
+  if (n.includes("bonsoir")) return "";
+  if (n.includes("mwalimu")) return "";
+  if (n.includes("profil")) return "";
+  if (n.includes("classe")) return "";
+  if (n.includes("humanite")) return "";
+  if (n.includes("devenir")) return "";
 
-  const contientNiveau =
-    /\b[1-9]\s*(e|ere|eme|ème|ère)?\b/.test(n) ||
-    indicesClasse.some((mot) => n.includes(mot));
+  const mots = t.split(/\s+/).filter(Boolean);
 
-  if (!contientNiveau) return "";
+  if (mots.length > 3) return "";
+
+  return titre(t);
+}
+
+function nettoyerClasse(texte = "") {
+  let t = String(texte || "")
+    .replace(/^je\s+suis\s+en\s+/i, "")
+    .replace(/^ma\s+classe\s+est\s+/i, "")
+    .replace(/^classe\s*:\s*/i, "")
+    .replace(/\b([1-9])\s*[èe]me\b/gi, "$1e")
+    .replace(/\b([1-9])\s*eme\b/gi, "$1e")
+    .replace(/\b1\s*[èe]re\b/gi, "1ère")
+    .replace(/\bhumanite\b/gi, "humanités")
+    .replace(/\bhumanité\b/gi, "humanités")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!sembleClasse(t)) return "";
 
   return t;
 }
 
 function nettoyerReve(texte = "") {
-  let t = String(texte || "").trim();
-
-  t = t
-    .replace(/^(mon\s+reve\s+est|mon\s+rêve\s+est|je\s+veux\s+devenir|je\s+voudrais\s+devenir|j'aimerais\s+devenir|jaimerais\s+devenir|je\s+souhaite\s+devenir|devenir|etre|être)\s+/i, "")
+  let t = String(texte || "")
+    .replace(/^mon\s+r[eê]ve\s+est\s+/i, "")
+    .replace(/^mon\s+projet\s+est\s+/i, "")
+    .replace(/^je\s+veux\s+devenir\s+/i, "")
+    .replace(/^je\s+voudrais\s+devenir\s+/i, "")
+    .replace(/^j['’]?aimerais\s+devenir\s+/i, "")
+    .replace(/^je\s+souhaite\s+devenir\s+/i, "")
+    .replace(/^devenir\s+/i, "")
+    .replace(/^être\s+/i, "")
+    .replace(/^etre\s+/i, "")
     .replace(/[.,!?;:()"']/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
   if (!t) return "";
+  if (estMessageSocial(t)) return "";
+  if (sembleClasse(t)) return "";
 
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-function extraireDepuisHistorique(historique = [], type = "nom") {
-  const messages = Array.isArray(historique) ? historique : [];
+function nomInvalide(nom = "") {
+  const n = normaliser(nom);
 
-  for (const msg of messages) {
-    if (msg?.role !== "user") continue;
+  return (
+    !n ||
+    n.includes("bonjour") ||
+    n.includes("bonsoir") ||
+    n.includes("mwalimu") ||
+    n.includes("profil") ||
+    n.includes("classe") ||
+    n.includes("humanite") ||
+    n.includes("devenir")
+  );
+}
 
-    const contenu = String(msg?.content || "");
+async function appelerDb(noms = [], ...args) {
+  for (const nom of noms) {
+    const fn = db?.[nom];
 
-    if (type === "nom") {
-      const nom = nettoyerNom(contenu);
-      if (nom) return nom;
-    }
+    if (typeof fn !== "function") continue;
 
-    if (type === "classe") {
-      const classe = nettoyerClasse(contenu);
-      if (classe) return classe;
-    }
-
-    if (type === "reve") {
-      const reve = nettoyerReve(contenu);
-      if (reve && normaliserTexte(contenu).includes("devenir")) return reve;
+    try {
+      const r = await fn(...args);
+      if (r !== undefined && r !== null) return r;
+    } catch (_) {
+      // autre fonction
     }
   }
 
-  return "";
+  return null;
 }
 
-async function traiterOnboarding(from, user, texteUtilisateur = "") {
-  let profil = user;
+async function getUserSafe(phone = "") {
+  const user = await appelerDb(
+    [
+      "getUser",
+      "getUserByPhone",
+      "getUtilisateur",
+      "getUtilisateurByPhone",
+      "getOrCreateUser",
+      "getOrCreateUtilisateur"
+    ],
+    phone
+  );
 
-  if (!profil) {
-    await createUser(from);
-    profil = await getUser(from);
-
-    await envoyerWhatsApp(
-      from,
-      `Bonsoir 😊 Avant de commencer, quel est ton prénom ?`
-    );
-
+  if (user) {
     return {
-      handled: true,
-      user: profil
+      ...user,
+      phone: user.phone || user.telephone || user.numero || phone
     };
   }
 
-  const historique = Array.isArray(profil?.historique) ? profil.historique : [];
+  return { phone, nom: "", classe: "", reve: "" };
+}
 
-  if (!profil.nom || !String(profil.nom).trim()) {
-    const nom =
-      nettoyerNom(texteUtilisateur) ||
-      extraireDepuisHistorique(historique, "nom");
+async function createUserSafe(phone = "") {
+  await appelerDb(
+    [
+      "createUser",
+      "createUtilisateur",
+      "getOrCreateUser",
+      "getOrCreateUtilisateur"
+    ],
+    phone
+  );
 
-    if (!nom) {
-      await envoyerWhatsApp(
-        from,
-        `Bonsoir 😊 Avant de commencer, quel est ton prénom ?`
-      );
+  return await getUserSafe(phone);
+}
 
-      return {
-        handled: true,
-        user: profil
-      };
-    }
+async function updateFieldSafe(phone = "", field = "", value = "") {
+  await appelerDb(
+    [
+      "updateUserField",
+      "updateUtilisateurField",
+      "setUserField",
+      "setUtilisateurField"
+    ],
+    phone,
+    field,
+    value
+  );
+}
 
-    await updateUserField(from, "nom", nom);
-    profil = await getUser(from);
+async function resetProfilSafe(phone = "") {
+  await updateFieldSafe(phone, "nom", "");
+  await updateFieldSafe(phone, "classe", "");
+  await updateFieldSafe(phone, "reve", "");
 
-    await envoyerWhatsApp(
-      from,
-      `Enchanté **${nom}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`
-    );
+  return {
+    phone,
+    nom: "",
+    classe: "",
+    reve: ""
+  };
+}
+
+async function traiterOnboarding(phone = "", user = {}, texteUtilisateur = "") {
+  let profil = user;
+
+  if (!profil || !profil.phone) {
+    profil = await createUserSafe(phone);
+  }
+
+  if (estCommandeProfil(texteUtilisateur)) {
+    profil = await resetProfilSafe(phone);
 
     return {
       handled: true,
-      user: profil
+      user: profil,
+      reponse: `Profil remis à zéro 😊
+
+Avant de commencer, quel est ton prénom ?`,
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  if (!profil.nom || nomInvalide(profil.nom)) {
+    const nom = nettoyerNom(texteUtilisateur);
+
+    if (!nom) {
+      return {
+        handled: true,
+        user: profil,
+        reponse: `Bonjour 😊 Avant de commencer, quel est ton prénom ?`,
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    await updateFieldSafe(phone, "nom", nom);
+    profil = await getUserSafe(phone);
+
+    return {
+      handled: true,
+      user: profil,
+      reponse: `Enchanté **${nom}** 😊 Maintenant, dis-moi ta classe pour que je t'aide selon ton niveau.`,
+      fiche: null,
+      bypassFormat: true
     };
   }
 
   if (!profil.classe || !String(profil.classe).trim()) {
-    const classe =
-      nettoyerClasse(texteUtilisateur) ||
-      extraireDepuisHistorique(historique, "classe");
+    const classe = nettoyerClasse(texteUtilisateur);
 
     if (!classe) {
-      await envoyerWhatsApp(
-        from,
-        `**${profil.nom}** 😊 Écris-moi simplement ta classe.
-
-Exemple : 5e année des humanités pédagogiques.`
-      );
-
       return {
         handled: true,
-        user: profil
+        user: profil,
+        reponse: `**${profil.nom}** 😊 Écris-moi simplement ta classe.
+
+Exemple : 5e année des humanités pédagogiques.`,
+        fiche: null,
+        bypassFormat: true
       };
     }
 
-    await updateUserField(from, "classe", classe);
-    profil = await getUser(from);
-
-    await envoyerWhatsApp(
-      from,
-      `C'est bien noté **${profil.nom}** 😊
-
-Tu es en **${classe}**.
-
-Maintenant, dis-moi ton rêve ou ton projet futur : que veux-tu devenir plus tard ?`
-    );
+    await updateFieldSafe(phone, "classe", classe);
+    profil = await getUserSafe(phone);
 
     return {
       handled: true,
-      user: profil
+      user: profil,
+      reponse: `C'est bien noté **${profil.nom}** 😊
+
+Tu es en **${classe}**.
+
+Maintenant, dis-moi ton rêve ou ton projet futur : que veux-tu devenir plus tard ?`,
+      fiche: null,
+      bypassFormat: true
     };
   }
 
   if (!profil.reve || !String(profil.reve).trim()) {
-    const reve =
-      nettoyerReve(texteUtilisateur) ||
-      extraireDepuisHistorique(historique, "reve");
+    const reve = nettoyerReve(texteUtilisateur);
 
     if (!reve) {
-      await envoyerWhatsApp(
-        from,
-        `Très bien **${profil.nom}** 😊
+      return {
+        handled: true,
+        user: profil,
+        reponse: `Très bien **${profil.nom}** 😊
 
 Quel est ton rêve ou ton projet futur ?
 
-Exemple : enseignant, avocat, médecin, ingénieur, entrepreneur.`
-      );
-
-      return {
-        handled: true,
-        user: profil
+Exemple : enseignant, avocat, médecin, ingénieur, entrepreneur.`,
+        fiche: null,
+        bypassFormat: true
       };
     }
 
-    await updateUserField(from, "reve", reve);
-
-    if (typeof resetAllStudentAttempts === "function") {
-      await resetAllStudentAttempts(from);
-    }
-
-    profil = await getUser(from);
-
-    await envoyerWhatsApp(
-      from,
-      `Magnifique ambition **${profil.nom}** 😊
-
-Devenir **${reve}** est un beau projet.
-
-Maintenant que je connais ton profil, dis-moi la matière, la leçon ou la notion que tu veux commencer.`
-    );
+    await updateFieldSafe(phone, "reve", reve);
+    profil = await getUserSafe(phone);
 
     return {
       handled: true,
-      user: profil
+      user: profil,
+      reponse: `Magnifique ambition **${profil.nom}** 😊
+
+Devenir **${reve}** est un beau projet.
+
+Maintenant que je connais ton profil, dis-moi la matière, la leçon ou la notion que tu veux commencer.`,
+      fiche: null,
+      bypassFormat: true
     };
   }
 
@@ -285,5 +378,7 @@ module.exports = {
   traiterOnboarding,
   nettoyerNom,
   nettoyerClasse,
-  nettoyerReve
+  nettoyerReve,
+  estCommandeProfil,
+  nomInvalide
 };
