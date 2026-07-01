@@ -1012,27 +1012,88 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
   return false;
 }
 
+/* =========================================================
+   estSecondTourSalutation (VERSION AMÉLIORÉE)
+========================================================= */
 function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
   if (!dernierMessageEstQuestionBienEtre(historique)) return false;
+
   const t = normaliserTexteRelationnel(texteUtilisateur);
-  const reponsesCourtes = [
-    "ca va", "ca va bien", "je vais bien", "bien et toi", "oui je vais bien",
-    "ca va merci", "je vais bien merci", "tranquille", "cool", "super",
-    "pas mal", "tres bien", "nickel", "je vais super bien", "au top",
-    "tu vas bien", "tu vas bien?", "comment vas-tu", "comment vas-tu?",
-    "et toi", "et toi?", "et vous", "comment ca va", "comment ca va?",
-    "vous allez bien", "vous allez bien?",
-    "je vais bien", "je vais tres bien", "je vais bien merci", "je vais tres bien merci",
-    "je me sens bien", "je me sens tres bien", "je me sens super bien",
-    "je me porte bien", "je me porte tres bien", "je me porte super bien",
-    "je me porte bien merci", "je me porte tres bien merci",
-    "tranquille", "ca roule", "imboko", "bien merci",
-    "je vais bien et toi", "je vais bien et toi?", "je vais super bien et toi",
-    "je me porte bien et toi", "je me porte bien et toi?",
-    "oui je vais bien", "oui je vais tres bien", "oui je me porte bien",
-    "oui ca va", "oui ca va merci", "oui ça va", "oui ça va merci"
+  if (!t || t.length > 100) return false;
+
+  // Si l'élève pose déjà une vraie question scolaire, on ne bloque pas
+  const academiqueFort = [
+    "explique",
+    "calcule",
+    "calculer",
+    "resous",
+    "corrige",
+    "definition",
+    "definis",
+    "math",
+    "maths",
+    "physique",
+    "chimie",
+    "geographie",
+    "histoire",
+    "droit",
+    "loi",
+    "article",
+    "exercice",
+    "probleme"
   ];
-  return t.length < 80 && reponsesCourtes.includes(t);
+
+  if (academiqueFort.some((mot) => t.includes(mot))) {
+    return false;
+  }
+
+  const reponsesBienEtre = [
+    "ca va",
+    "ca va bien",
+    "ca va merci",
+    "je vais bien",
+    "je vais bien merci",
+    "je vais tres bien",
+    "je me porte bien",
+    "je me sens bien",
+    "bien",
+    "bien merci",
+    "bien et toi",
+    "oui ca va",
+    "oui ca va merci",
+    "tranquille",
+    "super",
+    "cool",
+    "pas mal",
+    "tres bien",
+    "nickel",
+    "au top",
+    "imboko",
+
+    // ✅ réponses à : comment s'est passée ta journée ?
+    "s est bien passee",
+    "elle s est bien passee",
+    "ma journee s est bien passee",
+    "la journee s est bien passee",
+    "c etait bien",
+    "c etait tres bien",
+    "tout s est bien passe",
+    "tout va bien",
+    "bonne journee",
+    "journee bien passee"
+  ];
+
+  if (reponsesBienEtre.includes(t)) return true;
+
+  return (
+    /^s est bien passee\b/.test(t) ||
+    /^elle s est bien passee\b/.test(t) ||
+    /^ma journee s est bien passee\b/.test(t) ||
+    /^la journee s est bien passee\b/.test(t) ||
+    /^tout s est bien passe\b/.test(t) ||
+    /^c etait bien\b/.test(t) ||
+    /^c etait tres bien\b/.test(t)
+  );
 }
 
 function genererRepriseApresBienEtre(user = {}) {
@@ -1849,7 +1910,7 @@ function messageSecours(user, msgType = "message") {
 }
 
 /* =========================================================
-   DÉTECTION RELATIONNELLE EXACTE (avec les nouveaux motifs)
+   DÉTECTION RELATIONNELLE EXACTE
 ========================================================= */
 function estRelationnelExactCourt(texte = "") {
   const t = normaliserTexteRelationnel(texte);
@@ -1883,13 +1944,41 @@ function estRelationnelExactCourt(texte = "") {
 }
 
 /* =========================================================
-   DÉTECTION ACADÉMIQUE (avec protection)
+   estReponseJourneeBienEtre (AJOUTÉE)
+========================================================= */
+function estReponseJourneeBienEtre(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  const exacts = [
+    "ma journee s est bien passee",
+    "la journee s est bien passee",
+    "elle s est bien passee",
+    "s est bien passee",
+    "tout s est bien passe",
+    "c etait bien",
+    "c etait tres bien",
+    "ma journee etait bien",
+    "ma journee etait tres bien"
+  ];
+
+  return (
+    exacts.includes(t) ||
+    /^ma journee s est bien passee\b/.test(t) ||
+    /^la journee s est bien passee\b/.test(t) ||
+    /^elle s est bien passee\b/.test(t) ||
+    /^s est bien passee\b/.test(t) ||
+    /^tout s est bien passe\b/.test(t)
+  );
+}
+
+/* =========================================================
+   DÉTECTION ACADÉMIQUE
 ========================================================= */
 function contientQuestionAcademique(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t || t.length < 10) return false;
 
-  // ✅ Protection : écarter les courts messages relationnels exacts
   if (estRelationnelExactCourt(t)) return false;
 
   const patterns = [
@@ -2055,7 +2144,7 @@ async function traiterTexte(user, texteUtilisateur, historique) {
 }
 
 /* =========================================================
-   TRAITEMENT AUDIO (protégé)
+   TRAITEMENT AUDIO (avec les deux modifications)
 ========================================================= */
 async function traiterAudio(user, msg, historique) {
   const audioId = msg.audio?.id;
@@ -2074,6 +2163,14 @@ async function traiterAudio(user, msg, historique) {
   const transcriptionBrute = String(analyse?.transcription || "").trim();
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
+
+  if (
+    estReponseJourneeBienEtre(transcriptionBrute) ||
+    estReponseJourneeBienEtre(transcription)
+  ) {
+    const rep = genererRepriseApresBienEtre(user);
+    return { reponse: rep, fiche: null, bypassFormat: true };
+  }
 
   if (estSecondTourSalutation(historique, transcription || transcriptionBrute)) {
     const rep = genererRepriseApresBienEtre(user);
@@ -2099,9 +2196,10 @@ async function traiterAudio(user, msg, historique) {
   }
 
   if (typeAudio === "social" && !contientQuestionAcademique(transcription || transcriptionBrute)) {
+    const rep = construireReponseHumaineSimple(user, transcription || transcriptionBrute);
+
     return {
-      reponse:
-        construireReponseHumaineSimple(user, transcription || transcriptionBrute || "merci") || "Je t'en prie 😊",
+      reponse: rep || genererRepriseApresBienEtre(user),
       fiche: null,
       bypassFormat: true
     };
