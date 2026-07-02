@@ -247,6 +247,19 @@ const JSON_SCHEMA_AUDIO = {
   required: ["transcription", "type"]
 };
 
+const JSON_SCHEMA_DECISION = {
+  type: "OBJECT",
+  properties: {
+    intention: { type: "STRING" },
+    route: { type: "STRING" },
+    besoinIA: { type: "BOOLEAN" },
+    besoinWeb: { type: "BOOLEAN" },
+    bypassFormat: { type: "BOOLEAN" },
+    raison: { type: "STRING" }
+  },
+  required: ["intention", "route", "besoinIA", "besoinWeb", "bypassFormat", "raison"]
+};
+
 /* =========================================================
    4) CACHE TTL
 ========================================================= */
@@ -2068,115 +2081,113 @@ function estMessageRelationnelSimple(texte = "") {
 }
 
 /* =========================================================
-   cerveauDecision (NOUVEAU)
+   cerveauDecisionIA (NOUVEAU)
 ========================================================= */
-async function cerveauDecision(user, texte = "", historique = [], msgType = "text") {
-  const t = normaliserTexteRelationnel(texte);
+async function cerveauDecisionIA(user, texte = "", historique = [], msgType = "text") {
+  const systemInstruction = `${construireSystemPrompt(user)}
 
-  if (!t) {
-    return {
-      intention: "incompris",
-      route: "incompris",
-      besoinIA: false,
-      besoinWeb: false,
-      bypassFormat: true
-    };
-  }
+MODE CERVEAU DÉCISIONNEL :
+- Tu ne réponds pas encore à l'élève
+- Tu dois seulement décider quoi faire
+- Analyse le message actuel avec le contexte récent
+- Si l'élève répond "oui", "oui oui", "bien", "ça va", "ma journée s'est bien passée" après une question de bien-être, classe cela comme réponse sociale
+- Ne transforme jamais une simple réponse sociale en question académique
+- Si c'est une vraie question scolaire, juridique, géographique, exercice ou correction, choisis la route pédagogique
+- Réponds uniquement en JSON valide
 
-  if (estSecondTourSalutation(historique, texte) || estReponseJourneeBienEtre(texte)) {
-    return {
-      intention: "reponse_bien_etre",
-      route: "reponse_bien_etre",
-      besoinIA: false,
-      besoinWeb: false,
-      bypassFormat: true
-    };
-  }
+Routes possibles :
+reponse_sociale
+reponse_bien_etre
+pedagogique
+pedagogique_web
+correction
+exercice
+image
+audio
+incompris`;
 
-  if (!contientQuestionAcademique(texte) && estMessagePurementSocial(texte)) {
-    return {
-      intention: "social",
-      route: "reponse_simple",
-      besoinIA: false,
-      besoinWeb: false,
-      bypassFormat: true
-    };
-  }
-
-  if (estSoumissionReponse(texte)) {
-    return {
-      intention: "soumission_reponse",
-      route: "correction",
-      besoinIA: true,
-      besoinWeb: false,
-      bypassFormat: false
-    };
-  }
-
-  if (estQuestionTechnique(texte)) {
-    return {
-      intention: "exercice",
-      route: "pedagogique",
-      besoinIA: true,
-      besoinWeb: false,
-      bypassFormat: false
-    };
-  }
-
-  if (estQuestionGeographieRDC(texte, null)) {
-    return {
-      intention: "geographie_rdc",
-      route: "pedagogique_web",
-      besoinIA: true,
-      besoinWeb: true,
-      bypassFormat: false
-    };
-  }
-
-  const texteMin = String(texte || "").toLowerCase();
-
-  if (
-    texteMin.includes("droit") ||
-    texteMin.includes("loi") ||
-    texteMin.includes("article") ||
-    texteMin.includes("code") ||
-    texteMin.includes("ohada") ||
-    texteMin.includes("tribunal")
-  ) {
-    return {
-      intention: "juridique",
-      route: "pedagogique_web",
-      besoinIA: true,
-      besoinWeb: true,
-      bypassFormat: false
-    };
-  }
-
-  return {
+  const fallback = {
     intention: "question_normale",
     route: "pedagogique",
     besoinIA: true,
-    besoinWeb: fautChercherSurWeb(texte, null),
-    bypassFormat: false
+    besoinWeb: false,
+    bypassFormat: false,
+    raison: "fallback"
   };
+
+  try {
+    const parsed = await appelerJsonStrict({
+      systemInstruction,
+      prompt: `TYPE DU MESSAGE : ${msgType}
+
+MESSAGE ACTUEL :
+${texte}
+
+Décide la route correcte.`,
+      schema: JSON_SCHEMA_DECISION,
+      history: historique.slice(-6)
+    });
+
+    if (!parsed || typeof parsed !== "object") return fallback;
+
+    return {
+      intention: String(parsed.intention || "question_normale"),
+      route: String(parsed.route || "pedagogique"),
+      besoinIA: Boolean(parsed.besoinIA),
+      besoinWeb: Boolean(parsed.besoinWeb),
+      bypassFormat: Boolean(parsed.bypassFormat),
+      raison: String(parsed.raison || "")
+    };
+  } catch (e) {
+    logError("cerveau_decision_ia", e);
+    return fallback;
+  }
 }
 
 /* =========================================================
-   TRAITEMENT TEXTE (avec cerveauDecision)
+   genererReponseSocialeIA (NOUVEAU)
+========================================================= */
+async function genererReponseSocialeIA(user, texte = "", historique = [], decision = {}) {
+  return await safeAI(
+    () =>
+      appelerChatCompletion([
+        {
+          role: "system",
+          content: `${construireSystemPrompt(user)}
+MODE RÉPONSE SOCIALE :
+- Réponds naturellement
+- Une ou deux phrases maximum
+- Pas de structure pédagogique
+- Pas de header
+- Pas de citation
+- Pas de VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
+- Si l'élève répond à une question de bien-être, accuse réception humainement puis invite-le doucement à choisir une matière ou une question`
+        },
+        ...historique.slice(-6),
+        {
+          role: "user",
+          content: `Message de l'élève : ${texte}
+
+Décision :
+${JSON.stringify(decision)}`
+        }
+      ]),
+    "D'accord 😊 Dis-moi maintenant ce que tu aimerais apprendre ou réviser."
+  );
+}
+
+/* =========================================================
+   TRAITEMENT TEXTE (avec cerveauDecisionIA)
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  const decision = await cerveauDecision(user, texteUtilisateur, historique, "text");
+  const decision = await cerveauDecisionIA(user, texteUtilisateur, historique, "text");
 
-  if (decision.route === "reponse_bien_etre") {
-    const reponse = genererRepriseApresBienEtre(user);
+  if (
+    decision.route === "reponse_sociale" ||
+    decision.route === "reponse_bien_etre"
+  ) {
+    const reponse = await genererReponseSocialeIA(user, texteUtilisateur, historique, decision);
     return { reponse, fiche: null, bypassFormat: true };
-  }
-
-  if (decision.route === "reponse_simple") {
-    const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
-    if (reponseSimple) {
-      return { reponse: reponseSimple, fiche: null, bypassFormat: true };
-    }
   }
 
   if (decision.route === "incompris") {
