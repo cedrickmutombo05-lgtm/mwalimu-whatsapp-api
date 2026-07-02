@@ -2068,19 +2068,123 @@ function estMessageRelationnelSimple(texte = "") {
 }
 
 /* =========================================================
-   TRAITEMENT TEXTE
+   cerveauDecision (NOUVEAU)
+========================================================= */
+async function cerveauDecision(user, texte = "", historique = [], msgType = "text") {
+  const t = normaliserTexteRelationnel(texte);
+
+  if (!t) {
+    return {
+      intention: "incompris",
+      route: "incompris",
+      besoinIA: false,
+      besoinWeb: false,
+      bypassFormat: true
+    };
+  }
+
+  if (estSecondTourSalutation(historique, texte) || estReponseJourneeBienEtre(texte)) {
+    return {
+      intention: "reponse_bien_etre",
+      route: "reponse_bien_etre",
+      besoinIA: false,
+      besoinWeb: false,
+      bypassFormat: true
+    };
+  }
+
+  if (!contientQuestionAcademique(texte) && estMessagePurementSocial(texte)) {
+    return {
+      intention: "social",
+      route: "reponse_simple",
+      besoinIA: false,
+      besoinWeb: false,
+      bypassFormat: true
+    };
+  }
+
+  if (estSoumissionReponse(texte)) {
+    return {
+      intention: "soumission_reponse",
+      route: "correction",
+      besoinIA: true,
+      besoinWeb: false,
+      bypassFormat: false
+    };
+  }
+
+  if (estQuestionTechnique(texte)) {
+    return {
+      intention: "exercice",
+      route: "pedagogique",
+      besoinIA: true,
+      besoinWeb: false,
+      bypassFormat: false
+    };
+  }
+
+  if (estQuestionGeographieRDC(texte, null)) {
+    return {
+      intention: "geographie_rdc",
+      route: "pedagogique_web",
+      besoinIA: true,
+      besoinWeb: true,
+      bypassFormat: false
+    };
+  }
+
+  const texteMin = String(texte || "").toLowerCase();
+
+  if (
+    texteMin.includes("droit") ||
+    texteMin.includes("loi") ||
+    texteMin.includes("article") ||
+    texteMin.includes("code") ||
+    texteMin.includes("ohada") ||
+    texteMin.includes("tribunal")
+  ) {
+    return {
+      intention: "juridique",
+      route: "pedagogique_web",
+      besoinIA: true,
+      besoinWeb: true,
+      bypassFormat: false
+    };
+  }
+
+  return {
+    intention: "question_normale",
+    route: "pedagogique",
+    besoinIA: true,
+    besoinWeb: fautChercherSurWeb(texte, null),
+    bypassFormat: false
+  };
+}
+
+/* =========================================================
+   TRAITEMENT TEXTE (avec cerveauDecision)
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  if (estSecondTourSalutation(historique, texteUtilisateur)) {
+  const decision = await cerveauDecision(user, texteUtilisateur, historique, "text");
+
+  if (decision.route === "reponse_bien_etre") {
     const reponse = genererRepriseApresBienEtre(user);
     return { reponse, fiche: null, bypassFormat: true };
   }
 
-  if (!contientQuestionAcademique(texteUtilisateur) && estMessagePurementSocial(texteUtilisateur)) {
+  if (decision.route === "reponse_simple") {
     const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
     if (reponseSimple) {
       return { reponse: reponseSimple, fiche: null, bypassFormat: true };
     }
+  }
+
+  if (decision.route === "incompris") {
+    return {
+      reponse: "Je n'ai pas bien compris. Peux-tu reformuler simplement ?",
+      fiche: null,
+      bypassFormat: true
+    };
   }
 
   const cacheKey = makeCacheKey(user, texteUtilisateur);
@@ -2091,37 +2195,11 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   }
 
   let analyse = {
-    intention: "question_normale",
+    intention: decision.intention,
     matiere: detecterMatiereScientifique(texteUtilisateur, "", null),
     besoinCorrectionRenforcee: false,
     sujet: extraireSujetMemoire(texteUtilisateur) || "general"
   };
-
-  const texteMin = String(texteUtilisateur || "").toLowerCase();
-  const besoinAnalyseIA =
-    estSoumissionReponse(texteUtilisateur) ||
-    estQuestionTechnique(texteUtilisateur) ||
-    texteMin.includes("droit") ||
-    texteMin.includes("loi") ||
-    texteMin.includes("ohada") ||
-    texteMin.includes("rdc") ||
-    texteMin.includes("congo") ||
-    texteMin.includes("géographie") ||
-    texteMin.includes("geographie") ||
-    texteMin.includes("territoire") ||
-    texteMin.includes("territoires") ||
-    texteMin.includes("commune") ||
-    texteMin.includes("communes") ||
-    texteMin.includes("ville") ||
-    texteMin.includes("villes") ||
-    texteMin.includes("province") ||
-    texteMin.includes("histoire") ||
-    texteMin.includes("indépendance") ||
-    texteMin.includes("colonisation");
-
-  if (besoinAnalyseIA) {
-    analyse = await detecterIntentionIA(user, texteUtilisateur, historique);
-  }
 
   const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
   const consigneBase = construireConsignePedagogique(texteUtilisateur, "text");
