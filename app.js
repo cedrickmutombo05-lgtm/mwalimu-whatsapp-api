@@ -2145,6 +2145,58 @@ Décide la route correcte.`,
 }
 
 /* =========================================================
+   securiserDecisionCasSensibles (NOUVEAU)
+========================================================= */
+function securiserDecisionCasSensibles(decision = {}, texte = "", historique = []) {
+  const t = normaliserTexteRelationnel(texte);
+
+  if (!t) return decision;
+
+  // Cas sensible : Mwalimu a demandé comment va l'élève ou sa journée
+  if (dernierMessageEstQuestionBienEtre(historique)) {
+    const reponsesSociales = [
+      "oui",
+      "oui oui",
+      "oui bien",
+      "oui tres bien",
+      "oui ca va",
+      "oui ca va bien",
+      "bien",
+      "bien merci",
+      "tres bien",
+      "ca va",
+      "ca va bien",
+      "ca va merci",
+      "super",
+      "cool",
+      "pas mal",
+      "ma journee s est bien passee",
+      "la journee s est bien passee",
+      "elle s est bien passee",
+      "tout s est bien passe",
+      "c etait bien"
+    ];
+
+    if (
+      reponsesSociales.includes(t) ||
+      /^oui\b/.test(t) ||
+      estReponseJourneeBienEtre(t)
+    ) {
+      return {
+        intention: "reponse_bien_etre",
+        route: "reponse_bien_etre",
+        besoinIA: false,
+        besoinWeb: false,
+        bypassFormat: true,
+        raison: "Réponse sociale après une question de bien-être"
+      };
+    }
+  }
+
+  return decision;
+}
+
+/* =========================================================
    genererReponseSocialeIA (NOUVEAU)
 ========================================================= */
 async function genererReponseSocialeIA(user, texte = "", historique = [], decision = {}) {
@@ -2177,10 +2229,11 @@ ${JSON.stringify(decision)}`
 }
 
 /* =========================================================
-   TRAITEMENT TEXTE (avec cerveauDecisionIA)
+   TRAITEMENT TEXTE (avec cerveauDecisionIA et securiserDecisionCasSensibles)
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  const decision = await cerveauDecisionIA(user, texteUtilisateur, historique, "text");
+  let decision = await cerveauDecisionIA(user, texteUtilisateur, historique, "text");
+  decision = securiserDecisionCasSensibles(decision, texteUtilisateur, historique);
 
   if (
     decision.route === "reponse_sociale" ||
