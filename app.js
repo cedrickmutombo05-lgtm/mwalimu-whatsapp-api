@@ -1552,6 +1552,7 @@ Donne un contexte web brut et fiable.`
   return String(reponse || "").trim();
 }
 
+// ✅ CORRECTION MÉMOIRE - historique complet injecté
 async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
   let contexteWeb = "";
 
@@ -1579,6 +1580,9 @@ ${fiche?.commentaire_ai || ""}`
     : `CONTEXTE DB :
 Aucune fiche locale disponible.`;
 
+  // ✅ CORRECTION : Utiliser l'historique COMPLET (jusqu'à 20 messages) pour la mémoire
+  const historiqueContexte = historique.slice(-20);
+
   return await safeAI(
     () =>
       appelerChatCompletion([
@@ -1593,10 +1597,16 @@ Aucune fiche locale disponible.`;
 - Pour la géographie RDC, province, territoire, ville, commune : sois précis
 - Si la question demande une liste administrative complète, recopie la liste complète trouvée
 - Si tu n'es pas sûr d'une liste complète, dis-le honnêtement
-- La consolidation doit rester dans la même matière que la question`
+- La consolidation doit rester dans la même matière que la question
+
+⚠️ MÉMOIRE : Tu as accès à l'historique complet de la conversation. Utilise-le pour :
+- Te souvenir des matières déjà abordées
+- Faire le lien avec les questions précédentes
+- Éviter de répéter les mêmes explications
+- Adapter tes réponses en fonction du contexte de la conversation`
         },
         { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
-        ...historique.slice(-5),
+        ...historiqueContexte,
         {
           role: "user",
           content: `QUESTION :
@@ -1737,9 +1747,11 @@ Tu réponds à un message audio. Sois concis et pédagogique.`;
   }
 }
 
+// ✅ CORRECTION SOCIALE - Plus de réponses simples
 function construireReponseHumaineSimple(user, texte) {
   const prenom = premierPrenom(user?.nom || "");
   const genre = genreEleve(user?.nom || "");
+  const t = normaliserTexteRelationnel(texte);
   
   if (estMessageSalutation(texte)) {
     const heure = new Date().getHours();
@@ -1752,8 +1764,33 @@ function construireReponseHumaineSimple(user, texte) {
     return `Avec plaisir ${genre} **${prenom}** ! N'hésite pas si tu as d'autres questions.`;
   }
 
-  if (texte.includes("bonne nuit") || texte.includes("dors bien")) {
+  if (t.includes("bonne nuit") || t.includes("dors bien")) {
     return `Bonne nuit ${genre} **${prenom}** ! 🌙 Repose-toi bien et à demain.`;
+  }
+
+  if (t === "ok" || t === "okay" || t === "d accord" || t === "ok merci" || t === "okay merci") {
+    return "👍";
+  }
+
+  if (t === "ca va" || t === "ca va bien" || t === "ca va merci" || t === "je vais bien" || t === "je vais bien merci" || t === "je me porte bien") {
+    const accroches = [
+      `Tant mieux **${prenom}** ! 😊 Qu'est-ce que tu aimerais apprendre maintenant ?`,
+      `Je suis content de l'entendre **${prenom}** ! Quelle matière te tente aujourd'hui ?`,
+      `Heureux de te voir en forme **${prenom}** ! Dis-moi, que veux-tu réviser ?`
+    ];
+    return pick(accroches);
+  }
+
+  if (t === "oui") {
+    return `D'accord **${prenom}** ! Dis-m'en plus si tu veux.`;
+  }
+
+  if (t === "non") {
+    return `D'accord **${prenom}**, pas de souci.`;
+  }
+
+  if (estMessagePurementSocial(texte) && texte.length < 30) {
+    return `Je t'écoute **${prenom}** 😊`;
   }
 
   return null;
@@ -1968,6 +2005,7 @@ async function appendHistorique(phone, role, content) {
     let historique = Array.isArray(user.historique) ? user.historique : [];
     historique.push({ role, content });
     
+    // ✅ Garder 50 messages pour une meilleure mémoire
     if (historique.length > 50) {
       historique = historique.slice(-50);
     }
@@ -2402,6 +2440,22 @@ async function traiterAudio(user, msg, historique) {
     return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true };
   }
 
+  // ✅ CORRECTION AUDIO SOCIAL - Test rapide pour les petits audios
+  try {
+    const { buffer: smallBuffer } = await telechargerMedia(audioId, 500 * 1024); // 500 Ko
+    
+    if (smallBuffer.length < 50 * 1024) {
+      logInfo("short_audio_social", { phone: user?.phone || "", size: smallBuffer.length });
+      return { 
+        reponse: construireReponseHumaineSimple(user, "audio court") || "J'ai bien reçu ton message vocal ! 😊 Si tu as une question, n'hésite pas à me l'écrire ou à m'envoyer un audio plus détaillé.", 
+        fiche: null, 
+        bypassFormat: true 
+      };
+    }
+  } catch (e) {
+    // Continuer normalement
+  }
+
   const { buffer, mimeType } = await telechargerMedia(audioId, 8 * 1024 * 1024);
   logInfo("audio_received", { phone: user?.phone || "", mimeType });
 
@@ -2700,6 +2754,20 @@ async function processIncomingMessage(msg) {
     : safeJsonParse(user.historique, []);
 
   let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
+
+  // ✅ CORRECTION SOCIALE - Vérification rapide avant pipeline complet
+  if (msgType === "text" && texteUtilisateur) {
+    if (estMessageRelationnelSimple(texteUtilisateur)) {
+      const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
+      if (reponseSimple) {
+        await appendHistorique(from, "user", texteUtilisateur);
+        await appendHistorique(from, "assistant", reponseSimple);
+        await envoyerWhatsAppAvecRetry(from, reponseSimple);
+        logInfo("social_response_sent", { phone: from, preview: texteUtilisateur.slice(0, 40) });
+        return;
+      }
+    }
+  }
 
   if (msgType === "text" && texteUtilisateur) {
     await appendHistorique(from, "user", texteUtilisateur);
