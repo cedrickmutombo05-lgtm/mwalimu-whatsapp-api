@@ -1552,7 +1552,7 @@ Donne un contexte web brut et fiable.`
   return String(reponse || "").trim();
 }
 
-// ✅ CORRECTION MÉMOIRE - historique complet injecté
+// ✅ MÉMOIRE CORRIGÉE - historique complet injecté
 async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
   let contexteWeb = "";
 
@@ -1580,7 +1580,6 @@ ${fiche?.commentaire_ai || ""}`
     : `CONTEXTE DB :
 Aucune fiche locale disponible.`;
 
-  // ✅ CORRECTION : Utiliser l'historique COMPLET (jusqu'à 20 messages) pour la mémoire
   const historiqueContexte = historique.slice(-20);
 
   return await safeAI(
@@ -2005,7 +2004,7 @@ async function appendHistorique(phone, role, content) {
     let historique = Array.isArray(user.historique) ? user.historique : [];
     historique.push({ role, content });
     
-    // ✅ Garder 50 messages pour une meilleure mémoire
+    // Garder 50 messages pour une meilleure mémoire
     if (historique.length > 50) {
       historique = historique.slice(-50);
     }
@@ -2432,7 +2431,7 @@ async function traiterTexte(user, texteUtilisateur, historique) {
 }
 
 /* =========================================================
-   TRAITEMENT AUDIO
+   TRAITEMENT AUDIO - CORRIGÉ : plus de test de taille
 ========================================================= */
 async function traiterAudio(user, msg, historique) {
   const audioId = msg.audio?.id;
@@ -2440,34 +2439,30 @@ async function traiterAudio(user, msg, historique) {
     return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true };
   }
 
-  // ✅ CORRECTION AUDIO SOCIAL - Test rapide pour les petits audios
+  // Télécharger l'audio une seule fois
+  let buffer, mimeType;
   try {
-    const { buffer: smallBuffer } = await telechargerMedia(audioId, 500 * 1024); // 500 Ko
-    
-    if (smallBuffer.length < 50 * 1024) {
-      logInfo("short_audio_social", { phone: user?.phone || "", size: smallBuffer.length });
-      return { 
-        reponse: construireReponseHumaineSimple(user, "audio court") || "J'ai bien reçu ton message vocal ! 😊 Si tu as une question, n'hésite pas à me l'écrire ou à m'envoyer un audio plus détaillé.", 
-        fiche: null, 
-        bypassFormat: true 
-      };
-    }
+    const media = await telechargerMedia(audioId, 8 * 1024 * 1024);
+    buffer = media.buffer;
+    mimeType = media.mimeType;
   } catch (e) {
-    // Continuer normalement
+    logError("audio_download_error", e, { phone: user?.phone });
+    return { reponse: "Je n'arrive pas à télécharger ton audio. Réessaie.", fiche: null, bypassFormat: true };
   }
 
-  const { buffer, mimeType } = await telechargerMedia(audioId, 8 * 1024 * 1024);
   logInfo("audio_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeAudioSupporte(mimeType)) {
     return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true };
   }
 
+  // Toujours analyser l'audio via l'IA pour déterminer son type
   const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
   const transcriptionBrute = String(analyse?.transcription || "").trim();
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
+  // Vérifications sociales APRÈS l'analyse IA
   if (
     estReponseJourneeBienEtre(transcriptionBrute) ||
     estReponseJourneeBienEtre(transcription)
@@ -2499,6 +2494,7 @@ async function traiterAudio(user, msg, historique) {
     };
   }
 
+  // Si l'IA a détecté un audio social ET pas de contenu académique
   if (typeAudio === "social" && !contientQuestionAcademique(transcription || transcriptionBrute)) {
     const rep = construireReponseHumaineSimple(user, transcription || transcriptionBrute);
     return {
@@ -2508,6 +2504,7 @@ async function traiterAudio(user, msg, historique) {
     };
   }
 
+  // Pour les audios académiques ou questions, traitement IA complet
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
   const texteAudioNormalise = normaliserTexteRelationnel(reponse);
 
