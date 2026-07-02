@@ -7,6 +7,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cron = require("node-cron");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
+const pdfParse = require("pdf-parse");
 
 axios.defaults.timeout = 15000;
 
@@ -108,6 +109,9 @@ function nowMs() {
    3) CONSTANTES
 ========================================================= */
 const HEADER_MWALIMU = "🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excellence* 🇨🇩";
+
+const MAX_PDF_SIZE = 10 * 1024 * 1024;
+const MAX_PDF_TEXT_LENGTH = 4000;
 
 const CITATIONS = {
   patriotisme: [
@@ -1025,16 +1029,12 @@ function dernierMessageEstQuestionBienEtre(historique = []) {
   return false;
 }
 
-/* =========================================================
-   estSecondTourSalutation (VERSION AMÉLIORÉE)
-========================================================= */
 function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
   if (!dernierMessageEstQuestionBienEtre(historique)) return false;
 
   const t = normaliserTexteRelationnel(texteUtilisateur);
   if (!t || t.length > 100) return false;
 
-  // Si l'élève pose déjà une vraie question scolaire, on ne bloque pas
   const academiqueFort = [
     "explique",
     "calcule",
@@ -1082,8 +1082,6 @@ function estSecondTourSalutation(historique = [], texteUtilisateur = "") {
     "nickel",
     "au top",
     "imboko",
-
-    // ✅ réponses à : comment s'est passée ta journée ?
     "s est bien passee",
     "elle s est bien passee",
     "ma journee s est bien passee",
@@ -1120,885 +1118,98 @@ function genererRepriseApresBienEtre(user = {}) {
   return pick(accroches);
 }
 
-function construireReponseHumaineSimple(user = {}, texte = "") {
+function dernierMessageEstInvitationChoixMatiere(historique = []) {
+  if (!historique.length) return false;
+
+  const dernierAssistant = [...historique].reverse().find(m => m.role === "assistant");
+  if (!dernierAssistant) return false;
+
+  const texte = normaliserTexteRelationnel(dernierAssistant.content || "");
+
+  const motifs = [
+    "prete a explorer une nouvelle notion",
+    "pret a explorer une nouvelle notion",
+    "explorer une nouvelle notion",
+    "revoir quelque chose",
+    "ce que tu aimerais etudier aujourd hui",
+    "quelle matiere te tente aujourd hui",
+    "que veux tu reviser",
+    "quelle matiere veux tu travailler",
+    "quelle matiere ou quel chapitre",
+    "matiere ou chapitre te pose probleme"
+  ];
+
+  return motifs.some(motif => texte.includes(motif));
+}
+
+function contientChoixMatiere(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+
+  const matieres = [
+    "math",
+    "maths",
+    "mathematiques",
+    "francais",
+    "anglais",
+    "geographie",
+    "histoire",
+    "physique",
+    "chimie",
+    "biologie",
+    "svt",
+    "sciences",
+    "droit",
+    "civisme",
+    "informatique",
+    "economie",
+    "comptabilite"
+  ];
+
+  return matieres.some(matiere => new RegExp(`\\b${matiere}\\b`).test(t));
+}
+
+function estReponseGeneriqueExploration(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  const generiques = [
+    "oui",
+    "oui oui",
+    "ok",
+    "okay",
+    "d accord",
+    "je veux explorer",
+    "je veux explorer une nouvelle notion",
+    "je veux explorer quelque chose",
+    "je veux explorer une notion",
+    "je veux revoir quelque chose",
+    "je veux revoir",
+    "je veux revoir une notion",
+    "je veux revoir un cours",
+    "revoir quelque chose",
+    "explorer",
+    "revoir",
+    "je veux apprendre",
+    "je veux etudier",
+    "je veux reviser",
+    "je veux reviser quelque chose",
+    "je suis pret",
+    "je suis prete",
+    "allons y",
+    "on peut commencer",
+    "commencons"
+  ];
+
+  return generiques.includes(t);
+}
+
+function genererRelanceChoixMatiere(user = {}) {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom ? `**${prenom}**` : "toi";
-  const t = normaliserTexteRelationnel(texte);
-  const heure = new Date().getHours();
 
-  if (estMessageRemerciement(t)) {
-    const formules = [
-      `Avec plaisir ${appel} 😊 Si tu as une question, je suis là.`,
-      `Je t'en prie ${appel} 🤗 Dis-moi si tu veux revoir quelque chose.`,
-      `C'est normal ${appel}, je suis là pour ça 💪 Une petite question à me poser ?`,
-      `Heureux de t'aider ${appel} ✨ N'hésite pas si tu as besoin d'explications.`
-    ];
-    return pick(formules);
-  }
-
-  if (estMessageSalutation(t)) {
-    if (/(bonjour|salut|bjr|mbote|yo|cc|slt)/i.test(t)) {
-      const questionsMatin = [
-        `Bonjour ${appel} ☀️ Comment vas-tu aujourd'hui ?`,
-        `Salut ${appel} 😊 J'espère que tu as bien dormi.`,
-        `Coucou ${appel} 👋 Contente de te retrouver. Comment te sens-tu ?`
-      ];
-      const questionsAprem = [
-        `Bon après-midi ${appel} 🌤 Comment se passe ta journée ?`,
-        `Salut ${appel} ☀️ Est-ce que tout va bien pour toi ?`
-      ];
-      const questionsSoir = [
-        `Bonsoir ${appel} 🌙 Comment s'est passée ta journée ?`,
-        `Salut ${appel} 🌆 Prêt·e à te détendre ? Raconte-moi vite comment s'est passée ta journée.`
-      ];
-      let question = "";
-      if (heure < 12) question = pick(questionsMatin);
-      else if (heure < 18) question = pick(questionsAprem);
-      else question = pick(questionsSoir);
-      return question;
-    }
-    if (t.includes("bonsoir")) {
-      const formules = [
-        `Bonsoir ${appel} 🌙 J'espère que ta journée s'est bien passée. As-tu une question ou une matière à revoir ?`,
-        `Bonsoir ${appel} 😊 Contente de te retrouver en cette fin de journée. Qu'est-ce que tu aimerais apprendre maintenant ?`
-      ];
-      return pick(formules);
-    }
-    if (t.includes("bonne nuit")) return `Bonne nuit ${appel} 🌜 Fais de beaux rêves. Si tu veux réviser quelque chose demain, n'hésite pas.`;
-    if (t.includes("bonne journee")) return `Bonne journée à toi aussi ${appel} ☀️ Qu'as-tu envie de découvrir aujourd'hui ?`;
-    if (t.includes("bon apres midi")) return `Merci ${appel} ! Passe un bon après-midi 🌤 Et si tu veux, on peut revoir quelque chose ensemble.`;
-    if (t.includes("bonne soiree")) return `Bonne soirée ${appel} 🌙 Si tu veux revoir un point avant de dormir, je suis là.`;
-    if (t.includes("bon week end") || t.includes("bon weekend")) return `Bon week-end ${appel} 😄 Profite bien ! Si tu as un moment, on pourrait réviser une notion.`;
-    if (t.includes("a demain")) return `À demain ${appel} 👋 J'ai hâte de continuer avec toi.`;
-    return `Salut ${appel} 👋`;
-  }
-
-  if (estMessageCourtHumain(t)) {
-    if (t === "ca va" || t === "ca va merci") {
-      return `Oui, ça va très bien ${appel}, merci ! Et toi ? 😊 Si tu veux, on peut revoir une notion.`;
-    }
-    const simples = [
-      `D'accord ${appel} 👍 Tu as quelque chose à revoir ?`,
-      `Parfait ${appel} ✅ Dis-moi si tu veux travailler une matière.`,
-      `Entendu ${appel} 😉 Je suis prêt à t'aider si tu as une question.`
-    ];
-    return pick(simples);
-  }
-
-  if (/^(tu vas bien\??|comment vas-tu\??|comment tu vas\??|et toi\??|et vous\??|vous allez bien\??|comment ca va\??|ca va\??)$/i.test(t)) {
-    const reponses = [
-      `Je vais très bien, merci ${appel} ! Et toi, comment vas-tu ? 😊`,
-      `Tout va bien de mon côté, ${appel}. Merci de demander ! Et toi, qu'as-tu envie d'apprendre aujourd'hui ?`,
-      `Je me sens en pleine forme, ${appel} ! Dis-moi, quelle matière veux-tu explorer ?`
-    ];
-    return pick(reponses);
-  }
-
-  return "";
+  return `D'accord ${appel} 😊 Choisis simplement la matière : français, mathématiques, sciences, histoire, géographie, anglais ou une autre matière.`;
 }
 
-function typeMessage(msg) {
-  if (!msg) return "unknown";
-  if (msg.text?.body) return "text";
-  if (msg.audio) return "audio";
-  if (msg.image) return "image";
-  if (msg.document) return "document";
-  if (msg.interactive) return "interactive";
-  return msg.type || "unknown";
-}
-
-function messageTypeLisible(msgType = "message") {
-  if (msgType === "audio") return "ton audio";
-  if (msgType === "image") return "ton image";
-  if (msgType === "text") return "ton message écrit";
-  return "ton message";
-}
-
-function estMimeImageSupporte(mimeType = "") {
-  const allowed = [
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/webp",
-    "image/gif",
-    "image/bmp",
-    "image/heic",
-    "image/heif"
-  ];
-  return allowed.includes(String(mimeType || "").toLowerCase());
-}
-
-function estMimeAudioSupporte(mimeType = "") {
-  const allowed = [
-    "audio/ogg",
-    "audio/opus",
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/mp4",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/webm",
-    "audio/aac",
-    "audio/amr"
-  ];
-  return allowed.includes(String(mimeType || "").toLowerCase());
-}
-
-function ficheEstFaible(fiche = null) {
-  if (!fiche) return true;
-  const contenu = String(fiche?.contenu || "").trim();
-  const commentaire = String(fiche?.commentaire_ai || "").trim();
-  if (!contenu && !commentaire) return true;
-  if (contenu.length < 80 && commentaire.length < 50) return true;
-  return false;
-}
-
-function estQuestionGeographieRDC(question = "", fiche = null) {
-  const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
-  return (
-    t.includes("rdc") ||
-    t.includes("congo") ||
-    t.includes("province") ||
-    t.includes("territoire") ||
-    t.includes("territoires") ||
-    t.includes("commune") ||
-    t.includes("communes") ||
-    t.includes("ville") ||
-    t.includes("villes") ||
-    t.includes("haut-katanga") ||
-    t.includes("haut katanga") ||
-    t.includes("géographie") ||
-    t.includes("geographie")
-  );
-}
-
-function fautChercherSurWeb(question = "", fiche = null) {
-  const q = String(question || "").toLowerCase().trim();
-  if (!q) return false;
-  if (estMessageRelationnelSimple(q)) return false;
-  if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
-    return false;
-  }
-  const casWeb = [
-    "loi", "code", "article", "constitution", "juridique", "droit",
-    "ohada", "impôt", "impot", "taxe", "tribunal",
-    "géographie", "geographie", "rdc", "congo",
-    "province", "territoire", "territoires",
-    "commune", "communes", "ville", "villes",
-    "haut-katanga", "haut katanga",
-    "actualité", "actualite", "récent", "recent",
-    "aujourd'hui", "actuel",
-    "histoire", "date", "indépendance",
-    "qui", "quand", "où", "combien", "pourquoi", "comment"
-  ];
-  if (casWeb.some((m) => q.includes(m))) return true;
-  if (!fiche) return true;
-  if (ficheEstFaible(fiche)) return true;
-  if (estQuestionGeographieRDC(question, fiche)) return true;
-  return false;
-}
-
-function dedupeBlocFinal(texte = "") {
-  const lignes = String(texte || "").split("\n");
-  const resultat = [];
-  const uniques = new Set();
-  for (const ligneBrute of lignes) {
-    const ligne = ligneBrute.trimRight();
-    const normalisee = ligne.trim().toLowerCase();
-    if (!normalisee) {
-      if (resultat[resultat.length - 1] !== "") {
-        resultat.push("");
-      }
-      continue;
-    }
-    const estUnique =
-      normalisee.startsWith("👉 ") ||
-      normalisee.startsWith("🌟 mot d'encouragement") ||
-      normalisee.startsWith("***«") ||
-      normalisee === "────────────────";
-    if (estUnique) {
-      if (uniques.has(normalisee)) continue;
-      uniques.add(normalisee);
-    }
-    resultat.push(ligne);
-  }
-  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-async function attendreAvecBackoff(tentative = 0) {
-  const base = 1800;
-  const extra = tentative * 1400;
-  await attendre(base + extra);
-}
-
-async function genererAvecRetry(model, payload, maxRetries = 2) {
-  let lastError = null;
-  for (let tentative = 0; tentative <= maxRetries; tentative++) {
-    try {
-      await attendreAvecBackoff(tentative);
-      return await model.generateContent(payload);
-    } catch (e) {
-      lastError = e;
-      logError("gemini_retry", e, { tentative: tentative + 1 });
-      if (estErreurQuotaGemini(e) && tentative < maxRetries) {
-        await attendre(4000 + tentative * 3000);
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw lastError;
-}
-
-async function safeAI(generateFn, fallbackMessage) {
-  try {
-    const res = await generateFn();
-    if (!res || !String(res).trim()) throw new Error("Réponse vide");
-    return res;
-  } catch (e) {
-    logError("safe_ai", e);
-    return fallbackMessage;
-  }
-}
-
-function extraireJsonGemini(brut = "") {
-  const txt = String(brut || "").trim();
-  if (!txt) return null;
-  try {
-    return JSON.parse(txt);
-  } catch {}
-  const sansFence = txt
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  try {
-    return JSON.parse(sansFence);
-  } catch {}
-  const match = sansFence.match(/\{[\s\S]*\}/);
-  if (match) {
-    try {
-      return JSON.parse(match[0]);
-    } catch {}
-  }
-  return null;
-}
-
-/* =========================================================
-   BASE DE DONNÉES
-========================================================= */
-async function ensureBibliothequeSearchInfra() {
-  await pool.query(`ALTER TABLE bibliotheque ADD COLUMN IF NOT EXISTS search_vector tsvector;`);
-  await pool.query(`
-    CREATE OR REPLACE FUNCTION bibliotheque_search_vector_update()
-    RETURNS trigger AS $$
-    BEGIN
-      NEW.search_vector :=
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.titre, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.matiere, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.classe, ''))), 'B') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.mots_cles, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.contenu, ''))), 'B') ||
-        setweight(to_tsvector('simple', unaccent(coalesce(NEW.commentaire_ai, ''))), 'C');
-      RETURN NEW;
-    END
-    $$ LANGUAGE plpgsql;
-  `);
-  await pool.query(`DROP TRIGGER IF EXISTS trg_bibliotheque_search_vector_update ON bibliotheque;`);
-  await pool.query(`
-    CREATE TRIGGER trg_bibliotheque_search_vector_update
-    BEFORE INSERT OR UPDATE OF titre, matiere, classe, mots_cles, contenu, commentaire_ai
-    ON bibliotheque
-    FOR EACH ROW
-    EXECUTE FUNCTION bibliotheque_search_vector_update();
-  `);
-  await pool.query(`
-    UPDATE bibliotheque
-    SET search_vector =
-      setweight(to_tsvector('simple', unaccent(coalesce(titre, ''))), 'A') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(matiere, ''))), 'A') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(classe, ''))), 'B') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(mots_cles, ''))), 'A') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(contenu, ''))), 'B') ||
-      setweight(to_tsvector('simple', unaccent(coalesce(commentaire_ai, ''))), 'C')
-    WHERE search_vector IS NULL;
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bibliotheque_search_vector ON bibliotheque USING GIN (search_vector);`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bibliotheque_updated_at ON bibliotheque (updated_at DESC);`);
-}
-
-async function initDB() {
-  try {
-    await pool.query("CREATE EXTENSION IF NOT EXISTS unaccent;");
-    await pool.query(`CREATE TABLE IF NOT EXISTS processed_messages (msg_id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS conversations (phone TEXT PRIMARY KEY, nom TEXT DEFAULT '', classe TEXT DEFAULT '', reve TEXT DEFAULT '', historique JSONB DEFAULT '[]'::jsonb, reminders_enabled BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS bibliotheque (id SERIAL PRIMARY KEY, titre TEXT, matiere TEXT, classe TEXT, mots_cles TEXT, contenu TEXT, commentaire_ai TEXT DEFAULT '', source_type TEXT DEFAULT 'db', source_url TEXT DEFAULT '', provenance TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS unanswered_questions (id SERIAL PRIMARY KEY, phone TEXT DEFAULT '', question TEXT NOT NULL, msg_type TEXT DEFAULT 'text', classe TEXT DEFAULT '', nom TEXT DEFAULT '', reason TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS student_attempts (id SERIAL PRIMARY KEY, phone TEXT NOT NULL, sujet TEXT DEFAULT '', question TEXT DEFAULT '', attempts_count INT DEFAULT 0, last_user_answer TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at ON processed_messages (created_at DESC);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_unanswered_questions_created_at ON unanswered_questions (created_at DESC);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_student_attempts_phone_sujet_updated ON student_attempts (phone, sujet, updated_at DESC);`);
-    await ensureBibliothequeSearchInfra();
-    logInfo("db_ready");
-  } catch (e) {
-    logError("init_db", e);
-    process.exit(1);
-  }
-}
-
-async function getUser(phone) {
-  const { rows } = await pool.query("SELECT * FROM conversations WHERE phone = $1", [phone]);
-  return rows[0] || null;
-}
-
-async function createUser(phone) {
-  await pool.query(`INSERT INTO conversations (phone, nom, classe, reve, historique, reminders_enabled) VALUES ($1, '', '', '', '[]'::jsonb, TRUE) ON CONFLICT (phone) DO NOTHING`, [phone]);
-  return getUser(phone);
-}
-
-async function updateUserField(phone, field, value) {
-  const fieldMap = { nom: "nom", classe: "classe", reve: "reve", historique: "historique", reminders_enabled: "reminders_enabled" };
-  const safeField = fieldMap[field];
-  if (!safeField) throw new Error("Champ non autorisé");
-  const query = `UPDATE conversations SET ${safeField} = $1, updated_at = NOW() WHERE phone = $2`;
-  await pool.query(query, [value, phone]);
-}
-
-async function appendHistorique(phone, role, content) {
-  const nouvelElement = { role, content: tronquerTexte(content, 2500), ts: new Date().toISOString() };
-  await pool.query(`UPDATE conversations SET historique = (SELECT COALESCE(jsonb_agg(value ORDER BY ord), '[]'::jsonb) FROM (SELECT value, ord FROM jsonb_array_elements(COALESCE(historique, '[]'::jsonb) || $1::jsonb) WITH ORDINALITY AS arr(value, ord) ORDER BY ord DESC LIMIT 12) t), updated_at = NOW() WHERE phone = $2`, [JSON.stringify([nouvelElement]), phone]);
-  const user = await getUser(phone);
-  return Array.isArray(user?.historique) ? user.historique : safeJsonParse(user?.historique, []);
-}
-
-async function logUnansweredQuestion(user = {}, question = "", msgType = "text", reason = "") {
-  try {
-    if (!String(question || "").trim()) return;
-    await pool.query(`INSERT INTO unanswered_questions (phone, question, msg_type, classe, nom, reason) VALUES ($1, $2, $3, $4, $5, $6)`, [user?.phone || "", tronquerTexte(question, 2000), msgType, user?.classe || "", user?.nom || "", reason || ""]);
-  } catch (e) {
-    logError("log_unanswered_question", e);
-  }
-}
-
-async function getStudentAttempt(phone, sujet = "") {
-  const { rows } = await pool.query(`SELECT * FROM student_attempts WHERE phone = $1 AND sujet = $2 ORDER BY updated_at DESC LIMIT 1`, [phone, sujet]);
-  return rows[0] || null;
-}
-
-async function saveStudentAttempt(phone, sujet = "", question = "", lastUserAnswer = "") {
-  const existing = await getStudentAttempt(phone, sujet);
-  if (!existing) {
-    await pool.query(`INSERT INTO student_attempts (phone, sujet, question, attempts_count, last_user_answer, updated_at) VALUES ($1, $2, $3, 1, $4, NOW())`, [phone, sujet, question, lastUserAnswer]);
-    return 1;
-  }
-  const nextCount = Number(existing.attempts_count || 0) + 1;
-  await pool.query(`UPDATE student_attempts SET attempts_count = $1, question = $2, last_user_answer = $3, updated_at = NOW() WHERE id = $4`, [nextCount, question, lastUserAnswer, existing.id]);
-  return nextCount;
-}
-
-async function resetStudentAttempt(phone, sujet = "") {
-  await pool.query(`DELETE FROM student_attempts WHERE phone = $1 AND sujet = $2`, [phone, sujet]);
-}
-
-async function resetAllStudentAttempts(phone) {
-  await pool.query(`DELETE FROM student_attempts WHERE phone = $1`, [phone]);
-}
-
-/* =========================================================
-   SÉCURITÉ WEBHOOK (BLOQUANTE)
-========================================================= */
-function verifierSignatureMeta(req) {
-  try {
-    const signature = req.get("x-hub-signature-256");
-    if (!APP_SECRET || !signature || !req.rawBody) return false;
-    const expectedSignature = "sha256=" + crypto.createHmac("sha256", APP_SECRET).update(req.rawBody).digest("hex");
-    const sigBuf = Buffer.from(signature);
-    const expBuf = Buffer.from(expectedSignature);
-    if (sigBuf.length !== expBuf.length) return false;
-    return crypto.timingSafeEqual(sigBuf, expBuf);
-  } catch {
-    return false;
-  }
-}
-
-function extraireMessageWhatsApp(body) {
-  const value = body?.entry?.[0]?.changes?.[0]?.value;
-  if (!value || value.statuses?.length || !value.messages?.length) return null;
-  return value.messages[0];
-}
-
-/* =========================================================
-   ENVOI WHATSAPP AVEC RETRY
-========================================================= */
-async function envoyerWhatsAppAvecRetry(to, texte, maxRetries = 3) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      await axios.post(
-        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-        {
-          messaging_product: "whatsapp",
-          to,
-          type: "text",
-          text: { body: tronquerTexte(texte, 3900) }
-        },
-        {
-          headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-          timeout: 15000
-        }
-      );
-      return;
-    } catch (e) {
-      if (attempt === maxRetries || (e.response && e.response.status !== 429 && !String(e.response.status).startsWith("5"))) {
-        logError("whatsapp_send_final_fail", e, { to });
-        throw e;
-      }
-      const delay = 2000 * Math.pow(2, attempt);
-      logWarn("whatsapp_retry", { to, attempt: attempt + 1, delay });
-      await attendre(delay);
-    }
-  }
-}
-
-async function envoyerIndicateurFrappe(messageId) {
-  if (!messageId) return;
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        status: "read",
-        message_id: messageId,
-        typing_indicator: { type: "text" }
-      },
-      {
-        headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-        timeout: 15000
-      }
-    );
-  } catch (e) {
-    logWarn("typing_indicator_error", { message: e?.message || "", data: e?.response?.data || null });
-  }
-}
-
-async function recupererMetaMediaInfo(mediaId) {
-  const r = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    timeout: 15000
-  });
-  return r.data || {};
-}
-
-async function telechargerMedia(mediaId, maxBytes = 8 * 1024 * 1024) {
-  const mediaInfo = await recupererMetaMediaInfo(mediaId);
-  const mediaUrl = mediaInfo?.url || null;
-  if (!mediaUrl) throw new Error("URL média introuvable");
-  const response = await axios.get(mediaUrl, {
-    responseType: "arraybuffer",
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    timeout: 30000,
-    maxContentLength: maxBytes,
-    maxBodyLength: maxBytes,
-    validateStatus: (s) => s >= 200 && s < 300
-  });
-  const contentType = String(response.headers["content-type"] || mediaInfo?.mime_type || "application/octet-stream").toLowerCase();
-  const contentLength = Number(response.headers["content-length"] || response.data?.byteLength || 0);
-  if (contentLength > maxBytes) throw new Error("Fichier trop volumineux");
-  return { buffer: Buffer.from(response.data), mimeType: contentType };
-}
-
-/* =========================================================
-   IA
-========================================================= */
-async function consulterBibliotheque(question = "", classe = "") {
-  try {
-    const termes = String(question || "").trim();
-    if (!termes) return null;
-    const motifClasse = `%${classe}%`;
-    const { rows } = await pool.query(
-      `SELECT id, titre, matiere, classe, mots_cles, contenu, commentaire_ai, source_type, source_url, provenance, created_at, updated_at,
-              ts_rank(search_vector, plainto_tsquery('simple', unaccent($1))) AS score
-       FROM bibliotheque
-       WHERE search_vector @@ plainto_tsquery('simple', unaccent($1))
-         AND ($2 = '' OR unaccent(lower(coalesce(classe, ''))) LIKE unaccent(lower($3)))
-       ORDER BY score DESC, updated_at DESC, id DESC LIMIT 1`,
-      [termes, classe || "", motifClasse]
-    );
-    return rows[0] || null;
-  } catch (e) {
-    logError("consulter_bibliotheque", e);
-    return null;
-  }
-}
-
-function construireSystemPrompt(user) {
-  const appelEleve = construireAppelNaturel(user);
-  const classe = user?.classe ? `Classe de l'élève : ${user.classe}` : "Classe non précisée";
-  const reve = user?.reve ? `Rêve de l'élève : ${user.reve}` : "Rêve non précisé";
-  return `${SYSTEM_BASE}
-${SYSTEM_TUTORAT}
-${SYSTEM_JURIDIQUE_WEB}
-${SYSTEM_GEO_WEB}
-PERSONNALISATION :
-- Adresse l'élève naturellement ainsi : ${appelEleve}
-- N'utilise pas systématiquement "Ah, Prénom"
-- N'utilise pas systématiquement "mon cher" ou "ma chère"
-- Tu peux parfois ne pas mettre le prénom dans la première phrase
-- ${classe}
-- ${reve}
-
-RÈGLE DE COHÉRENCE THÉMATIQUE :
-- La CONSOLIDATION doit porter uniquement sur la question principale
-- Interdiction totale de mélanger deux matières différentes dans une même consolidation
-- Si la question porte sur le droit, la consolidation doit rester en droit
-- Si la question porte sur la géographie, la consolidation doit rester en géographie
-- Si la question porte sur l'histoire, la consolidation doit rester en histoire
-- La citation finale doit rester dans la même matière que la question
-- L'ouverture finale doit rester dans la même matière que la question
-- Ne bascule jamais du droit vers la géographie, de l'histoire vers la géographie, ou d'une matière vers une autre, sauf si l'élève le demande
-
-RÈGLE POUR LA CONSOLIDATION :
-- Rédige EXACTEMENT une ou deux questions brèves qui testent la compréhension de la notion principale.
-- Les questions doivent être directement liées à la question de l'élève, pas à la matière en général.
-- Exemples acceptables : "Peux-tu m'expliquer avec tes mots pourquoi … ?", "Qu'arriverait-il si on changeait … ?", "Donne-moi un autre exemple qui illustre cette règle."
-- Pas de QCM automatique, sauf si la question s'y prête naturellement (par exemple pour un choix entre deux concepts).
-- Sois concis : maximum deux phrases pour l'ensemble du bloc.
-
-INTERDICTION :
-- Ne dis pas "mon élève"
-- Ne donne pas une réponse froide de moteur de recherche
-- Ne répète jamais le header Mwalimu
-- Ne génère jamais une citation finale
-- Ne génère jamais une deuxième ouverture finale
-- Ne génère jamais un mot d'encouragement final`;
-}
-
-function toGeminiContents(messages = []) {
-  return messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: String(m.content) }] }));
-}
-
-async function appelerChatCompletion(messages) {
-  const systemMessages = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
-  const contents = toGeminiContents(messages);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: systemMessages,
-    tools: [{ googleSearch: {} }]
-  });
-  const result = await genererAvecRetry(model, {
-    contents,
-    generationConfig: { temperature: 0.1 }
-  });
-  return result.response.text();
-}
-
-async function appelerJsonStrict({ systemInstruction = "", prompt = "", schema = null, history = [], inlineParts = [] }) {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", systemInstruction });
-  const result = await genererAvecRetry(model, {
-    contents: [
-      ...toGeminiContents(history),
-      { role: "user", parts: [{ text: prompt }, ...inlineParts] }
-    ],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: "application/json",
-      ...(schema ? { responseSchema: schema } : {})
-    }
-  });
-  return extraireJsonGemini(result.response.text());
-}
-
-async function chercherContexteWeb(question = "", user = {}, historique = []) {
-  const system = construireSystemPrompt(user);
-  const reponse = await safeAI(
-    () =>
-      appelerChatCompletion([
-        { role: "system", content: system },
-        {
-          role: "system",
-          content: `MISSION WEB :\n- Utilise Google Search\n- Donne un CONTEXTE WEB BRUT, court, clair et factuel\n- Si la question concerne une province, une commune, une ville, un territoire ou une subdivision administrative, donne la liste complète trouvée\n- Pour une liste administrative, n'omets aucun élément trouvé\n- Si tu n'es pas sûr que la liste soit exhaustive, dis exactement : "Liste à confirmer"\n- Pas de structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION\n- Pas de citation finale\n- Pas d'encouragement`
-        },
-        ...historique.slice(-4),
-        {
-          role: "user",
-          content: `QUESTION :\n${question}\nDonne un contexte web brut, précis et exhaustif si la question demande une liste.`
-        }
-      ]),
-    ""
-  );
-  return String(reponse || "").trim();
-}
-
-async function detecterIntentionIA(user, texte = "", historique = []) {
-  const system = `${construireSystemPrompt(user)}\nMODE CLASSIFICATION STRICTE :\n- Réponds uniquement en JSON valide\n- intention possible : salutation, remerciement, question_normale, exercice, soumission_reponse, audio, image, juridique, geographie_rdc\n- matiere possible : math, physique, chimie, general\n- besoinCorrectionRenforcee doit être true ou false\n- sujet doit être court`;
-  const fallback = {
-    intention: "question_normale",
-    matiere: detecterMatiereScientifique(texte, "", null),
-    besoinCorrectionRenforcee: false,
-    sujet: extraireSujetMemoire(texte) || "general"
-  };
-  try {
-    const parsed = await appelerJsonStrict({
-      systemInstruction: system,
-      prompt: `Analyse ce message et classe-le.\n\nMESSAGE :\n${texte}`,
-      schema: JSON_SCHEMA_INTENTION,
-      history: historique.slice(-3)
-    });
-    if (!parsed || typeof parsed !== "object") return fallback;
-    return {
-      intention: String(parsed.intention || fallback.intention),
-      matiere: String(parsed.matiere || fallback.matiere),
-      besoinCorrectionRenforcee: Boolean(parsed.besoinCorrectionRenforcee),
-      sujet: String(parsed.sujet || fallback.sujet)
-    };
-  } catch (e) {
-    logError("detecter_intention_ia", e);
-    return fallback;
-  }
-}
-
-async function construireConsigneAntiBoucle(user, texteUtilisateur = "", analyseDejaFaite = null) {
-  const analyse = analyseDejaFaite || await detecterIntentionIA(user, texteUtilisateur);
-  const sujet = analyse.sujet || extraireSujetMemoire(texteUtilisateur) || "general";
-  if (analyse.intention !== "soumission_reponse" && !estSoumissionReponse(texteUtilisateur)) {
-    return { sujet, tentative: 0, consigne: "" };
-  }
-  const tentative = await saveStudentAttempt(user.phone, sujet, texteUtilisateur, texteUtilisateur);
-  if (tentative < 3) return { sujet, tentative, consigne: "L'élève a proposé une réponse. Corrige avec douceur sans donner tout de suite la solution complète." };
-  return { sujet, tentative, consigne: "L'élève s'est probablement trompé plusieurs fois. Simplifie davantage, découpe en très petites étapes et donne un indice plus fort." };
-}
-
-async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
-  let contexteWeb = "";
-  const utiliserWeb = fautChercherSurWeb(questionEleve, fiche);
-  if (utiliserWeb) contexteWeb = await chercherContexteWeb(questionEleve, user, historique);
-  const blocWeb = contexteWeb
-    ? `CONTEXTE WEB (SOURCE PRINCIPALE) :\n${contexteWeb}`
-    : `CONTEXTE WEB :\nAucune information web utile trouvée.`;
-  const blocDB = fiche
-    ? `CONTEXTE DB (SECONDAIRE) :\nTitre : ${fiche?.titre || "Sans titre"}\nMatière : ${fiche?.matiere || "Non précisée"}\nClasse : ${fiche?.classe || "Non précisée"}\nContenu :\n${fiche?.contenu || ""}\nCommentaire IA :\n${fiche?.commentaire_ai || ""}`
-    : `CONTEXTE DB :\nAucune fiche locale disponible.`;
-  return await safeAI(
-    () =>
-      appelerChatCompletion([
-        { role: "system", content: construireSystemPrompt(user) },
-        {
-          role: "system",
-          content: `RÈGLE FONDAMENTALE :\n- Utilise d'abord le WEB si disponible\n- Utilise la DB comme appui\n- Ne réponds jamais comme un moteur de recherche\n- Si la question demande une liste administrative complète, recopie la liste complète trouvée\n- Si tu n'es pas sûr d'une liste complète, dis-le honnêtement\n- N'invente jamais un territoire, une commune, une ville ou un article\n- La matière de la CONSOLIDATION doit être strictement la même que celle de la question principale\n- La citation finale doit être strictement liée à la même matière\n- L'ouverture finale doit être strictement liée à la même matière\n- Interdiction de mélanger histoire, géographie, droit, sciences, mathématiques ou français dans la même consolidation`
-        },
-        { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
-        ...historique.slice(-5),
-        {
-          role: "user",
-          content: `QUESTION :\n${questionEleve}\n${blocWeb}\n${blocDB}\nDonne maintenant la réponse finale de Mwalimu.`
-        }
-      ]),
-    `🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.\n🔴 [INSPIRATION] : Ce n'est pas un problème ; nous pouvons reprendre plus simplement.\n❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`
-  );
-}
-
-async function analyserAudioCourt(user, audioBuffer, mimeType, historique = []) {
-  const systemInstruction = `${construireSystemPrompt(user)}\nMODE ANALYSE AUDIO COURT :\n- Ta mission est d'écouter l'audio et de répondre UNIQUEMENT en JSON valide\n- Détecte si l'audio est un simple message social ou non\n- "social" = merci, merci mwalimu, bonjour, bonsoir, salut, bonne nuit, bon apres-midi, bon après-midi, bonne journée, bon week-end, bon weekend, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va\n- "pedagogique" = vraie question, exercice, demande d'explication, correction, droit, géographie, maths, physique, chimie, etc.\n- Si l'audio est trop flou, mets "type":"incompris"\n- Réponds strictement en JSON`;
-  try {
-    const parsed = await appelerJsonStrict({
-      systemInstruction,
-      prompt: "Analyse cet audio et renvoie uniquement le JSON demandé.",
-      schema: JSON_SCHEMA_AUDIO,
-      history: historique.slice(-2),
-      inlineParts: [{ inlineData: { mimeType, data: audioBuffer.toString("base64") } }]
-    });
-    if (!parsed || typeof parsed !== "object") return { transcription: "", type: "incompris" };
-    return {
-      transcription: String(parsed.transcription || "").trim(),
-      type: String(parsed.type || "incompris").trim().toLowerCase()
-    };
-  } catch (e) {
-    logError("analyser_audio_court", e);
-    return { transcription: "", type: "incompris" };
-  }
-}
-
-async function reponseAudioUneSeulePasse(user, audioBuffer, mimeType, historique = [], fiche = null) {
-  const blocDB = fiche
-    ? `CONTEXTE DB :\nTitre : ${fiche?.titre || "Sans titre"}\nMatière : ${fiche?.matiere || "Non précisée"}\nClasse : ${fiche?.classe || "Non précisée"}\nContenu DB :\n${tronquerTexte(fiche?.contenu || "", 3000)}\nCommentaire IA :\n${tronquerTexte(fiche?.commentaire_ai || "Aucun commentaire IA.", 1200)}`
-    : `CONTEXTE DB :\nAucune fiche locale fiable trouvée.`;
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: `${construireSystemPrompt(user)}\nMODE AUDIO :\n- Commence toujours par dire : "J'ai bien reçu ton audio." seulement si le message audio n'est pas juste un simple salut ou un simple remerciement\n- Si l'audio est seulement un bonjour, merci, bonne nuit, salut, ok, okay, d'accord, dac, compris, oui, non, super, cool, ça va, bonne journée, bon après-midi, bon week-end ou autre message social très court :\n  - réponds avec UNE seule phrase naturelle et courte\n  - sans structure pédagogique\n  - sans header\n  - sans citation\n  - sans encouragement\n  - sans VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION\n- Si le sujet demande une liste complète, sois exhaustif\n- Sois succinct quand c'est possible\n- Ne génère jamais la citation finale\n- Ne génère jamais l'ouverture finale\n- Ne génère jamais le mot d'encouragement final`,
-    tools: [{ googleSearch: {} }]
-  });
-
-  const formattedHistory = historique.slice(-4).map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: String(m.content) }]
-  }));
-
-  return await safeAI(async () => {
-    const r = await genererAvecRetry(model, {
-      contents: [
-        ...formattedHistory,
-        {
-          role: "user",
-          parts: [
-            { text: `${blocDB}\nConsigne pédagogique :\n${construireConsignePedagogique("", "audio")}` },
-            { inlineData: { mimeType, data: audioBuffer.toString("base64") } }
-          ]
-        }
-      ],
-      generationConfig: { temperature: 0.2 }
-    });
-    return r.response.text();
-  }, "");
-}
-
-async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: `${construireSystemPrompt(user)}\nMODE IMAGE :\n- Commence toujours par dire : "J'ai bien reçu ton image."\n- Recopie ce qui est visible\n- Si une partie est floue, dis-le honnêtement\n- Sois succinct\n- Ne génère jamais la citation finale\n- Ne génère jamais l'ouverture finale\n- Ne génère jamais le mot d'encouragement final`,
-    tools: [{ googleSearch: {} }]
-  });
-
-  const contents = [
-    ...historique.slice(-4).map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content) }]
-    })),
-    {
-      role: "user",
-      parts: [
-        { text: "Analyse cette image. Commence par : J'ai bien reçu ton image. Puis recopie ce qui est visible et explique." },
-        { inlineData: { mimeType, data: base64Image } }
-      ]
-    }
-  ];
-
-  return await safeAI(async () => {
-    const r = await genererAvecRetry(model, { contents, generationConfig: { temperature: 0.2 } });
-    return r.response.text();
-  }, "");
-}
-
-function construireConsignePedagogique(texte = "", type = "text") {
-  const t = String(texte || "");
-  if (type === "image")
-    return `MODE IMAGE :\n- Commence par dire que tu as bien reçu l'image\n- Recopie d'abord ce qui est visible\n- Si une partie est floue, dis-le honnêtement\n- Explique la démarche\n- Ne résous pas tout à la place de l'élève\n- Sois bref et clair`;
-  if (type === "audio")
-    return `MODE AUDIO :\n- Si c'est un simple remerciement, une simple salutation ou un court message social, réponds en une phrase courte naturelle sans structure\n- Sinon, commence par dire que tu as bien reçu l'audio\n- Réponds avec chaleur et pédagogie\n- Sois bref et clair`;
-  if (estSoumissionReponse(t))
-    return `MODE CORRECTION :\n- L'élève soumet probablement sa réponse\n- Corrige avec douceur\n- N'écris pas "bravo" sauf si la réponse est réellement correcte\n- Sois bref et clair`;
-  if (estQuestionTechnique(t))
-    return `MODE EXERCICE :\n- Explique la méthode\n- Montre le démarrage utile\n- Ne donne pas toute la réponse finale d'un coup\n- Sois bref et clair`;
-  return `MODE NORMAL :\n- Réponds naturellement\n- Sois humain, utile et succinct`;
-}
-
-function construireMessageFinal(user, reponseBrute, historique = [], question = "", fiche = null) {
-  const reponseNettoyee = nettoyerReponseIA(reponseBrute);
-  const reponseSansAppelsLourds = supprimerFormulesLourdesDAppel(reponseNettoyee, user);
-  const sortieScientifique = appliquerLes4EtapesScientifiques(reponseSansAppelsLourds, question, fiche);
-  let corps = verifierStructureMwalimu(sortieScientifique.texte, user, historique, question);
-  const sujetQuestion = extraireSujetMemoire(question);
-  corps = remplacerBlocConsolidation(corps, question, sujetQuestion);
-  corps = corps.replace(/^\s*\*\*\*«[^»]+»\*\*\*\s*$/gm, "");
-  corps = corps.replace(/^🌟\s*Mot d['']encouragement\s*:.*$/gim, "");
-  corps = corps.replace(/^👉\s*Je reste disponible.*$/gim, "");
-  corps = corps.replace(/^👉\s*Continue à me parler.*$/gim, "");
-  corps = corps.replace(/\n{3,}/g, "\n\n").trim();
-  const citationUnique = choisirCitationFinale(question, corps);
-  const ouverture = choisirOuvertureContextuelle(corps, user, question);
-  const encouragement = !/🌟/.test(corps) ? choisirEncouragementContextuel(corps, question) : "";
-  const parties = [HEADER_MWALIMU, "────────────────", corps, citationUnique, ouverture, encouragement].filter(
-    (part) => part && part.trim() !== ""
-  );
-  return dedupeBlocFinal(parties.join("\n"));
-}
-
-function messageSecours(user, msgType = "message") {
-  const appel = construireAppel({ nom: user?.nom || "élève" });
-  return `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ${messageTypeLisible(msgType)}, ${appel}.\n🟡 [SAVOIR] : Je rencontre un petit souci technique pour traiter ta demande correctement maintenant.\n🔴 [INSPIRATION] : Même quand cela bloque un peu, on peut reprendre avec calme et méthode.\n❓ [CONSOLIDATION] : Réessaie dans un instant, ou reformule ta question plus simplement.\n👉 Je reste à tes côtés.\n🌟 Mot d'encouragement : Nous pouvons reprendre calmement.\n${pick(CITATIONS.general)}`.replace(
-    /\n{3,}/g,
-    "\n\n"
-  ).trim();
-}
-
-/* =========================================================
-   DÉTECTION RELATIONNELLE EXACTE
-========================================================= */
-function estRelationnelExactCourt(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  if (!t) return false;
-
-  const exacts = [
-    "comment vas tu",
-    "comment tu vas",
-    "comment ca va",
-    "ca va",
-    "tu vas bien",
-    "et toi",
-    "et vous",
-    "vous allez bien",
-    "je vais bien",
-    "je vais bien merci",
-    "bien merci",
-    "bien et toi",
-    "ca va merci",
-    "oui ca va",
-    "oui ca va merci",
-    "bonjour comment ca va",
-    "salut comment ca va",
-    "bonsoir comment ca va",
-    "bonjour tu vas bien",
-    "salut tu vas bien",
-    "bonsoir tu vas bien"
-  ];
-
-  return exacts.includes(t);
-}
-
-/* =========================================================
-   estReponseJourneeBienEtre (VERSION AMÉLIORÉE)
-========================================================= */
-function estReponseJourneeBienEtre(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-  if (!t) return false;
-
-  const exacts = [
-    "ma journee s est bien passee",
-    "ma journee s est bien passe",
-    "la journee s est bien passee",
-    "la journee s est bien passe",
-    "elle s est bien passee",
-    "elle s est bien passe",
-    "s est bien passee",
-    "s est bien passe",
-    "ca s est bien passe",
-    "ça s est bien passe",
-    "c est bien passe",
-    "tout s est bien passe",
-    "c etait bien",
-    "c etait tres bien",
-    "ma journee etait bien",
-    "ma journee etait tres bien",
-    "journee bien passee",
-    "journee bien passe"
-  ];
-
-  return (
-    exacts.includes(t) ||
-    /^ma journee s est bien passe(e)?\b/.test(t) ||
-    /^la journee s est bien passe(e)?\b/.test(t) ||
-    /^elle s est bien passe(e)?\b/.test(t) ||
-    /^s est bien passe(e)?\b/.test(t) ||
-    /^ca s est bien passe\b/.test(t) ||
-    /^c est bien passe\b/.test(t) ||
-    /^tout s est bien passe\b/.test(t)
-  );
-}
-
-/* =========================================================
-   DÉTECTION ACADÉMIQUE
-========================================================= */
 function contientQuestionAcademique(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t || t.length < 10) return false;
@@ -2020,7 +1231,6 @@ function contientQuestionAcademique(texte = "") {
     /\bquelle\b/,
     /\bquels\b/,
     /\bquelles\b/,
-
     /\bmath\b/,
     /\bmaths\b/,
     /\bequation\b/,
@@ -2041,7 +1251,6 @@ function contientQuestionAcademique(texte = "") {
     /\bterritoire\b/,
     /\bcommune\b/,
     /\bville\b/,
-
     /\bexercice\b/,
     /\bprobleme\b/,
     /\baide\b/,
@@ -2053,7 +1262,6 @@ function contientQuestionAcademique(texte = "") {
     /\bmatiere\b/,
     /\bexamen\b/,
     /\brevision\b/,
-
     /\bpeux tu\b/,
     /\bdis moi\b/,
     /\bj aimerais\b/,
@@ -2073,15 +1281,902 @@ function contientQuestionAcademique(texte = "") {
   return patterns.some((regex) => regex.test(t));
 }
 
-/* =========================================================
-   estMessageRelationnelSimple (amélioré)
-========================================================= */
+function estRelationnelExactCourt(texte) {
+  const t = normaliserTexteRelationnel(texte);
+  return t.length < 20 && estMessagePurementSocial(texte);
+}
+
 function estMessageRelationnelSimple(texte = "") {
   return estMessagePurementSocial(texte) && !contientQuestionAcademique(texte);
 }
 
 /* =========================================================
-   cerveauDecisionIA (NOUVEAU)
+   FONCTIONS PRINCIPALES
+========================================================= */
+
+async function safeAI(fn, fallback) {
+  try {
+    return await fn();
+  } catch (e) {
+    logError("safeAI_error", e);
+    return fallback;
+  }
+}
+
+function construireSystemPrompt(user) {
+  return `${SYSTEM_BASE}
+${SYSTEM_TUTORAT}
+${SYSTEM_JURIDIQUE_WEB}
+${SYSTEM_GEO_WEB}
+
+Élève : ${user.nom || 'Inconnu'}
+Classe : ${user.classe || 'Inconnue'}
+Rêve : ${user.reve || 'Inconnu'}`;
+}
+
+function typeMessage(msg) {
+  if (msg.type === "text" && msg.text?.body) return "text";
+  if (msg.type === "image" && msg.image?.id) return "image";
+  if (msg.type === "audio" && msg.audio?.id) return "audio";
+  if (msg.type === "document" && msg.document?.id && msg.document?.mime_type === "application/pdf") return "pdf";
+  if (msg.type === "document") return "document";
+  return "inconnu";
+}
+
+function toGeminiContents(messages = []) {
+  return messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }]
+    }));
+}
+
+async function genererAvecRetry(model, params, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await model.generateContent(params);
+    } catch (e) {
+      if (i === maxRetries - 1) throw e;
+      if (estErreurQuotaGemini(e)) {
+        await attendre(2000 * (i + 1));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+async function appelerChatCompletion(messages) {
+  const systemMessages = messages
+    .filter((m) => m.role === "system")
+    .map((m) => m.content)
+    .join("\n\n");
+
+  const contents = toGeminiContents(messages);
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: systemMessages,
+    tools: [{ googleSearch: {} }]
+  });
+
+  const result = await genererAvecRetry(model, {
+    contents,
+    generationConfig: { temperature: 0.1 }
+  });
+
+  return result.response.text();
+}
+
+async function appelerJsonStrict({ systemInstruction, prompt, schema, history }) {
+  try {
+    const fullPrompt = `${systemInstruction}
+
+Historique récent :
+${history.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+${prompt}
+
+RÉPONDS UNIQUEMENT AVEC UN OBJET JSON VALIDE selon ce schéma :
+${JSON.stringify(schema)}
+
+IMPORTANT: Ne mets PAS de texte avant ou après le JSON. Juste le JSON.`;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(fullPrompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    throw new Error("Pas de JSON trouvé dans la réponse");
+  } catch (e) {
+    logError("appelerJsonStrict", e);
+    throw e;
+  }
+}
+
+async function consulterBibliotheque(texte, classe) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM bibliotheque WHERE 
+       (classe = $1 OR classe = '') AND 
+       (contenu ILIKE $2 OR titre ILIKE $2) 
+       LIMIT 1`,
+      [classe || '', `%${texte.slice(0, 100)}%`]
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logError("consulterBibliotheque", e);
+    return null;
+  }
+}
+
+function construireConsignePedagogique(texte, type) {
+  let consigne = `Tu es Mwalimu EdTech. Tu réponds à un élève de manière pédagogique et bienveillante.
+
+Message de l'élève : "${texte}"
+
+Type de message : ${type}
+
+Consignes :
+- Sois clair et pédagogique
+- Adapte-toi au niveau de l'élève
+- Ne donne pas la réponse directement si c'est un exercice
+- Encourage l'élève à réfléchir
+- Utilise des exemples concrets si nécessaire
+- Reste dans le contexte scolaire congolais (RDC) quand c'est pertinent`;
+  
+  return consigne;
+}
+
+async function construireConsigneAntiBoucle(user, texte, analyse) {
+  try {
+    const sujet = analyse.sujet || extraireSujetMemoire(texte) || "general";
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) as count FROM student_attempts WHERE phone = $1 AND sujet = $2`,
+      [user.phone, sujet]
+    );
+    const attempts = rows[0]?.count || 0;
+    
+    if (attempts > 3) {
+      return {
+        consigne: `ATTENTION : L'élève a déjà essayé ${attempts} fois sur ce sujet "${sujet}". Propose-lui de changer de méthode ou de passer à autre chose. Ne répète pas la même explication.`,
+        sujet
+      };
+    }
+    
+    return { consigne: "", sujet };
+  } catch (e) {
+    logError("construireConsigneAntiBoucle", e);
+    return { consigne: "", sujet: "general" };
+  }
+}
+
+function ficheEstFaible(fiche = null) {
+  if (!fiche) return true;
+
+  const contenu = String(fiche?.contenu || "").trim();
+  const commentaire = String(fiche?.commentaire_ai || "").trim();
+
+  if (!contenu && !commentaire) return true;
+  if (contenu.length < 80 && commentaire.length < 50) return true;
+
+  return false;
+}
+
+function estQuestionGeographieRDC(question = "", fiche = null) {
+  const t = `${question} ${fiche?.matiere || ""} ${fiche?.titre || ""}`.toLowerCase();
+
+  return (
+    t.includes("rdc") ||
+    t.includes("congo") ||
+    t.includes("province") ||
+    t.includes("territoire") ||
+    t.includes("territoires") ||
+    t.includes("commune") ||
+    t.includes("communes") ||
+    t.includes("ville") ||
+    t.includes("villes") ||
+    t.includes("haut-katanga") ||
+    t.includes("haut katanga") ||
+    t.includes("géographie") ||
+    t.includes("geographie")
+  );
+}
+
+function fautChercherSurWeb(question = "", fiche = null) {
+  const q = String(question || "").toLowerCase().trim();
+
+  if (!q) return false;
+  if (estMessageRelationnelSimple(q)) return false;
+
+  if (fiche && !ficheEstFaible(fiche) && !estQuestionGeographieRDC(question, fiche)) {
+    return false;
+  }
+
+  const casWeb = [
+    "loi", "code", "article", "constitution", "juridique", "droit",
+    "ohada", "impôt", "impot", "taxe", "tribunal",
+    "géographie", "geographie", "rdc", "congo",
+    "province", "territoire", "territoires",
+    "commune", "communes", "ville", "villes",
+    "haut-katanga", "haut katanga",
+    "actualité", "actualite", "récent", "recent",
+    "aujourd'hui", "actuel",
+    "histoire", "date", "indépendance",
+    "qui", "quand", "où", "ou", "combien", "pourquoi", "comment"
+  ];
+
+  if (casWeb.some((m) => q.includes(m))) return true;
+  if (!fiche) return true;
+  if (ficheEstFaible(fiche)) return true;
+  if (estQuestionGeographieRDC(question, fiche)) return true;
+
+  return false;
+}
+
+async function chercherContexteWeb(question = "", user = {}, historique = []) {
+  const system = construireSystemPrompt(user);
+
+  const reponse = await safeAI(
+    () =>
+      appelerChatCompletion([
+        { role: "system", content: system },
+        {
+          role: "system",
+          content: `MISSION WEB :
+- Utilise Google Search
+- Donne un CONTEXTE WEB BRUT, court, clair et factuel
+- Pour le droit, les lois, les codes et les articles : n'invente rien
+- Pour la géographie RDC : sois précis
+- Si la question demande une liste administrative complète, donne la liste complète trouvée
+- Si tu n'es pas sûr que la liste soit exhaustive, dis : "Liste à confirmer"
+- Pas de structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION`
+        },
+        ...historique.slice(-4),
+        {
+          role: "user",
+          content: `QUESTION :
+${question}
+
+Donne un contexte web brut et fiable.`
+        }
+      ]),
+    ""
+  );
+
+  return String(reponse || "").trim();
+}
+
+async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
+  let contexteWeb = "";
+
+  const utiliserWeb = fautChercherSurWeb(questionEleve, fiche);
+
+  if (utiliserWeb) {
+    contexteWeb = await chercherContexteWeb(questionEleve, user, historique);
+  }
+
+  const blocWeb = contexteWeb
+    ? `CONTEXTE WEB — SOURCE PRINCIPALE :
+${contexteWeb}`
+    : `CONTEXTE WEB :
+Aucune information web utile trouvée.`;
+
+  const blocDB = fiche
+    ? `CONTEXTE DB — SECONDAIRE :
+Titre : ${fiche?.titre || "Sans titre"}
+Matière : ${fiche?.matiere || "Non précisée"}
+Classe : ${fiche?.classe || "Non précisée"}
+Contenu :
+${fiche?.contenu || ""}
+Commentaire IA :
+${fiche?.commentaire_ai || ""}`
+    : `CONTEXTE DB :
+Aucune fiche locale disponible.`;
+
+  return await safeAI(
+    () =>
+      appelerChatCompletion([
+        { role: "system", content: construireSystemPrompt(user) },
+        {
+          role: "system",
+          content: `RÈGLE FONDAMENTALE :
+- Utilise d'abord le WEB si disponible
+- Utilise la DB comme appui
+- Ne réponds jamais comme un moteur de recherche
+- Pour le droit congolais, les lois, les codes et les articles : sois prudent et n'invente rien
+- Pour la géographie RDC, province, territoire, ville, commune : sois précis
+- Si la question demande une liste administrative complète, recopie la liste complète trouvée
+- Si tu n'es pas sûr d'une liste complète, dis-le honnêtement
+- La consolidation doit rester dans la même matière que la question`
+        },
+        { role: "system", content: consignePedagogique || "Sois pédagogique et clair." },
+        ...historique.slice(-5),
+        {
+          role: "user",
+          content: `QUESTION :
+${questionEleve}
+
+${blocWeb}
+
+${blocDB}
+
+Donne maintenant la réponse finale de Mwalimu.`
+        }
+      ]),
+    `🔵 [VÉCU] : J'ai bien reçu ta demande.
+🟡 [SAVOIR] : Je n'ai pas encore pu produire une réponse claire.
+🔴 [INSPIRATION] : Ce n'est pas grave ; nous pouvons reprendre plus simplement.
+❓ [CONSOLIDATION] : Reformule ta question en une seule phrase.`
+  );
+}
+
+async function telechargerMedia(mediaId, maxSize) {
+  try {
+    const url = `https://graph.facebook.com/v21.0/${mediaId}`;
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      timeout: 10000
+    });
+
+    const mediaUrl = response.data.url;
+    const mimeType = response.data.mime_type;
+
+    const mediaResponse = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      responseType: "arraybuffer",
+      maxContentLength: maxSize,
+      timeout: 15000
+    });
+
+    return {
+      buffer: Buffer.from(mediaResponse.data),
+      mimeType: mimeType
+    };
+  } catch (e) {
+    logError("telechargerMedia", e);
+    throw e;
+  }
+}
+
+function estMimeAudioSupporte(mimeType) {
+  return [
+    "audio/ogg", 
+    "audio/mp3", 
+    "audio/mpeg", 
+    "audio/wav", 
+    "audio/webm",
+    "audio/mp4",
+    "audio/amr"
+  ].includes(mimeType);
+}
+
+function estMimeImageSupporte(mimeType) {
+  return [
+    "image/jpeg", 
+    "image/png", 
+    "image/webp", 
+    "image/gif", 
+    "image/bmp", 
+    "image/heic", 
+    "image/heif"
+  ].includes(mimeType);
+}
+
+async function analyserAudioCourt(user, buffer, mimeType, historique) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    
+    const prompt = `Transcris ce message audio. Ensuite, classe-le dans UNE de ces catégories :
+- "question" : l'élève pose une question scolaire
+- "reponse" : l'élève donne une réponse à un exercice
+- "social" : salutation, remerciement, bavardage
+- "incompris" : audio inaudible ou incompréhensible
+
+Réponds UNIQUEMENT avec un JSON valide au format :
+{
+  "transcription": "texte transcrit",
+  "type": "categorie"
+}`;
+
+    const result = await model.generateContent([
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: mimeType,
+          data: buffer.toString("base64")
+        }
+      }
+    ]);
+    
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    return { transcription: "", type: "incompris" };
+  } catch (e) {
+    logError("analyserAudioCourt", e);
+    return { transcription: "", type: "incompris" };
+  }
+}
+
+async function reponseAudioUneSeulePasse(user, buffer, mimeType, historique, fiche) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    
+    const systemPrompt = construireSystemPrompt(user) + `
+
+Tu réponds à un message audio. Sois concis et pédagogique.`;
+    
+    const prompt = systemPrompt + "\n\nRéponds à ce message audio de manière pédagogique.";
+
+    const result = await model.generateContent([
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: mimeType,
+          data: buffer.toString("base64")
+        }
+      }
+    ]);
+    
+    const response = await result.response;
+    return response.text();
+  } catch (e) {
+    logError("reponseAudioUneSeulePasse", e);
+    return "Désolé, je n'ai pas bien compris ton message audio. Peux-tu réessayer ou écrire ta question ?";
+  }
+}
+
+function construireReponseHumaineSimple(user, texte) {
+  const prenom = premierPrenom(user?.nom || "");
+  const genre = genreEleve(user?.nom || "");
+  
+  if (estMessageSalutation(texte)) {
+    const heure = new Date().getHours();
+    let salutation = "Bonjour";
+    if (heure >= 18 || heure < 5) salutation = "Bonsoir";
+    return `${salutation} ${genre} **${prenom}** ! 😊 Comment puis-je t'aider aujourd'hui ?`;
+  }
+  
+  if (estMessageRemerciement(texte)) {
+    return `Avec plaisir ${genre} **${prenom}** ! N'hésite pas si tu as d'autres questions.`;
+  }
+
+  if (texte.includes("bonne nuit") || texte.includes("dors bien")) {
+    return `Bonne nuit ${genre} **${prenom}** ! 🌙 Repose-toi bien et à demain.`;
+  }
+
+  return null;
+}
+
+async function envoyerIndicateurFrappe(msgId) {
+  try {
+    if (PHONE_NUMBER_ID && TOKEN) {
+      await axios.post(
+        `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
+        {
+          messaging_product: "whatsapp",
+          status: "read",
+          message_id: msgId
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+    }
+  } catch (e) {
+    // Ignorer les erreurs de l'indicateur de frappe
+  }
+}
+
+async function envoyerWhatsAppAvecRetry(to, message, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
+        {
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to: to,
+          type: "text",
+          text: { 
+            preview_url: false,
+            body: message 
+          }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 10000
+        }
+      );
+      return;
+    } catch (err) {
+      logError("envoyerWhatsApp_retry", err, { attempt: i + 1, to });
+      if (i === retries - 1) throw err;
+      await attendre(1000 * (i + 1));
+    }
+  }
+}
+
+function verifierSignatureMeta(req) {
+  try {
+    const signature = req.headers["x-hub-signature-256"];
+    if (!signature) {
+      logWarn("webhook_signature_missing");
+      return false;
+    }
+
+    if (!req.rawBody) {
+      logWarn("webhook_rawBody_missing");
+      return false;
+    }
+
+    const expectedSignature = `sha256=${crypto
+      .createHmac("sha256", APP_SECRET)
+      .update(req.rawBody)
+      .digest("hex")}`;
+
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature)
+    );
+  } catch (e) {
+    logError("verifierSignatureMeta", e);
+    return false;
+  }
+}
+
+function extraireMessageWhatsApp(body) {
+  try {
+    const entry = body?.entry?.[0];
+    const change = entry?.changes?.[0];
+    const value = change?.value;
+    const messages = value?.messages;
+    if (!messages?.length) return null;
+    const msg = messages[0];
+    return {
+      id: msg.id,
+      from: msg.from,
+      type: msg.type,
+      text: msg.text,
+      image: msg.image,
+      audio: msg.audio,
+      document: msg.document,
+      timestamp: msg.timestamp
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function initDB() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        phone VARCHAR(20) UNIQUE NOT NULL,
+        nom VARCHAR(255) DEFAULT '',
+        classe VARCHAR(255) DEFAULT '',
+        reve VARCHAR(255) DEFAULT '',
+        historique JSONB DEFAULT '[]'::jsonb,
+        reminders_enabled BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      
+      CREATE TABLE IF NOT EXISTS processed_messages (
+        msg_id VARCHAR(100) PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS student_attempts (
+        id SERIAL PRIMARY KEY,
+        phone VARCHAR(20) NOT NULL,
+        sujet VARCHAR(255) NOT NULL,
+        attempts INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(phone, sujet)
+      );
+
+      CREATE TABLE IF NOT EXISTS bibliotheque (
+        id SERIAL PRIMARY KEY,
+        titre VARCHAR(500) DEFAULT '',
+        matiere VARCHAR(100) DEFAULT '',
+        classe VARCHAR(100) DEFAULT '',
+        contenu TEXT DEFAULT '',
+        commentaire_ai TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    logInfo("db_initialized");
+  } catch (e) {
+    logError("db_init_error", e);
+    throw e;
+  }
+}
+
+async function getUser(phone) {
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM conversations WHERE phone = $1",
+      [phone]
+    );
+    if (!rows.length) return null;
+    const user = rows[0];
+    user.historique = Array.isArray(user.historique)
+      ? user.historique
+      : safeJsonParse(user.historique, []);
+    return user;
+  } catch (e) {
+    logError("getUser", e);
+    return null;
+  }
+}
+
+async function createUser(phone) {
+  try {
+    await pool.query(
+      "INSERT INTO conversations (phone, historique) VALUES ($1, '[]'::jsonb) ON CONFLICT DO NOTHING",
+      [phone]
+    );
+  } catch (e) {
+    logError("createUser", e);
+  }
+}
+
+async function updateUserField(phone, field, value) {
+  try {
+    const validFields = ["nom", "classe", "reve", "reminders_enabled", "historique"];
+    if (!validFields.includes(field)) return;
+    
+    if (field === "historique") {
+      value = JSON.stringify(value);
+    }
+    
+    await pool.query(
+      `UPDATE conversations SET ${field} = $1, updated_at = NOW() WHERE phone = $2`,
+      [value, phone]
+    );
+  } catch (e) {
+    logError("updateUserField", e, { phone, field });
+  }
+}
+
+async function appendHistorique(phone, role, content) {
+  try {
+    const user = await getUser(phone);
+    if (!user) return;
+    
+    let historique = Array.isArray(user.historique) ? user.historique : [];
+    historique.push({ role, content });
+    
+    if (historique.length > 50) {
+      historique = historique.slice(-50);
+    }
+    
+    await updateUserField(phone, "historique", historique);
+  } catch (e) {
+    logError("appendHistorique", e, { phone });
+  }
+}
+
+async function logUnansweredQuestion(user, texte, type, reason) {
+  logWarn("unanswered_question", {
+    phone: user?.phone || "",
+    type,
+    reason,
+    preview: String(texte || "").slice(0, 100)
+  });
+}
+
+async function resetStudentAttempt(phone, sujet) {
+  try {
+    await pool.query(
+      `INSERT INTO student_attempts (phone, sujet, attempts) 
+       VALUES ($1, $2, 1) 
+       ON CONFLICT (phone, sujet) 
+       DO UPDATE SET attempts = student_attempts.attempts + 1, updated_at = NOW()`,
+      [phone, sujet]
+    );
+  } catch (e) {
+    logError("resetStudentAttempt", e, { phone, sujet });
+  }
+}
+
+async function resetAllStudentAttempts(phone) {
+  try {
+    await pool.query(
+      `DELETE FROM student_attempts WHERE phone = $1`,
+      [phone]
+    );
+  } catch (e) {
+    logError("resetAllStudentAttempts", e, { phone });
+  }
+}
+
+function estReponseJourneeBienEtre(texte) {
+  const t = normaliserTexteRelationnel(texte);
+  return /(s'est|s est|ma journee|la journee|journee).*(bien|tres bien|super|genial)/.test(t) ||
+         /(tout|ca|cela).*(s'est|s est|va).*(bien|tres bien|super)/.test(t);
+}
+
+async function expliquerImageAvecIA(user, base64Image, mimeType, historique) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    
+    const prompt = `Tu es Mwalimu EdTech, un précepteur numérique congolais. 
+Décris cette image de manière pédagogique et aide l'élève à comprendre ce qu'il voit. 
+Si c'est un exercice, explique la méthode sans donner directement la réponse.
+Si c'est un document, explique son contenu simplement.
+Sois encourageant et bienveillant.`;
+
+    const result = await model.generateContent([
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: mimeType,
+          data: base64Image
+        }
+      }
+    ]);
+    
+    const response = await result.response;
+    return response.text();
+  } catch (e) {
+    logError("expliquerImageAvecIA", e);
+    return "Désolé, je n'ai pas pu analyser cette image correctement. Peux-tu la décrire ou envoyer une photo plus nette ?";
+  }
+}
+
+function construireMessageFinal(user, reponse, historique, question, fiche) {
+  let message = reponse;
+  
+  const resultat = appliquerLes4EtapesScientifiques(reponse, question, fiche);
+  message = resultat.texte;
+  
+  if (!/🔵\s*\[VÉCU\]/.test(message)) {
+    message = verifierStructureMwalimu(message, user, historique, question);
+  }
+  
+  message = remplacerBlocConsolidation(message, question, resultat.matiere);
+  
+  if (!message.includes("👉 ")) {
+    const ouverture = choisirOuvertureContextuelle(message, user, question);
+    if (ouverture) message += `\n${ouverture}`;
+  }
+  
+  if (!message.includes("🌟")) {
+    const encouragement = choisirEncouragementContextuel(message, question);
+    if (encouragement) message += `\n${encouragement}`;
+  }
+  
+  if (!message.includes("***«")) {
+    const citation = choisirCitationContextuelle(message, question);
+    if (citation) message += `\n${citation}`;
+  }
+  
+  message = nettoyerReponseIA(message);
+  message = supprimerFormulesLourdesDAppel(message, user);
+  message = nettoyerAppelsRepetitifs(message, user.nom);
+  message = nettoyerOuverturesDupliquees(message);
+  
+  if (!message.includes("Mwalimu EdTech")) {
+    message = `${HEADER_MWALIMU}\n────────────────\n${message}`;
+  }
+  
+  return message.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function messageSecours(user, msgType) {
+  const prenom = premierPrenom(user?.nom || "");
+  return `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : Désolé ${prenom}, j'ai rencontré un petit souci technique.\n🟡 [SAVOIR] : Je n'ai pas pu traiter correctement ton message.\n🔴 [INSPIRATION] : Ce n'est pas grave, nous pouvons réessayer.\n❓ [CONSOLIDATION] : Peux-tu reformuler ou renvoyer ton message ?`;
+}
+
+/* =========================================================
+   FONCTIONS PDF
+========================================================= */
+
+async function extraireTextePDF(buffer) {
+  try {
+    const data = await pdfParse(buffer);
+    return data.text || "";
+  } catch (err) {
+    logError("pdf_extraction_error", err);
+    throw err;
+  }
+}
+
+async function traiterDocumentPDF(user, msg, historique) {
+  const docId = msg.document?.id;
+  if (!docId) {
+    return {
+      reponse: "Je n'arrive pas à lire ton document. Réessaie ou envoie une photo.",
+      fiche: null,
+      bypassFormat: true,
+    };
+  }
+
+  let buffer, mimeType;
+  try {
+    const media = await telechargerMedia(docId, MAX_PDF_SIZE);
+    buffer = media.buffer;
+    mimeType = media.mimeType;
+  } catch (err) {
+    logError("pdf_download_error", err, { phone: user?.phone });
+    return {
+      reponse: "Je n'ai pas pu télécharger ton PDF. Vérifie que le fichier n'est pas trop volumineux (max 10 Mo).",
+      fiche: null,
+      bypassFormat: true,
+    };
+  }
+
+  logInfo("pdf_received", { phone: user?.phone || "", mimeType });
+
+  if (mimeType !== "application/pdf") {
+    return {
+      reponse: "Le document reçu n'est pas un PDF valide. Envoie un fichier .pdf",
+      fiche: null,
+      bypassFormat: true,
+    };
+  }
+
+  let texteExtrait = "";
+  try {
+    texteExtrait = await extraireTextePDF(buffer);
+  } catch (err) {
+    logError("pdf_extraction_failed", err, { phone: user?.phone });
+    return {
+      reponse: "Je n'ai pas pu extraire le texte de ton PDF. Il est peut-être protégé ou scanné. Envoie-moi plutôt une photo claire de l'exercice.",
+      fiche: null,
+      bypassFormat: true,
+    };
+  }
+
+  if (!texteExtrait || !texteExtrait.trim()) {
+    return {
+      reponse: "Ton PDF semble ne contenir aucun texte (peut-être juste des images). Essaie d'envoyer une photo directement.",
+      fiche: null,
+      bypassFormat: true,
+    };
+  }
+
+  if (texteExtrait.length > MAX_PDF_TEXT_LENGTH) {
+    const originalLength = texteExtrait.length;
+    texteExtrait = texteExtrait.slice(0, MAX_PDF_TEXT_LENGTH) + "\n[...texte trop long, j'ai pris le début...]";
+    logInfo("pdf_text_truncated", { phone: user?.phone, originalLength });
+  }
+
+  const questionPDF = `[Document PDF envoyé par l'élève]\n\n${texteExtrait}\n\n[Fin du PDF]`;
+
+  const resultat = await traiterTexte(user, questionPDF, historique);
+
+  return {
+    reponse: resultat.reponse,
+    fiche: resultat.fiche,
+    bypassFormat: resultat.bypassFormat,
+  };
+}
+
+/* =========================================================
+   CERVEAU DECISION IA
 ========================================================= */
 async function cerveauDecisionIA(user, texte = "", historique = [], msgType = "text") {
   const systemInstruction = `${construireSystemPrompt(user)}
@@ -2096,15 +2191,15 @@ MODE CERVEAU DÉCISIONNEL :
 - Réponds uniquement en JSON valide
 
 Routes possibles :
-reponse_sociale
-reponse_bien_etre
-pedagogique
-pedagogique_web
-correction
-exercice
-image
-audio
-incompris`;
+- reponse_sociale : pour les salutations, remerciements, bavardages
+- reponse_bien_etre : réponse à une question sur l'état de l'élève
+- pedagogique : question académique simple
+- pedagogique_web : question nécessitant une recherche web
+- correction : l'élève soumet une réponse à corriger
+- exercice : l'élève demande un exercice
+- image : l'élève envoie une image
+- audio : l'élève envoie un audio
+- incompris : message inintelligible`;
 
   const fallback = {
     intention: "question_normale",
@@ -2144,15 +2239,11 @@ Décide la route correcte.`,
   }
 }
 
-/* =========================================================
-   securiserDecisionCasSensibles (NOUVEAU)
-========================================================= */
 function securiserDecisionCasSensibles(decision = {}, texte = "", historique = []) {
   const t = normaliserTexteRelationnel(texte);
 
   if (!t) return decision;
 
-  // Cas sensible : Mwalimu a demandé comment va l'élève ou sa journée
   if (dernierMessageEstQuestionBienEtre(historique)) {
     const reponsesSociales = [
       "oui",
@@ -2196,9 +2287,6 @@ function securiserDecisionCasSensibles(decision = {}, texte = "", historique = [
   return decision;
 }
 
-/* =========================================================
-   genererReponseSocialeIA (NOUVEAU)
-========================================================= */
 async function genererReponseSocialeIA(user, texte = "", historique = [], decision = {}) {
   return await safeAI(
     () =>
@@ -2210,7 +2298,7 @@ MODE RÉPONSE SOCIALE :
 - Réponds naturellement
 - Une ou deux phrases maximum
 - Pas de structure pédagogique
-- Pas de header
+- Pas de header Mwalimu
 - Pas de citation
 - Pas de VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION
 - Si l'élève répond à une question de bien-être, accuse réception humainement puis invite-le doucement à choisir une matière ou une question`
@@ -2229,9 +2317,18 @@ ${JSON.stringify(decision)}`
 }
 
 /* =========================================================
-   TRAITEMENT TEXTE (avec cerveauDecisionIA et securiserDecisionCasSensibles)
+   TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
+  if (
+    dernierMessageEstInvitationChoixMatiere(historique) &&
+    estReponseGeneriqueExploration(texteUtilisateur) &&
+    !contientChoixMatiere(texteUtilisateur)
+  ) {
+    const reponse = genererRelanceChoixMatiere(user);
+    return { reponse, fiche: null, bypassFormat: true };
+  }
+
   let decision = await cerveauDecisionIA(user, texteUtilisateur, historique, "text");
   decision = securiserDecisionCasSensibles(decision, texteUtilisateur, historique);
 
@@ -2350,7 +2447,6 @@ async function traiterAudio(user, msg, historique) {
 
   if (typeAudio === "social" && !contientQuestionAcademique(transcription || transcriptionBrute)) {
     const rep = construireReponseHumaineSimple(user, transcription || transcriptionBrute);
-
     return {
       reponse: rep || genererRepriseApresBienEtre(user),
       fiche: null,
@@ -2418,7 +2514,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
   if (cmd === "/aide") {
     await envoyerWhatsAppAvecRetry(
       from,
-      `${HEADER_MWALIMU}\n📘 *Commandes disponibles*\n/aide → voir les commandes\n/profil → refaire ton profil\n/reset → vider l'historique de l'échange\n/stop → arrêter les rappels du matin\n/start → réactiver les rappels du matin`
+      `${HEADER_MWALIMU}\n📘 *Commandes disponibles*\n/aide → voir les commandes\n/profil → refaire ton profil\n/reset → vider l'historique\n/stop → arrêter les rappels du matin\n/start → réactiver les rappels du matin\n\n📎 *Nouveau* : Tu peux m'envoyer des fichiers PDF, je les lirai pour toi !`
     );
     return true;
   }
@@ -2442,7 +2538,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
   }
 
   if (cmd === "/reset") {
-    await updateUserField(from, "historique", JSON.stringify([]));
+    await updateUserField(from, "historique", []);
     await resetAllStudentAttempts(from);
     await envoyerWhatsAppAvecRetry(
       from,
@@ -2599,7 +2695,9 @@ async function processIncomingMessage(msg) {
     return;
   }
 
-  let historique = Array.isArray(user.historique) ? user.historique : safeJsonParse(user.historique, []);
+  let historique = Array.isArray(user.historique)
+    ? user.historique
+    : safeJsonParse(user.historique, []);
 
   let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
@@ -2634,8 +2732,15 @@ async function processIncomingMessage(msg) {
     bypassFormat = Boolean(resultat?.bypassFormat);
     contenuUtilisateurPourMemoire = "[image envoyée]";
     await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
+  } else if (msgType === "pdf") {
+    const resultat = await traiterDocumentPDF({ ...user, phone: from }, msg, historique);
+    reponseBrute = resultat?.reponse || "";
+    ficheContexte = resultat?.fiche || null;
+    bypassFormat = Boolean(resultat?.bypassFormat);
+    contenuUtilisateurPourMemoire = "[PDF envoyé]";
+    await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
   } else {
-    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton fichier.\n🟡 [SAVOIR] : Je ne peux pas encore analyser ce type de format pour le moment.\n🔴 [INSPIRATION] : Ce n'est pas grave, nous pouvons utiliser le texte ou les images.\n❓ [CONSOLIDATION] : Envoie-moi plutôt ton exercice par écrit ou sous forme de photo bien lisible.`;
+    reponseBrute = `🔵 [VÉCU] : J'ai bien reçu ton fichier.\n🟡 [SAVOIR] : Je ne peux pas encore analyser ce type de format pour le moment.\n🔴 [INSPIRATION] : Ce n'est pas grave, nous pouvons utiliser le texte, les images ou les PDF.\n❓ [CONSOLIDATION] : Envoie-moi plutôt ton exercice par écrit, en photo ou en PDF.`;
     bypassFormat = false;
   }
 
