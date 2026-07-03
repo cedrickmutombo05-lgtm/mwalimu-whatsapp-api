@@ -2125,6 +2125,18 @@ async function initDB() {
         UNIQUE(phone, sujet)
       );
 
+      CREATE TABLE IF NOT EXISTS pedagogic_pending (
+        phone VARCHAR(20) PRIMARY KEY,
+        question TEXT NOT NULL,
+        sujet VARCHAR(255) DEFAULT 'general',
+        matiere VARCHAR(100) DEFAULT 'general',
+        pending_type VARCHAR(50) DEFAULT 'exercise_answer',
+        consolidation_question TEXT DEFAULT '',
+        attempts INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS bibliotheque (
         id SERIAL PRIMARY KEY,
         titre VARCHAR(500) DEFAULT '',
@@ -2238,8 +2250,77 @@ async function resetAllStudentAttempts(phone) {
       `DELETE FROM student_attempts WHERE phone = $1`,
       [phone]
     );
+    await pool.query(
+      `DELETE FROM pedagogic_pending WHERE phone = $1`,
+      [phone]
+    );
   } catch (e) {
     logError("resetAllStudentAttempts", e, { phone });
+  }
+}
+
+async function getQuestionEnSouffrance(phone) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM pedagogic_pending WHERE phone = $1 LIMIT 1`,
+      [phone]
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logError("getQuestionEnSouffrance", e, { phone });
+    return null;
+  }
+}
+
+async function enregistrerQuestionEnSouffrance(phone, question, sujet = "general", matiere = "general", pendingType = "exercise_answer", consolidationQuestion = "") {
+  try {
+    await pool.query(
+      `INSERT INTO pedagogic_pending (phone, question, sujet, matiere, pending_type, consolidation_question, attempts, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
+       ON CONFLICT (phone) DO UPDATE SET
+         question = EXCLUDED.question,
+         sujet = EXCLUDED.sujet,
+         matiere = EXCLUDED.matiere,
+         pending_type = EXCLUDED.pending_type,
+         consolidation_question = EXCLUDED.consolidation_question,
+         attempts = 0,
+         updated_at = NOW()`,
+      [phone, tronquerTexte(question, 3000), sujet, matiere, pendingType, tronquerTexte(consolidationQuestion, 1000)]
+    );
+  } catch (e) {
+    logError("enregistrerQuestionEnSouffrance", e, { phone, sujet, matiere, pendingType });
+  }
+}
+
+async function incrementerQuestionEnSouffrance(phone) {
+  try {
+    await pool.query(
+      `UPDATE pedagogic_pending SET attempts = attempts + 1, updated_at = NOW() WHERE phone = $1`,
+      [phone]
+    );
+  } catch (e) {
+    logError("incrementerQuestionEnSouffrance", e, { phone });
+  }
+}
+
+async function transformerEnConsolidationEnSouffrance(phone, consolidationQuestion = "") {
+  try {
+    await pool.query(
+      `UPDATE pedagogic_pending
+       SET pending_type = 'consolidation_answer', consolidation_question = $2, attempts = 0, updated_at = NOW()
+       WHERE phone = $1`,
+      [phone, tronquerTexte(consolidationQuestion, 1000)]
+    );
+  } catch (e) {
+    logError("transformerEnConsolidationEnSouffrance", e, { phone });
+  }
+}
+
+async function cloturerQuestionEnSouffrance(phone) {
+  try {
+    await pool.query(`DELETE FROM pedagogic_pending WHERE phone = $1`, [phone]);
+  } catch (e) {
+    logError("cloturerQuestionEnSouffrance", e, { phone });
   }
 }
 
@@ -2927,9 +3008,362 @@ ${JSON.stringify(decision)}`
 }
 
 /* =========================================================
+   ROUTAGE INTELLIGENT : EXERCICE À RÉSOLUTION
+========================================================= */
+function detecterMatiereExerciceResolution(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+
+  const dictionnaire = [
+    { matiere: "comptabilite", mots: ["comptabilite", "bilan", "journal", "grand livre", "debit", "credit", "compte", "balance", "tva", "amortissement", "stock", "achat", "vente", "charge", "produit"] },
+    { matiere: "electricite", mots: ["electricite", "tension", "intensite", "courant", "resistance", "ohm", "volt", "ampere", "circuit", "puissance electrique", "loi d ohm", "energie electrique"] },
+    { matiere: "electronique", mots: ["electronique", "diode", "transistor", "condensateur", "resistance", "bobine", "circuit imprime", "microcontroleur", "signal", "amplificateur"] },
+    { matiere: "mecanique", mots: ["mecanique", "force", "moment", "couple", "vitesse", "acceleration", "travail", "energie", "frottement", "equilibre", "poulie", "levier"] },
+    { matiere: "resistance_materiaux", mots: ["resistance des materiaux", "rdm", "contrainte", "deformation", "traction", "compression", "flexion", "cisaillement", "poutre", "module de young", "moment flechissant"] },
+    { matiere: "statistique", mots: ["statistique", "moyenne", "mediane", "mode", "variance", "ecart type", "probabilite", "frequence", "pourcentage"] },
+    { matiere: "algorithmique", mots: ["algorithme", "algorithmique", "programme", "code", "fonction", "boucle", "tableau", "variable", "pseudo code", "javascript", "python"] },
+    { matiere: "economie_quantitative", mots: ["economie", "microeconomie", "macroeconomie", "cout", "recette", "benefice", "offre", "demande", "elasticite", "prix", "quantite"] },
+    { matiere: "dessin_technique", mots: ["dessin technique", "projection", "vue de face", "vue de dessus", "cotation", "echelle", "plan", "schema"] },
+    { matiere: "chimie", mots: ["chimie", "molecule", "atome", "reaction", "equation chimique", "acide", "base", "solution", "concentration", "mole", "nacl", "h2o", "co2"] },
+    { matiere: "physique", mots: ["physique", "masse", "poids", "pression", "densite", "vitesse", "energie", "force", "distance", "temps", "temperature"] },
+    { matiere: "math", mots: ["math", "maths", "equation", "inequation", "fraction", "racine", "puissance", "derivee", "integrale", "fonction", "geometrie", "algebre", "calcul"] }
+  ];
+
+  for (const item of dictionnaire) {
+    if (item.mots.some((mot) => t.includes(mot))) return item.matiere;
+  }
+
+  if (/[0-9]+\s*[a-z]?\s*[+\-*/=]/i.test(String(texte || ""))) return "math";
+  return "general_technique";
+}
+
+function estExerciceAResolution(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t || estMessageRelationnelSimple(t)) return false;
+
+  const indicesAction = [
+    "resous", "resoudre", "calcule", "calculer", "determine", "determiner",
+    "trouve", "trouver", "corrige", "exercice", "probleme", "devoir",
+    "application", "demontrer", "demonstre", "etablis", "etablir",
+    "complete", "equilibrer", "ecrire l equation", "schema", "trace",
+    "journaliser", "passer l ecriture", "bilan", "enregistrer l operation"
+  ];
+
+  const matiere = detecterMatiereExerciceResolution(t);
+  const expressionCalcul = /[0-9]+\s*[a-z]?\s*[+\-*/=]/i.test(String(texte || "")) || /[a-z]\s*[+\-*/=]\s*[0-9]/i.test(String(texte || ""));
+  const contientAction = indicesAction.some((mot) => t.includes(mot));
+
+  if (expressionCalcul) return true;
+  if (contientAction && matiere !== "general_technique") return true;
+  if (contientAction && /[0-9]/.test(t)) return true;
+
+  return false;
+}
+
+function estReponseProbableAExercice(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t || estMessageRelationnelSimple(t)) return false;
+
+  const indices = [
+    "ma reponse", "voici ma reponse", "j ai trouve", "j ai obtenu",
+    "j obtiens", "ca donne", "cela donne", "le resultat", "resultat",
+    "la reponse est", "je propose", "selon moi"
+  ];
+
+  if (indices.some((mot) => t.includes(mot))) return true;
+  if (/^[0-9a-z=+\-*/().,\s]+$/i.test(String(texte || "").trim()) && String(texte || "").trim().length <= 120) return true;
+  if (/[=]/.test(String(texte || "")) && String(texte || "").trim().length <= 160) return true;
+
+  return false;
+}
+
+function estDemandeReexplicationExercice(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  return /\b(je ne comprends pas|j ai pas compris|explique encore|reprends|reexplique|donne un exemple|un exemple|montre moi|aide moi)\b/.test(t);
+}
+
+function extraireQuestionConsolidationDepuisMessage(message = "") {
+  const bloc = String(message || "").match(/❓\s*\[CONSOLIDATION\]([\s\S]*?)(?=\n👉|\n🌟|\n\*\*\*«|$)/i);
+  if (!bloc) return "";
+  return bloc[1].trim().replace(/\n+/g, " ").slice(0, 600);
+}
+
+function nettoyerFuitesPedagogiques(texte = "") {
+  return String(texte || "")
+    .replace(/^.*CONTEXTE\s+WEB.*$/gim, "")
+    .replace(/^.*CONTEXTE\s+DB.*$/gim, "")
+    .replace(/^.*SOURCE\s+PRINCIPALE.*$/gim, "")
+    .replace(/^.*SOURCE\s+SECONDAIRE.*$/gim, "")
+    .replace(/^.*Aucune information web utile trouvée.*$/gim, "")
+    .replace(/^.*Résultat Google Search.*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function supprimerDoublonsPedagogiques(texte = "") {
+  const lignes = String(texte || "").split("\n");
+  const vus = new Set();
+  const resultat = [];
+  let ignorerBlocDuplique = false;
+
+  const labelDe = (ligne) => {
+    if (/^\s*🔵\s*\[VÉCU\]/i.test(ligne)) return "vecu";
+    if (/^\s*🟡\s*\[SAVOIR\]/i.test(ligne)) return "savoir";
+    if (/^\s*🔴\s*\[INSPIRATION\]/i.test(ligne)) return "inspiration";
+    if (/^\s*❓\s*\[CONSOLIDATION\]/i.test(ligne)) return "consolidation";
+    return "";
+  };
+
+  const estFinBloc = (ligne) => /^\s*(👉|🌟|\*\*\*«|─|🔴🟡🔵)/.test(ligne);
+
+  for (const ligne of lignes) {
+    const label = labelDe(ligne);
+
+    if (label) {
+      if (vus.has(label)) {
+        ignorerBlocDuplique = true;
+        continue;
+      }
+      vus.add(label);
+      ignorerBlocDuplique = false;
+      resultat.push(ligne);
+      continue;
+    }
+
+    if (ignorerBlocDuplique) {
+      if (estFinBloc(ligne)) {
+        ignorerBlocDuplique = false;
+        resultat.push(ligne);
+      }
+      continue;
+    }
+
+    resultat.push(ligne);
+  }
+
+  return supprimerDoublonsLignes(resultat.join("\n")).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function traiterExerciceAResolution(user, texteUtilisateur, historique = []) {
+  const matiere = detecterMatiereExerciceResolution(texteUtilisateur);
+  const sujet = extraireSujetMemoire(texteUtilisateur) || matiere || "exercice";
+
+  const consigne = `${construireSystemPrompt(user)}
+MODE EXERCICE À RÉSOLUTION :
+- L'élève a envoyé un exercice à résoudre.
+- Tu dois agir comme un vrai précepteur.
+- N'utilise jamais Google Search.
+- Ne parle jamais de contexte web, source principale, contexte DB ou résultat de recherche.
+- Explique la méthode pas à pas.
+- Montre seulement le démarrage utile et les premières étapes nécessaires.
+- Ne donne pas directement la réponse finale complète.
+- Demande clairement à l'élève de proposer sa réponse finale.
+- Tant que l'élève n'a pas proposé sa réponse, on ne passe pas à autre chose.
+- Utilise si possible un exemple simple de la vie courante pour éclairer la méthode.
+- Structure obligatoire :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+- Dans CONSOLIDATION, demande à l'élève de faire l'étape suivante ou de proposer sa réponse finale.
+- Une seule fois chaque bloc pédagogique.
+- Pas de citation finale dans ta réponse brute.`;
+
+  let reponse = await safeAI(() => appelerChatCompletionSansWeb([
+    { role: "system", content: consigne },
+    ...historique.slice(-4),
+    { role: "user", content: `EXERCICE DE L'ÉLÈVE :\n${texteUtilisateur}` }
+  ], 0.15), "");
+
+  reponse = supprimerDoublonsPedagogiques(nettoyerFuitesPedagogiques(reponse));
+
+  if (!reponse) {
+    reponse = `🔵 [VÉCU] : J'ai bien reçu ton exercice.
+🟡 [SAVOIR] : Nous allons le traiter avec méthode, étape par étape.
+🔴 [INSPIRATION] : Chercher soi-même la réponse aide à mieux comprendre.
+❓ [CONSOLIDATION] : Commence par me dire quelle formule ou quelle opération tu penses utiliser.`;
+  }
+
+  const consolidation = extraireQuestionConsolidationDepuisMessage(reponse) || "Propose maintenant ta réponse finale ou l'étape suivante.";
+  await enregistrerQuestionEnSouffrance(user.phone, texteUtilisateur, sujet, matiere, "exercise_answer", consolidation);
+
+  return { reponse, fiche: null, bypassFormat: false };
+}
+
+async function reexpliquerQuestionEnSouffrance(user, pending, historique = []) {
+  const question = pending?.question || "";
+  const matiere = pending?.matiere || detecterMatiereExerciceResolution(question);
+
+  const consigne = `${construireSystemPrompt(user)}
+MODE RÉEXPLICATION D'EXERCICE :
+- L'élève n'a pas encore compris l'exercice en cours.
+- Reprends le même chemin, plus simplement.
+- Utilise un exemple concret de la vie courante.
+- Ne donne pas directement la réponse finale.
+- Demande encore à l'élève de proposer sa réponse.
+- N'utilise jamais Google Search.
+- Une seule fois chaque bloc : VÉCU, SAVOIR, INSPIRATION, CONSOLIDATION.`;
+
+  let reponse = await safeAI(() => appelerChatCompletionSansWeb([
+    { role: "system", content: consigne },
+    ...historique.slice(-4),
+    { role: "user", content: `EXERCICE EN COURS (${matiere}) :\n${question}\n\nRéexplique plus simplement sans donner la réponse finale.` }
+  ], 0.15), "");
+
+  reponse = supprimerDoublonsPedagogiques(nettoyerFuitesPedagogiques(reponse));
+  if (!reponse) {
+    reponse = `🔵 [VÉCU] : Reprenons calmement l'exercice en cours.
+🟡 [SAVOIR] : Cherchons d'abord la bonne méthode avant le résultat final.
+🔴 [INSPIRATION] : Une difficulté devient plus simple quand on la découpe.
+❓ [CONSOLIDATION] : Quelle première étape proposes-tu ?`;
+  }
+
+  return { reponse, fiche: null, bypassFormat: false };
+}
+
+async function corrigerReponseEleveAExercice(user, texteUtilisateur, pending, historique = []) {
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      correcte: { type: "BOOLEAN" },
+      raison: { type: "STRING" },
+      correctionCourte: { type: "STRING" },
+      consolidation: { type: "STRING" }
+    },
+    required: ["correcte", "raison", "correctionCourte", "consolidation"]
+  };
+
+  let evaluation = null;
+  try {
+    evaluation = await appelerJsonStrict({
+      systemInstruction: `${construireSystemPrompt(user)}
+MODE CORRECTION STRICTE D'EXERCICE :
+- Évalue la réponse de l'élève par rapport à l'exercice en cours.
+- Ne fais pas de recherche web.
+- Réponds uniquement en JSON valide.
+- correcte = true seulement si la réponse finale ou la démarche est réellement correcte.
+- Si c'est faux, indique brièvement l'erreur et la bonne direction, sans humilier l'élève.`,
+      prompt: `EXERCICE EN COURS :\n${pending.question}\n\nRÉPONSE DE L'ÉLÈVE :\n${texteUtilisateur}`,
+      schema,
+      history: historique.slice(-3)
+    });
+  } catch (e) {
+    logError("corriger_reponse_exercice_json", e, { phone: user?.phone || "" });
+  }
+
+  const correcte = Boolean(evaluation?.correcte);
+  const raison = String(evaluation?.raison || "").trim();
+  const correctionCourte = String(evaluation?.correctionCourte || "").trim();
+  const consolidation = String(evaluation?.consolidation || "Explique maintenant avec tes mots la méthode que tu as utilisée.").trim();
+
+  let reponse = "";
+
+  if (correcte) {
+    reponse = `🔵 [VÉCU] : J'ai bien reçu ta réponse.
+🟡 [SAVOIR] : Elle est correcte. ${correctionCourte || raison}
+🔴 [INSPIRATION] : Très bon travail, continue avec cette rigueur et cette confiance 😊
+❓ [CONSOLIDATION] : ${consolidation}`;
+    await transformerEnConsolidationEnSouffrance(user.phone, consolidation);
+  } else {
+    await incrementerQuestionEnSouffrance(user.phone);
+    reponse = `🔵 [VÉCU] : J'ai bien reçu ta réponse.
+🟡 [SAVOIR] : Ce n'est pas encore tout à fait juste. ${correctionCourte || raison || "Reprenons la méthode étape par étape."}
+🔴 [INSPIRATION] : Ce n'est pas grave ; une erreur sert à mieux comprendre. Imagine quelqu'un qui suit une route : s'il se trompe de tournant, il revient au bon repère puis continue.
+❓ [CONSOLIDATION] : Reprends l'étape indiquée et propose une nouvelle réponse.`;
+  }
+
+  return { reponse: supprimerDoublonsPedagogiques(nettoyerFuitesPedagogiques(reponse)), fiche: null, bypassFormat: false };
+}
+
+async function traiterReponseConsolidation(user, texteUtilisateur, pending) {
+  const t = normaliserTexteRelationnel(texteUtilisateur);
+
+  if (!t || ["oui", "ok", "okay", "d accord"].includes(t)) {
+    return {
+      reponse: `🔵 [VÉCU] : Je vois ta réponse.
+🟡 [SAVOIR] : Pour fermer correctement cette notion, il faut répondre à la question de consolidation avec une petite phrase.
+🔴 [INSPIRATION] : Cela aide ton cerveau à retenir la méthode.
+❓ [CONSOLIDATION] : ${pending?.consolidation_question || "Réponds avec tes mots à la question de consolidation."}`,
+      fiche: null,
+      bypassFormat: false
+    };
+  }
+
+  await cloturerQuestionEnSouffrance(user.phone);
+  return {
+    reponse: `🔵 [VÉCU] : Merci pour ta réponse à la consolidation.
+🟡 [SAVOIR] : L'idée essentielle est maintenant fixée.
+🔴 [INSPIRATION] : Excellent, tu peux avancer avec plus de confiance 😊
+❓ [CONSOLIDATION] : Tu peux maintenant m'envoyer une nouvelle question ou un autre exercice.`,
+    fiche: null,
+    bypassFormat: false
+  };
+}
+
+function construireRappelQuestionEnSouffrance(user = {}, pending = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  const type = pending?.pending_type || "exercise_answer";
+
+  if (type === "consolidation_answer") {
+    return `🔵 [VÉCU] : ${prenom}, avant de passer à autre chose, nous avons encore une question de consolidation en souffrance.
+🟡 [SAVOIR] : Elle sert à vérifier que la notion est bien fixée.
+🔴 [INSPIRATION] : Une petite réponse maintenant vaut mieux qu'une notion oubliée demain.
+❓ [CONSOLIDATION] : ${pending?.consolidation_question || "Réponds d'abord à la question de consolidation."}`;
+  }
+
+  return `🔵 [VÉCU] : ${prenom}, nous avons encore un exercice en cours.
+🟡 [SAVOIR] : Avant de passer à autre chose, propose d'abord ta réponse finale ou l'étape suivante.
+🔴 [INSPIRATION] : C'est ainsi qu'on apprend vraiment : on cherche, on propose, puis on corrige.
+❓ [CONSOLIDATION] : Exercice en cours : ${tronquerTexte(pending?.question || "", 500)}`;
+}
+
+/* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
+  const pendingPedagogique = await getQuestionEnSouffrance(user.phone);
+
+  if (pendingPedagogique) {
+    if (pendingPedagogique.pending_type === "consolidation_answer") {
+      if (estMessagePurementSocial(texteUtilisateur)) {
+        const repSociale = await genererReponseSocialeIA(user, texteUtilisateur, historique, { route: "reponse_sociale" });
+        return {
+          reponse: `${repSociale}\n\n${construireRappelQuestionEnSouffrance(user, pendingPedagogique)}`,
+          fiche: null,
+          bypassFormat: true
+        };
+      }
+
+      if (!estExerciceAResolution(texteUtilisateur)) {
+        return await traiterReponseConsolidation(user, texteUtilisateur, pendingPedagogique);
+      }
+
+      return {
+        reponse: construireRappelQuestionEnSouffrance(user, pendingPedagogique),
+        fiche: null,
+        bypassFormat: false
+      };
+    }
+
+    if (estReponseProbableAExercice(texteUtilisateur)) {
+      return await corrigerReponseEleveAExercice(user, texteUtilisateur, pendingPedagogique, historique);
+    }
+
+    if (estDemandeReexplicationExercice(texteUtilisateur)) {
+      return await reexpliquerQuestionEnSouffrance(user, pendingPedagogique, historique);
+    }
+
+    if (!estMessagePurementSocial(texteUtilisateur)) {
+      return {
+        reponse: construireRappelQuestionEnSouffrance(user, pendingPedagogique),
+        fiche: null,
+        bypassFormat: false
+      };
+    }
+  }
+
+  if (estExerciceAResolution(texteUtilisateur)) {
+    return await traiterExerciceAResolution(user, texteUtilisateur, historique);
+  }
   if (
     dernierMessageEstInvitationChoixMatiere(historique) &&
     estReponseGeneriqueExploration(texteUtilisateur) &&
