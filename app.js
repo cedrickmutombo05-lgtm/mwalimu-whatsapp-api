@@ -2424,6 +2424,28 @@ function nettoyerFuitesContexteImage(texte = "") {
     .trim();
 }
 
+function ajouterRelanceImageSociale(texte = "") {
+  let t = String(texte || "").trim();
+
+  if (!t) {
+    return "J'ai bien reçu ton image. Qu'est-ce que tu souhaites que je t'explique ou que je vérifie sur cette image ?";
+  }
+
+  const contientQuestionFinale =
+    /qu['’]est-ce que tu souhaites/i.test(t) ||
+    /que veux-tu que/i.test(t) ||
+    /veux-tu que je/i.test(t) ||
+    /souhaites-tu que/i.test(t) ||
+    /qu['’]est-ce que tu veux/i.test(t) ||
+    /que souhaites-tu/i.test(t) ||
+    /que dois-je/i.test(t) ||
+    /\?\s*$/.test(t);
+
+  if (contientQuestionFinale) return t;
+
+  return `${t}\n\nQu'est-ce que tu souhaites que je t'explique ou que je vérifie sur cette image ?`;
+}
+
 async function repondreImageNonAcademique(user, base64Image, mimeType, transcription = "", historique = []) {
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -2465,7 +2487,9 @@ Réponds naturellement.`
     return r.response.text();
   }, "");
 
-  return nettoyerFuitesContexteImage(reponse);
+  return ajouterRelanceImageSociale(
+    nettoyerFuitesContexteImage(reponse)
+  );
 }
 
 async function repondreImageAcademiqueSansWeb(user, base64Image, mimeType, questionExtraite = "", transcription = "", historique = []) {
