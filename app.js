@@ -1884,6 +1884,110 @@ function construireReponseHumaineSimple(user, texte) {
   return null;
 }
 
+/* =========================================================
+   AUDIO SOCIAL STRICT - SÉPARÉ DE L'AUDIO ACADÉMIQUE
+========================================================= */
+function construireReponseHumaineSimpleAudio(user = {}, texte = "") {
+  const prenom = premierPrenom(user?.nom || "");
+  const genre = genreEleve(user?.nom || "");
+  const appel = prenom ? `${genre} **${prenom}**` : "toi";
+  const t = normaliserTexteRelationnel(texte);
+
+  if (!t) {
+    return `J’ai bien reçu ton audio ${appel} 😊 Je t’écoute.`;
+  }
+
+  if (/^(bonjour|salut|hello|coucou|bjr|mbote|yo|cc|slt)\b/.test(t)) {
+    return `Bonjour ${appel} 😊 J’ai bien reçu ton audio. Comment puis-je t’aider aujourd’hui ?`;
+  }
+
+  if (/^(bonsoir|bsr)\b/.test(t)) {
+    return `Bonsoir ${appel} 😊 J’ai bien reçu ton audio. Comment puis-je t’aider ce soir ?`;
+  }
+
+  if (/^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien)\b/.test(t)) {
+    return `Avec plaisir ${appel} 😊`;
+  }
+
+  if (/\b(comment tu vas|comment vas tu|tu vas bien|comment ca va|ca va|et toi|et vous|vous allez bien)\b/.test(t)) {
+    return `Je vais bien, merci ${appel} 😊 Et toi, comment vas-tu ?`;
+  }
+
+  if (/\b(je vais bien|je vais tres bien|je vais super bien|je me porte bien|je me porte tres bien|je me sens bien|ca va merci|bien merci|tranquille|tranquille merci|pas mal|au top|ca roule|imboko)\b/.test(t)) {
+    return `Tant mieux ${appel} 😊 Dis-moi maintenant ce que tu veux apprendre ou réviser.`;
+  }
+
+  if (/\b(tu m ecoutes|m ecoutes|tu es la|tu es encore la|tu me suis|tu me lis|tu m entends)\b/.test(t)) {
+    return `Oui ${appel}, je t’écoute attentivement 😊 Envoie-moi ta question ou la matière que tu veux travailler.`;
+  }
+
+  if (/\b(ce n est pas ca|ce n est pas la bonne maniere|ce n est pas la bonne facon|tu as mal repondu|mauvaise reponse|tu ne comprends pas|tu n as pas compris|reponds mieux|sois naturel|parle normalement)\b/.test(t)) {
+    return `Tu as raison ${appel}. Je reprends plus simplement et plus naturellement.`;
+  }
+
+  if (/\b(bonne nuit|dors bien|fais de beaux reves)\b/.test(t)) {
+    return `Bonne nuit ${appel} 🌙 Repose-toi bien.`;
+  }
+
+  if (/\b(bonne journee|bonne matinee|bonne soiree|bon apres midi|bon week end|bon weekend|a demain|a bientot)\b/.test(t)) {
+    return `Merci ${appel} 😊 À très bientôt.`;
+  }
+
+  if (/^(ok|okay|d accord|dac|dacc|entendu|compris|parfait|tres bien|ca marche)$/.test(t)) {
+    return `D’accord ${appel} 😊`;
+  }
+
+  if (t === "oui") {
+    return `D’accord ${appel}. Dis-m’en plus.`;
+  }
+
+  if (t === "non") {
+    return `D’accord ${appel}, pas de souci.`;
+  }
+
+  return `J’ai bien reçu ton audio ${appel} 😊 Dis-moi ce que tu veux faire maintenant.`;
+}
+
+function construireResponseHumaineSimpleAudio(user = {}, texte = "") {
+  return construireReponseHumaineSimpleAudio(user, texte);
+}
+
+function traiterAudioPurementSocial(user = {}, transcription = "", typeAudio = "", historique = []) {
+  const texte = String(transcription || "").trim();
+  const type = String(typeAudio || "").toLowerCase().trim();
+
+  if (texte && contientQuestionAcademique(texte)) {
+    return null;
+  }
+
+  if (estSecondTourSalutation(historique, texte)) {
+    return {
+      reponse: genererRepriseApresBienEtre(user),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  if (type === "social") {
+    return {
+      reponse: construireReponseHumaineSimpleAudio(user, texte),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  if (texte && estMessagePurementSocial(texte)) {
+    return {
+      reponse: construireReponseHumaineSimpleAudio(user, texte),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  return null;
+}
+
+
 
 async function envoyerIndicateurFrappe(msgId) {
   try {
@@ -2551,6 +2655,17 @@ async function traiterAudio(user, msg, historique) {
   const transcriptionBrute = String(analyse?.transcription || "").trim();
   const transcription = normaliserTexteRelationnel(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
+
+  const audioSocial = traiterAudioPurementSocial(
+    user,
+    transcriptionBrute || transcription,
+    typeAudio,
+    historique
+  );
+
+  if (audioSocial) {
+    return audioSocial;
+  }
 
   // Vérifications sociales APRÈS l'analyse IA
   if (
