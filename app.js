@@ -2249,32 +2249,411 @@ function estReponseJourneeBienEtre(texte) {
          /(tout|ca|cela).*(s'est|s est|va).*(bien|tres bien|super)/.test(t);
 }
 
-async function expliquerImageAvecIA(user, base64Image, mimeType, historique) {
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    
-    const prompt = `Tu es Mwalimu EdTech, un précepteur numérique congolais. 
-Décris cette image de manière pédagogique et aide l'élève à comprendre ce qu'il voit. 
-Si c'est un exercice, explique la méthode sans donner directement la réponse.
-Si c'est un document, explique son contenu simplement.
-Sois encourageant et bienveillant.`;
 
-    const result = await model.generateContent([
-      { text: prompt },
-      {
-        inlineData: {
-          mimeType: mimeType,
-          data: base64Image
-        }
-      }
-    ]);
-    
-    const response = await result.response;
-    return response.text();
-  } catch (e) {
-    logError("expliquerImageAvecIA", e);
-    return "Désolé, je n'ai pas pu analyser cette image correctement. Peux-tu la décrire ou envoyer une photo plus nette ?";
+/* =========================================================
+   IMAGE : ROUTAGE INTELLIGENT
+========================================================= */
+function parserJsonImageRouting(brut = "") {
+  const txt = String(brut || "").trim();
+  if (!txt) return null;
+
+  try {
+    return JSON.parse(txt);
+  } catch {}
+
+  const sansFence = txt
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(sansFence);
+  } catch {}
+
+  const match = sansFence.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      return JSON.parse(match[0]);
+    } catch {}
   }
+
+  return null;
+}
+
+function imageQuestionNecessiteWeb(question = "") {
+  const q = normaliserTexteRelationnel(question);
+  if (!q) return false;
+
+  const indicesWeb = [
+    "loi", "code", "article", "constitution", "juridique", "droit",
+    "ohada", "impot", "taxe", "tribunal", "ordonnance", "journal officiel",
+    "rdc", "congo", "province", "territoire", "territoires",
+    "commune", "communes", "ville", "villes", "secteur", "chefferie",
+    "haut katanga", "haut-katanga", "actualite", "recent", "actuel",
+    "aujourd hui", "aujourd'hui"
+  ];
+
+  return indicesWeb.some((m) => q.includes(m));
+}
+
+async function analyserImagePourRoutage(user, base64Image, mimeType, historique = []) {
+  const fallback = {
+    transcription: "",
+    type: "incompris",
+    questionExtraite: "",
+    besoinWeb: false,
+    raison: "analyse_image_impossible"
+  };
+
+  const systemInstruction = `${construireSystemPrompt(user)}
+MODE ANALYSE IMAGE STRICTE :
+- Tu lis l'image, mais tu ne réponds pas encore à l'élève.
+- Réponds uniquement en JSON valide.
+- type possible : social, academique_simple, academique_web, non_academique, incompris.
+- social = petit message social visible : bonjour, bonsoir, merci, ok, bonne nuit, etc.
+- academique_simple = question, cours, exercice ou leçon traitable sans vérification web.
+- academique_web = question exigeant vérification externe : droit, loi, article, OHADA, fiscalité, actualité, géographie administrative RDC, données officielles.
+- non_academique = image exploitable mais sans vraie question scolaire ou académique.
+- incompris = image trop floue, illisible ou incompréhensible.
+- transcription = recopie courte et fidèle de ce qui est visible.
+- questionExtraite = question, exercice ou consigne utile à traiter.
+- besoinWeb = true seulement si une vérification externe est vraiment nécessaire.
+- N'invente jamais un mot, un chiffre, un énoncé, une loi ou une source absente de l'image.
+
+FORMAT EXACT ATTENDU :
+{
+  "transcription": "texte visible",
+  "type": "social|academique_simple|academique_web|non_academique|incompris",
+  "questionExtraite": "question utile",
+  "besoinWeb": false,
+  "raison": "raison courte"
+}`;
+
+  const prompt = `Analyse cette image pour Mwalimu.
+Renvoie uniquement le JSON demandé.
+Ne donne aucune explication hors JSON.`;
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      systemInstruction
+    });
+
+    const formattedHistory = historique.slice(-2).map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }]
+    }));
+
+    const result = await genererAvecRetry(model, {
+      contents: [
+        ...formattedHistory,
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType, data: base64Image } }
+          ]
+        }
+      ],
+      generationConfig: { temperature: 0 }
+    });
+
+    const response = await result.response;
+    const parsed = parserJsonImageRouting(response.text());
+
+    if (!parsed || typeof parsed !== "object") return fallback;
+
+    const transcription = String(parsed.transcription || "").trim();
+    const questionExtraite = String(parsed.questionExtraite || transcription || "").trim();
+    let type = String(parsed.type || "incompris").trim().toLowerCase();
+    let besoinWeb = Boolean(parsed.besoinWeb);
+
+    if (!questionExtraite && !transcription) {
+      type = "incompris";
+      besoinWeb = false;
+    }
+
+    if (questionExtraite && imageQuestionNecessiteWeb(questionExtraite)) {
+      besoinWeb = true;
+      if (type === "academique_simple") type = "academique_web";
+    }
+
+    return {
+      transcription,
+      type,
+      questionExtraite,
+      besoinWeb,
+      raison: String(parsed.raison || "").trim()
+    };
+  } catch (e) {
+    logError("analyser_image_pour_routage", e, { phone: user?.phone || "", mimeType });
+    return fallback;
+  }
+}
+
+function nettoyerFuitesContexteImage(texte = "") {
+  return String(texte || "")
+    .replace(/^.*contexte\s+web\s+brut.*$/gim, "")
+    .replace(/^.*contexte\s+web.*$/gim, "")
+    .replace(/^.*source\s+principale.*$/gim, "")
+    .replace(/^.*source\s+secondaire.*$/gim, "")
+    .replace(/^.*contexte\s+db.*$/gim, "")
+    .replace(/^.*base\s+de\s+données.*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function repondreImageNonAcademique(user, base64Image, mimeType, transcription = "", historique = []) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: `${construireSystemPrompt(user)}
+MODE IMAGE NON ACADÉMIQUE :
+- Réponds naturellement et brièvement.
+- Commence par dire que tu as bien reçu l'image.
+- Dis ce que tu peux observer sans inventer.
+- Demande à l'élève ce qu'il veut que tu expliques ou vérifies.
+- N'utilise pas la structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION.
+- Ne génère jamais le header Mwalimu, citation finale, ouverture finale ou mot d'encouragement final.`
+  });
+
+  const contents = [
+    ...historique.slice(-3).map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }]
+    })),
+    {
+      role: "user",
+      parts: [
+        {
+          text: `Image non académique reçue.
+Transcription/observation préalable : ${transcription || "Non précisée"}
+Réponds naturellement.`
+        },
+        { inlineData: { mimeType, data: base64Image } }
+      ]
+    }
+  ];
+
+  const reponse = await safeAI(async () => {
+    const r = await genererAvecRetry(model, {
+      contents,
+      generationConfig: { temperature: 0.15 }
+    });
+    return r.response.text();
+  }, "");
+
+  return nettoyerFuitesContexteImage(reponse);
+}
+
+async function repondreImageAcademiqueSansWeb(user, base64Image, mimeType, questionExtraite = "", transcription = "", historique = []) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: `${construireSystemPrompt(user)}
+MODE IMAGE ACADÉMIQUE SANS WEB :
+- Lis d'abord l'image.
+- Appuie-toi seulement sur ce qui est visible dans l'image.
+- Réponds comme un précepteur professionnel, humain et pédagogue.
+- Si c'est un exercice, explique la méthode avant la réponse finale.
+- N'utilise pas Google Search.
+- Ne parle jamais de contexte web, source principale, source secondaire, DB ou contexte brut.
+- Ne génère jamais le header Mwalimu.
+- Ne génère jamais la citation finale.
+- Ne génère jamais l'ouverture finale.
+- Ne génère jamais le mot d'encouragement final.
+- Structure obligatoire :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+- Dans [VÉCU], dis brièvement que tu as bien reçu l'image et rappelle l'énoncé utile.
+- Dans [CONSOLIDATION], pose une ou deux petites questions strictement liées à l'image.`
+  });
+
+  const contents = [
+    ...historique.slice(-4).map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }]
+    })),
+    {
+      role: "user",
+      parts: [
+        {
+          text: `Voici une image contenant un contenu académique.
+Transcription visible :
+${transcription || "Non précisée"}
+
+Question / exercice extrait :
+${questionExtraite || "Non précisé"}
+
+Réponds maintenant comme Mwalimu, sans utiliser le web.`
+        },
+        { inlineData: { mimeType, data: base64Image } }
+      ]
+    }
+  ];
+
+  const reponse = await safeAI(async () => {
+    const r = await genererAvecRetry(model, {
+      contents,
+      generationConfig: { temperature: 0.15 }
+    });
+    return r.response.text();
+  }, "");
+
+  return nettoyerFuitesContexteImage(reponse);
+}
+
+async function repondreImageAcademiqueAvecWeb(user, base64Image, mimeType, questionExtraite = "", transcription = "", historique = []) {
+  const contexteWeb = await chercherContexteWeb(questionExtraite || transcription, user, historique);
+  const fiche = await consulterBibliotheque(questionExtraite || transcription, user?.classe || "");
+
+  const blocDB = fiche
+    ? `Titre : ${fiche?.titre || "Sans titre"}
+Matière : ${fiche?.matiere || "Non précisée"}
+Classe : ${fiche?.classe || "Non précisée"}
+Contenu :
+${tronquerTexte(fiche?.contenu || "", 2500)}
+Commentaire IA :
+${tronquerTexte(fiche?.commentaire_ai || "", 1000)}`
+    : "Aucune fiche locale disponible.";
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: `${construireSystemPrompt(user)}
+MODE IMAGE ACADÉMIQUE AVEC WEB :
+- Lis d'abord l'image.
+- Utilise ensuite le contexte web seulement pour vérifier ou sécuriser la réponse.
+- Réponds comme un précepteur professionnel, pas comme un moteur de recherche.
+- Ne parle jamais de CONTEXTE WEB, SOURCE PRINCIPALE, SOURCE SECONDAIRE, DB ou contexte brut.
+- Si un texte juridique exact est fiable, tu peux le mentionner puis l'expliquer brièvement.
+- Ne génère jamais le header Mwalimu.
+- Ne génère jamais la citation finale.
+- Ne génère jamais l'ouverture finale.
+- Ne génère jamais le mot d'encouragement final.
+- Structure obligatoire :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+- Dans [VÉCU], dis brièvement que tu as bien reçu l'image et rappelle l'énoncé utile.
+- Dans [CONSOLIDATION], pose une ou deux petites questions strictement liées à l'image.`
+  });
+
+  const contents = [
+    ...historique.slice(-4).map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }]
+    })),
+    {
+      role: "user",
+      parts: [
+        {
+          text: `QUESTION EXTRAITE DE L'IMAGE :
+${questionExtraite || transcription || "Non précisé"}
+
+TRANSCRIPTION VISIBLE :
+${transcription || "Non précisée"}
+
+INFORMATIONS DE RÉFÉRENCE À UTILISER SANS LES NOMMER :
+${contexteWeb || "Aucune information web utile trouvée."}
+
+FICHE LOCALE À UTILISER SANS LA NOMMER :
+${blocDB}
+
+Réponds maintenant comme Mwalimu : réponse pédagogique, claire, fiable, sans afficher les étiquettes de contexte.`
+        },
+        { inlineData: { mimeType, data: base64Image } }
+      ]
+    }
+  ];
+
+  const reponse = await safeAI(async () => {
+    const r = await genererAvecRetry(model, {
+      contents,
+      generationConfig: { temperature: 0.15 }
+    });
+    return r.response.text();
+  }, "");
+
+  return nettoyerFuitesContexteImage(reponse);
+}
+
+async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
+  const analyse = await analyserImagePourRoutage(user, base64Image, mimeType, historique);
+
+  const transcription = String(analyse?.transcription || "").trim();
+  const questionExtraite = String(analyse?.questionExtraite || transcription || "").trim();
+  const typeImage = String(analyse?.type || "incompris").trim().toLowerCase();
+  const besoinWeb = Boolean(analyse?.besoinWeb) || imageQuestionNecessiteWeb(questionExtraite);
+
+  logInfo("image_routing", {
+    phone: user?.phone || "",
+    typeImage,
+    besoinWeb,
+    transcriptionPreview: tronquerTexte(transcription, 180),
+    questionPreview: tronquerTexte(questionExtraite, 180)
+  });
+
+  if (typeImage === "social") {
+    const rep = construireReponseHumaineSimple(user, questionExtraite || transcription || "bonjour");
+    return {
+      reponse: rep || "J'ai bien reçu ton image 😊",
+      bypassFormat: true
+    };
+  }
+
+  if (typeImage === "non_academique") {
+    const rep = await repondreImageNonAcademique(user, base64Image, mimeType, transcription, historique);
+    return {
+      reponse: rep || "J'ai bien reçu ton image. Dis-moi ce que tu veux que j'explique ou vérifie dans cette photo.",
+      bypassFormat: true
+    };
+  }
+
+  if (typeImage === "incompris" || !questionExtraite) {
+    return {
+      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Mais certains éléments sont flous ou difficiles à lire.
+🔴 [INSPIRATION] : Ce n'est pas grave ; nous pouvons reprendre calmement.
+❓ [CONSOLIDATION] : Envoie-moi une image plus nette, bien cadrée, ou écris la question ici.`,
+      bypassFormat: false
+    };
+  }
+
+  let reponse = "";
+
+  if (typeImage === "academique_web" || besoinWeb) {
+    reponse = await repondreImageAcademiqueAvecWeb(
+      user,
+      base64Image,
+      mimeType,
+      questionExtraite,
+      transcription,
+      historique
+    );
+  } else {
+    reponse = await repondreImageAcademiqueSansWeb(
+      user,
+      base64Image,
+      mimeType,
+      questionExtraite,
+      transcription,
+      historique
+    );
+  }
+
+  if (!reponse || !String(reponse).trim()) {
+    reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Je n'ai pas encore réussi à produire une explication claire.
+🔴 [INSPIRATION] : Nous pouvons reprendre cela simplement.
+❓ [CONSOLIDATION] : Renvoie l'image plus nette ou écris la question contenue dans la photo.`;
+  }
+
+  return {
+    reponse: nettoyerFuitesContexteImage(reponse),
+    bypassFormat: false
+  };
 }
 
 function construireMessageFinal(user, reponse, historique, question, fiche) {
@@ -2732,9 +3111,13 @@ async function traiterAudio(user, msg, historique) {
 ========================================================= */
 async function traiterImage(user, msg, historique) {
   const imageId = msg.image?.id;
+
   if (!imageId) {
     return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.\n🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.\n🔴 [INSPIRATION] : Nous allons y arriver.\n❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`,
+      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
+🔴 [INSPIRATION] : Nous allons y arriver.
+❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`,
       fiche: null,
       bypassFormat: false
     };
@@ -2745,20 +3128,26 @@ async function traiterImage(user, msg, historique) {
 
   if (!estMimeImageSupporte(mimeType)) {
     return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.\n🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.\n🔴 [INSPIRATION] : Ce n'est pas grave.\n❓ [CONSOLIDATION] : Envoie-moi une image en JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
+      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
+🔴 [INSPIRATION] : Ce n'est pas grave.
+❓ [CONSOLIDATION] : Envoie-moi une image en JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
       fiche: null,
       bypassFormat: false
     };
   }
 
   const base64Image = buffer.toString("base64");
-  let reponse = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
+  const resultat = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
 
-  if (!reponse || !String(reponse).trim()) {
-    reponse = `🔵 [VÉCU] : J'ai bien reçu ton image.\n🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.\n🔴 [INSPIRATION] : Nous pouvons reprendre calmement.\n❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`;
-  }
-
-  return { reponse, fiche: null, bypassFormat: false };
+  return {
+    reponse: resultat?.reponse || `🔵 [VÉCU] : J'ai bien reçu ton image.
+🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.
+🔴 [INSPIRATION] : Nous pouvons reprendre calmement.
+❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`,
+    fiche: null,
+    bypassFormat: Boolean(resultat?.bypassFormat)
+  };
 }
 
 /* =========================================================
