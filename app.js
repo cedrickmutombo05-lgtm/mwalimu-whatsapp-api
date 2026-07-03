@@ -1888,9 +1888,6 @@ function construireReponseHumaineSimple(user, texte) {
    AUDIO SOCIAL STRICT - SÉPARÉ DE L'AUDIO ACADÉMIQUE
 ========================================================= */
 function construireReponseHumaineSimpleAudio(user = {}, texte = "") {
-  const t = normaliserTexteRelationnel(texte);
-
-  // Pour tout vrai échange social, l'audio doit répondre comme le texte social
   const reponseTexteSociale = construireReponseHumaineSimple(user, texte);
 
   if (reponseTexteSociale && String(reponseTexteSociale).trim()) {
@@ -1898,13 +1895,10 @@ function construireReponseHumaineSimpleAudio(user = {}, texte = "") {
   }
 
   const prenom = premierPrenom(user?.nom || "");
-  const appel = prenom ? `**${prenom}**` : "toi";
+  const genre = genreEleve(user?.nom || "");
+  const appel = prenom ? `${genre} **${prenom}**` : "toi";
 
-  if (!t) {
-    return `J’ai bien reçu ton audio ${appel} 😊 Je t’écoute.`;
-  }
-
-  return `J’ai bien reçu ton audio ${appel} 😊 Dis-moi ce que tu veux faire maintenant.`;
+  return `J’ai bien reçu ton audio ${appel} 😊 Je t’écoute.`;
 }
 
 function construireResponseHumaineSimpleAudio(user = {}, texte = "") {
@@ -2256,6 +2250,73 @@ function imageQuestionNecessiteWeb(question = "") {
   return indicesWeb.some((m) => q.includes(m));
 }
 
+function texteImageAIndiceAcademiqueFort(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  const indicesForts = [
+    "exercice", "devoir", "interrogation", "question", "questions", "consigne",
+    "resous", "resoudre", "calcule", "calculer", "determine", "determiner",
+    "trouve", "trouver", "demontrer", "demontre", "demontration",
+    "equation", "inequation", "fraction", "racine", "puissance", "formule",
+    "probleme", "solution", "corrige", "correction", "definition", "definis",
+    "math", "maths", "physique", "chimie", "biologie", "svt",
+    "electricite", "mecanique", "electronique", "resistance des materiaux",
+    "comptabilite", "statistique", "algorithme", "algorithmique",
+    "grammaire", "conjugaison", "orthographe", "analyse grammaticale",
+    "droit", "loi", "article", "code", "ohada", "juridique",
+    "geographie", "histoire", "education civique"
+  ];
+
+  if (indicesForts.some((m) => t.includes(m))) return true;
+
+  // Signaux typiques d'un calcul ou d'une formule visible.
+  if (/\d+\s*[+\-*/×÷=]\s*\d+/.test(t)) return true;
+  if (/[a-z]\s*[+\-*/×÷=]\s*\d+/.test(t)) return true;
+  if (/\d+\s*[a-z]\s*[+\-=]/.test(t)) return true;
+
+  return false;
+}
+
+function texteImageAIndiceSocialOuAffiche(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  if (!t) return false;
+
+  const indicesSociaux = [
+    "bonjour", "bonsoir", "salut", "merci", "shalom", "bienvenue",
+    "invitation", "invite", "programme", "communique", "annonce", "affiche",
+    "culte", "eglise", "paroisse", "pasteur", "priere", "jeune et priere",
+    "reunion", "conference", "seminaire", "croisade", "cellule", "cellules",
+    "radio", "adresse", "avenue", "quartier", "dimanche", "vendredi", "mercredi",
+    "theme", "orateur", "heure", "h", "contact", "telephone", "evenement"
+  ];
+
+  return indicesSociaux.some((m) => t.includes(m));
+}
+
+function classerImageParGardeFou(transcription = "", questionExtraite = "", typeImage = "") {
+  const texte = `${transcription || ""} ${questionExtraite || ""}`.trim();
+  const type = String(typeImage || "incompris").toLowerCase().trim();
+
+  if (!texte) return type;
+
+  const academiqueFort = texteImageAIndiceAcademiqueFort(texte);
+  const socialOuAffiche = texteImageAIndiceSocialOuAffiche(texte);
+
+  // Priorité au social / affiche lorsque l'image ne contient pas un vrai exercice,
+  // une consigne scolaire ou une notion académique forte.
+  if (socialOuAffiche && !academiqueFort) return "non_academique";
+
+  // Si l'IA a classé académique mais qu'aucun indice académique fort n'existe,
+  // on évite le faux positif et on traite naturellement.
+  if ((type === "academique_simple" || type === "academique_web") && !academiqueFort) {
+    return "non_academique";
+  }
+
+  return type;
+}
+
+
 async function analyserImagePourRoutage(user, base64Image, mimeType, historique = []) {
   const fallback = {
     transcription: "",
@@ -2367,13 +2428,15 @@ async function repondreImageNonAcademique(user, base64Image, mimeType, transcrip
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     systemInstruction: `${construireSystemPrompt(user)}
-MODE IMAGE NON ACADÉMIQUE :
+MODE IMAGE NON ACADÉMIQUE / SOCIALE :
 - Réponds naturellement et brièvement.
 - Commence par dire que tu as bien reçu l'image.
-- Dis ce que tu peux observer sans inventer.
-- Demande à l'élève ce qu'il veut que tu expliques ou vérifies.
-- N'utilise pas la structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION.
-- Ne génère jamais le header Mwalimu, citation finale, ouverture finale ou mot d'encouragement final.`
+- Si c'est une affiche, une invitation, un programme, une annonce ou un communiqué, résume clairement les informations visibles : objet, jours, heures, lieu, activité, contacts.
+- Si c'est un simple message social, réponds comme dans une conversation humaine.
+- Ne transforme jamais une affiche, une invitation, un programme ou un communiqué en cours académique.
+- Ne mets jamais la structure VÉCU/SAVOIR/INSPIRATION/CONSOLIDATION pour une image sociale ou une affiche.
+- Ne génère jamais le header Mwalimu, citation finale, ouverture finale ou mot d'encouragement final.
+- Ne parle jamais de contexte web ou de source.`
   });
 
   const contents = [
@@ -2543,8 +2606,12 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
 
   const transcription = String(analyse?.transcription || "").trim();
   const questionExtraite = String(analyse?.questionExtraite || transcription || "").trim();
-  const typeImage = String(analyse?.type || "incompris").trim().toLowerCase();
+  let typeImage = String(analyse?.type || "incompris").trim().toLowerCase();
   const besoinWeb = Boolean(analyse?.besoinWeb) || imageQuestionNecessiteWeb(questionExtraite);
+
+  // GARDE-FOU DÉTERMINISTE : évite qu'une image sociale, une affiche,
+  // une invitation, un programme ou un communiqué soit traité comme un exercice.
+  typeImage = classerImageParGardeFou(transcription, questionExtraite, typeImage);
 
   logInfo("image_routing", {
     phone: user?.phone || "",
