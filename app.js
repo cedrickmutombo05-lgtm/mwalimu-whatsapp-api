@@ -529,16 +529,67 @@ function estMessagePurementSocial(texte = "") {
   const t = normaliserTexteRelationnel(texte);
   if (!t) return false;
 
-  if (/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)\b/i.test(t)) return true;
-  if (/^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|merci à toi|merci mwalimu|merci mon cher|je te remercie|je vous remercie|cimer|thanks|thx)\b/i.test(t)) return true;
-  if (/^(ok|okay|d accord|dac|dacc|oui|non|ca va|bien|super|cool|entendu|compris|parfait|tres bien|nickel|ca marche|ca va merci|pas de souci|pas de problème|a plus|a tantot|a toute|bye|tchao)\b/i.test(t)) return true;
-  if (/^(bonne nuit|fais de beaux reves|dors bien|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)\b/i.test(t)) return true;
+  const academiqueFort = [
+    /\bexplique\b/,
+    /\bexplique moi\b/,
+    /\bc est quoi\b/,
+    /\bqu est ce que\b/,
+    /\bcalcule\b/,
+    /\bcalculer\b/,
+    /\bresous\b/,
+    /\bresoudre\b/,
+    /\bequation\b/,
+    /\bexercice\b/,
+    /\bprobleme\b/,
+    /\bdevoir\b/,
+    /\bcorrige cet exercice\b/,
+    /\bcorrection de\b/,
+    /\bdefinition\b/,
+    /\bdefinis\b/,
+    /\bresume\b/,
+    /\bmath\b/,
+    /\bmaths\b/,
+    /\bphysique\b/,
+    /\bchimie\b/,
+    /\bgeographie\b/,
+    /\bhistoire\b/,
+    /\bfrancais\b/,
+    /\bdroit\b/,
+    /\bloi\b/,
+    /\barticle\b/,
+    /\bprovince\b/,
+    /\bterritoire\b/,
+    /\bcommune\b/,
+    /\bcours\b/,
+    /\blecon\b/,
+    /\bchapitre\b/
+  ];
+
+  const socialExplicite = [
+    /^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)\b/,
+    /^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|merci a toi|je te remercie|je vous remercie|thanks|thx)\b/,
+    /^(ok|okay|d accord|dac|dacc|oui|non|entendu|compris|parfait|tres bien|nickel|ca marche)$/,
+    /^(bonne nuit|fais de beaux reves|dors bien|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)\b/,
+    /\b(comment tu vas|comment vas tu|tu vas bien|vous allez bien|comment ca va|ca va|et toi|et vous)\b/,
+    /\b(je vais bien|je vais tres bien|je vais super bien|je me porte bien|je me porte tres bien|je me sens bien|ca va merci|bien merci|tranquille|tranquille merci|pas mal|au top|ca roule|imboko)\b/,
+    /\b(tu m ecoutes|m ecoutes|tu es la|tu es encore la|tu me suis|tu me lis|tu m entends)\b/,
+    /\b(je t ecoute|je suis la|vas y|continue|poursuis|reprends)\b/,
+    /\b(ce n est pas ca|ce n est pas la bonne maniere|ce n est pas la bonne facon|tu as mal repondu|mauvaise reponse|tu ne comprends pas|tu n as pas compris|reponds mieux|sois naturel|parle normalement)\b/,
+    /\b(c est bon|c est bien|pas de souci|pas de probleme|on continue|allons y|d accord on continue)\b/
+  ];
+
+  if (socialExplicite.some((regex) => regex.test(t))) {
+    const socialFort = /\b(comment tu vas|comment vas tu|tu vas bien|comment ca va|ca va|et toi|tu m ecoutes|tu es la)\b/.test(t);
+    if (socialFort) return true;
+    if (academiqueFort.some((regex) => regex.test(t))) return false;
+    return true;
+  }
+
   if (/^[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\s]+$/u.test(t)) return true;
-  if (/^(tu vas bien\??|comment vas-tu\??|comment tu vas\??|et toi\??|et vous\??|vous allez bien\??|comment ca va\??|ca va\??)$/i.test(t)) return true;
-  if (/^(je vais bien|je vais très bien|je vais tres bien|je vais super bien|je vais bien merci|je vais très bien merci|je vais tres bien merci|je vais super bien merci|je me porte bien|je me porte très bien|je me porte tres bien|je me porte super bien|je me porte bien merci|je me porte très bien merci|je me porte tres bien merci|je me sens bien|je me sens très bien|je me sens tres bien|je me sens super bien|je me sens bien merci|tranquille|tranquille merci|pas mal|pas mal merci|au top|au top merci|ça roule|ca roule|ça roule merci|ca roule merci|imboko|imboko merci|bien merci|bien et toi|bien et toi\?|je vais bien et toi|je vais bien et toi\?|je me porte bien et toi|je me porte bien et toi\?|je vais super bien et toi|je vais super bien et toi\?|oui je vais bien|oui je vais très bien|oui je vais tres bien|oui je me porte bien|oui ça va|oui ca va|oui ca va merci|oui ça va merci)$/i.test(t)) return true;
 
   return false;
 }
+
 
 function estMessageSalutation(texte = "") {
   const t = normaliserTexteRelationnel(texte);
@@ -1751,50 +1802,88 @@ Tu réponds à un message audio. Sois concis et pédagogique.`;
 function construireReponseHumaineSimple(user, texte) {
   const prenom = premierPrenom(user?.nom || "");
   const genre = genreEleve(user?.nom || "");
+  const appel = prenom ? `${genre} **${prenom}**` : "toi";
   const t = normaliserTexteRelationnel(texte);
-  
-  if (estMessageSalutation(texte)) {
-    const heure = new Date().getHours();
-    let salutation = "Bonjour";
-    if (heure >= 18 || heure < 5) salutation = "Bonsoir";
-    return `${salutation} ${genre} **${prenom}** ! 😊 Comment puis-je t'aider aujourd'hui ?`;
-  }
-  
-  if (estMessageRemerciement(texte)) {
-    return `Avec plaisir ${genre} **${prenom}** ! N'hésite pas si tu as d'autres questions.`;
+
+  if (!t) return null;
+
+  if (/\b(tu m ecoutes|m ecoutes|tu es la|tu es encore la|tu me suis|tu me lis|tu m entends)\b/.test(t)) {
+    return `Oui ${appel}, je t’écoute attentivement 😊 Dis-moi ce que tu veux faire maintenant.`;
   }
 
-  if (t.includes("bonne nuit") || t.includes("dors bien")) {
-    return `Bonne nuit ${genre} **${prenom}** ! 🌙 Repose-toi bien et à demain.`;
+  if (/\b(ce n est pas ca|ce n est pas la bonne maniere|ce n est pas la bonne facon|tu as mal repondu|mauvaise reponse|tu ne comprends pas|tu n as pas compris|reponds mieux|sois naturel|parle normalement)\b/.test(t)) {
+    return `Tu as raison ${appel}. Je reprends plus simplement et plus naturellement.`;
   }
 
-  if (t === "ok" || t === "okay" || t === "d accord" || t === "ok merci" || t === "okay merci") {
-    return "👍";
+  if (/\b(comment tu vas|comment vas tu|tu vas bien|vous allez bien|comment ca va|et toi|et vous)\b/.test(t)) {
+    const reponses = [
+      `Je vais bien, merci ${appel} 😊 Et toi, comment vas-tu ?`,
+      `Tout va bien de mon côté ${appel}, merci de demander 😊 Et toi ?`,
+      `Je vais très bien ${appel} 😊 Dis-moi aussi comment tu vas.`
+    ];
+    return pick(reponses);
   }
 
-  if (t === "ca va" || t === "ca va bien" || t === "ca va merci" || t === "je vais bien" || t === "je vais bien merci" || t === "je me porte bien") {
+  if (/\b(je vais bien|je vais tres bien|je vais super bien|je me porte bien|je me porte tres bien|je me sens bien|ca va merci|bien merci|tranquille|tranquille merci|pas mal|au top|ca roule|imboko)\b/.test(t)) {
     const accroches = [
-      `Tant mieux **${prenom}** ! 😊 Qu'est-ce que tu aimerais apprendre maintenant ?`,
-      `Je suis content de l'entendre **${prenom}** ! Quelle matière te tente aujourd'hui ?`,
-      `Heureux de te voir en forme **${prenom}** ! Dis-moi, que veux-tu réviser ?`
+      `Tant mieux ${appel} 😊 Qu’est-ce que tu aimerais apprendre maintenant ?`,
+      `Je suis content de l’entendre ${appel}. Quelle matière veux-tu revoir ?`,
+      `Heureux de te voir en forme ${appel}. Dis-moi ce que tu veux réviser.`
     ];
     return pick(accroches);
   }
 
+  if (estMessageSalutation(texte)) {
+    if (/^(bonsoir|bsr)\b/.test(t)) {
+      return `Bonsoir ${appel} 😊 Comment puis-je t’aider ce soir ?`;
+    }
+    if (/^(bonne nuit|dors bien|fais de beaux reves)\b/.test(t)) {
+      return `Bonne nuit ${appel} 🌙 Repose-toi bien.`;
+    }
+    if (/^(bonne soiree)\b/.test(t)) {
+      return `Bonne soirée ${appel} 🌙`;
+    }
+    if (/^(bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend)\b/.test(t)) {
+      return `Merci ${appel} 😊 À toi aussi.`;
+    }
+    if (/^(a demain|a bientot)\b/.test(t)) {
+      return `À bientôt ${appel} 👋`;
+    }
+    return `Bonjour ${appel} 😊 Comment puis-je t’aider aujourd’hui ?`;
+  }
+
+  if (estMessageRemerciement(texte)) {
+    const formules = [
+      `Avec plaisir ${appel} 😊`,
+      `Je t’en prie ${appel} 😊`,
+      `C’est normal ${appel}, je suis là pour t’aider.`
+    ];
+    return pick(formules);
+  }
+
+  if (/^(ok|okay|d accord|dac|dacc|entendu|compris|parfait|tres bien|ca marche)$/.test(t)) {
+    return `D’accord ${appel} 😊`;
+  }
+
   if (t === "oui") {
-    return `D'accord **${prenom}** ! Dis-m'en plus si tu veux.`;
+    return `D’accord ${appel}. Dis-m’en plus.`;
   }
 
   if (t === "non") {
-    return `D'accord **${prenom}**, pas de souci.`;
+    return `D’accord ${appel}, pas de souci.`;
   }
 
-  if (estMessagePurementSocial(texte) && texte.length < 30) {
-    return `Je t'écoute **${prenom}** 😊`;
+  if (/\b(c est bon|c est bien|pas de souci|pas de probleme|on continue|allons y)\b/.test(t)) {
+    return `Très bien ${appel} 😊 On continue.`;
+  }
+
+  if (estMessagePurementSocial(texte)) {
+    return `Je t’écoute ${appel} 😊`;
   }
 
   return null;
 }
+
 
 async function envoyerIndicateurFrappe(msgId) {
   try {
