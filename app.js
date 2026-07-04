@@ -2739,6 +2739,9 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
     message = `${HEADER_MWALIMU}\n────────────────\n${message}`;
   }
   
+  message = nettoyerDoublonsPedagogiques(message);
+  message = nettoyerFuitesContexteAcademique(message);
+
   return message.replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -3288,12 +3291,179 @@ function observerRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) 
   }
 }
 
+
+/* =========================================================
+   ROUTAGE ACADÉMIQUE ÉCRIT — PHASE 2 : QUESTION DE COURS
+   Activation limitée + anti-doublons
+========================================================= */
+function nettoyerFuitesContexteAcademique(texte = "") {
+  let t = String(texte || "");
+  t = t.replace(/\*?CONTEXTE\s+WEB\s+BRUT\s+ET\s+FIABLE\s*:?\*?/gi, "");
+  t = t.replace(/CONTEXTE\s+WEB\s*[—-]\s*SOURCE\s+PRINCIPALE\s*:?/gi, "");
+  t = t.replace(/CONTEXTE\s+WEB\s*:?/gi, "");
+  t = t.replace(/CONTEXTE\s+DB\s*[—-]\s*SECONDAIRE\s*:?/gi, "");
+  t = t.replace(/SOURCE\s+PRINCIPALE\s*:?/gi, "");
+  t = t.replace(/SOURCE\s+SECONDAIRE\s*:?/gi, "");
+  t = t.replace(/Aucune information web utile trouvée\.?/gi, "");
+  t = t.replace(/^\s*Titre\s*:.*$/gim, "");
+  t = t.replace(/^\s*Matière\s*:.*$/gim, "");
+  t = t.replace(/^\s*Classe\s*:.*$/gim, "");
+  return t.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function nettoyerDoublonsPedagogiques(texte = "") {
+  let t = String(texte || "").trim();
+  if (!t) return "";
+
+  const sections = [
+    { key: "VECU", rx: /🔵\s*\[VÉCU\]\s*:?/gi, label: "🔵 [VÉCU] :" },
+    { key: "SAVOIR", rx: /🟡\s*\[SAVOIR\]\s*:?/gi, label: "🟡 [SAVOIR] :" },
+    { key: "INSPIRATION", rx: /🔴\s*\[INSPIRATION\]\s*:?/gi, label: "🔴 [INSPIRATION] :" },
+    { key: "CONSOLIDATION", rx: /❓\s*\[CONSOLIDATION\]\s*:?/gi, label: "❓ [CONSOLIDATION] :" }
+  ];
+
+  for (const section of sections) {
+    let seen = false;
+    t = t.replace(section.rx, () => {
+      if (!seen) {
+        seen = true;
+        return section.label;
+      }
+      return `__MWALIMU_DUP_${section.key}__`;
+    });
+  }
+
+  t = t.replace(/__MWALIMU_DUP_(VECU|SAVOIR|INSPIRATION|CONSOLIDATION)__[\s\S]*?(?=🔵\s*\[VÉCU\]|🟡\s*\[SAVOIR\]|🔴\s*\[INSPIRATION\]|❓\s*\[CONSOLIDATION\]|👉|🌟|\*\*\*«|$)/gi, "");
+
+  const lignes = t.split("\n");
+  const sorties = [];
+  let headerDejaVu = false;
+  let ouvertureDejaVue = false;
+  let encouragementDejaVu = false;
+  let citationDejaVue = false;
+
+  for (const ligne of lignes) {
+    const l = String(ligne || "").trim();
+    const n = l.toLowerCase();
+    if (!l) {
+      if (sorties[sorties.length - 1] !== "") sorties.push("");
+      continue;
+    }
+    if (/mwalimu edtech\s*:\s*ton mentor/i.test(l)) {
+      if (headerDejaVu) continue;
+      headerDejaVu = true;
+    }
+    if (/^👉/.test(l)) {
+      if (ouvertureDejaVue) continue;
+      ouvertureDejaVue = true;
+    }
+    if (/^🌟\s*mot d['’]encouragement/i.test(l)) {
+      if (encouragementDejaVu) continue;
+      encouragementDejaVu = true;
+    }
+    if (/^\*\*\*«/.test(l)) {
+      if (citationDejaVue) continue;
+      citationDejaVue = true;
+    }
+    if (sorties.length && sorties[sorties.length - 1].trim().toLowerCase() === n) continue;
+    sorties.push(ligne.trimEnd());
+  }
+
+  return sorties.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function traiterQuestionDeCoursActivee(user, texteUtilisateur, historique = [], detection = {}) {
+  const matiere = detection?.matiere || "general";
+  const systemInstruction = `${construireSystemPrompt(user)}
+MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
+- Tu réponds uniquement à une question de cours ou de définition.
+- N'utilise pas Google Search.
+- Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
+- Réponds comme un précepteur professionnel, simple, clair et humain.
+- Donne une définition courte, puis une explication, puis un exemple concret.
+- Ne sois pas bavard.
+- Ne génère jamais le header Mwalimu.
+- Ne génère jamais de citation finale.
+- Ne génère jamais d'ouverture finale.
+- Ne génère jamais de mot d'encouragement final.
+- Structure obligatoire, une seule fois chacune :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+- La consolidation doit contenir une seule petite question directement liée à la notion.`;
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction
+  });
+
+  const contents = [
+    ...toGeminiContents(historique.slice(-6)),
+    {
+      role: "user",
+      parts: [
+        {
+          text: `Question de cours détectée.
+Matière détectée : ${matiere}
+Question de l'élève : ${texteUtilisateur}
+
+Réponds avec la structure Mwalimu, sans doublons.`
+        }
+      ]
+    }
+  ];
+
+  const reponse = await safeAI(async () => {
+    const r = await genererAvecRetry(model, {
+      contents,
+      generationConfig: { temperature: 0.15 }
+    });
+    return r.response.text();
+  }, `🔵 [VÉCU] : J'ai bien reçu ta question.
+🟡 [SAVOIR] : C'est une notion de cours. Reprenons-la simplement.
+🔴 [INSPIRATION] : Comprendre les bases aide à progresser avec confiance.
+❓ [CONSOLIDATION] : Peux-tu reformuler cette notion avec tes propres mots ?`);
+
+  return nettoyerDoublonsPedagogiques(
+    nettoyerFuitesContexteAcademique(reponse)
+  );
+}
+
 /* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  // Phase 1 : observation uniquement. Ne modifie aucune réponse envoyée à l'élève.
-  observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
+  // Phase 2 limitée : question_de_cours active. Le reste reste en observation seulement.
+  const detectionAcademiqueEcrite = observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
+
+  if (detectionAcademiqueEcrite?.route === "question_de_cours") {
+    const cacheKeyCours = makeCacheKey(user, `question_de_cours|${texteUtilisateur}`);
+    const cachedCours = getCache(cacheKeyCours);
+    if (cachedCours) {
+      logInfo("cache_hit_question_de_cours", { phone: user?.phone || "", cacheKey: cacheKeyCours });
+      return { reponse: cachedCours, fiche: null, bypassFormat: false };
+    }
+
+    const reponseCours = await traiterQuestionDeCoursActivee(
+      user,
+      texteUtilisateur,
+      historique,
+      detectionAcademiqueEcrite
+    );
+
+    if (reponseCours && String(reponseCours).trim()) {
+      setCache(cacheKeyCours, reponseCours);
+    }
+
+    logInfo("routage_academique_question_de_cours_active", {
+      phone: user?.phone || "",
+      matiere: detectionAcademiqueEcrite.matiere,
+      preview: tronquerTexte(texteUtilisateur, 160)
+    });
+
+    return { reponse: reponseCours, fiche: null, bypassFormat: false };
+  }
 
   if (
     dernierMessageEstInvitationChoixMatiere(historique) &&
