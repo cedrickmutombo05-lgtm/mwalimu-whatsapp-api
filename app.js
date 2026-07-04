@@ -2757,7 +2757,16 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
     bypassFormat: false
   };
 }
-
+function harmoniserEspacesBlocsPedagogiques(texte = "") {
+  return String(texte || "")
+    .replace(/🔵\s*\[VÉCU\]\s*:?\s*/gi, "🔵 [VÉCU] : ")
+    .replace(/🟡\s*\[SAVOIR\]\s*:?\s*/gi, "🟡 [SAVOIR] : ")
+    .replace(/🔴\s*\[INSPIRATION\]\s*:?\s*/gi, "🔴 [INSPIRATION] : ")
+    .replace(/❓\s*\[CONSOLIDATION\]\s*:?\s*/gi, "❓ [CONSOLIDATION] : ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 function construireMessageFinal(user, reponse, historique, question, fiche) {
   let message = reponse;
   
