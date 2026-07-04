@@ -3565,6 +3565,48 @@ Réponds comme Mwalimu : explique la méthode, démarre la résolution, mais ne 
   );
 }
 
+
+/* =========================================================
+   QUESTION DE COURS : ACTIVATION PRUDENTE
+========================================================= */
+async function traiterQuestionDeCoursActivee(user, texteUtilisateur, historique = [], routage = {}) {
+  const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
+  const matiere = routage?.matiere || detecterMatierePrincipale(texteUtilisateur, "");
+
+  const consigne = `MODE QUESTION DE COURS ACTIVÉE :
+- Réponds comme un précepteur professionnel, humain et pédagogique.
+- Explique clairement la notion demandée.
+- Utilise un exemple simple de la vie courante.
+- Ne réponds pas comme un moteur de recherche.
+- N'utilise pas Google Search sauf si la question exige une information externe fiable.
+- Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
+- Ne génère jamais le header Mwalimu.
+- Ne génère jamais de citation finale.
+- Ne génère jamais d'ouverture finale.
+- Ne génère jamais de mot d'encouragement final.
+- Structure obligatoire, une seule fois chacune :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+- Dans [CONSOLIDATION], pose une seule question directement liée à la notion principale.
+- Matière détectée : ${matiere}.`;
+
+  const reponse = await construireReponseDbWebIa(
+    user,
+    texteUtilisateur,
+    historique,
+    fiche,
+    consigne
+  );
+
+  return nettoyerFuitesContexteAcademique(
+    nettoyerDoublonsPedagogiques(
+      normaliserBalisesPedagogiques(String(reponse || ""))
+    )
+  );
+}
+
 /* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
