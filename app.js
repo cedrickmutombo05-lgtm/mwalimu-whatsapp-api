@@ -1044,24 +1044,49 @@ function retirerCitationsFinales(texte = "") {
     .trim();
 }
 
+
+function normaliserBalisesPedagogiques(texte = "") {
+  return String(texte || "")
+    .replace(/🔵\s*\*\*\s*\[VÉCU\]\s*\*\*\s*:?\s*/gi, "🔵 [VÉCU] : ")
+    .replace(/🟡\s*\*\*\s*\[SAVOIR\]\s*\*\*\s*:?\s*/gi, "🟡 [SAVOIR] : ")
+    .replace(/🔴\s*\*\*\s*\[INSPIRATION\]\s*\*\*\s*:?\s*/gi, "🔴 [INSPIRATION] : ")
+    .replace(/❓\s*\*\*\s*\[CONSOLIDATION\]\s*\*\*\s*:?\s*/gi, "❓ [CONSOLIDATION] : ")
+    .replace(/🔵\s*\[VÉCU\]\s*:?\s*/gi, "🔵 [VÉCU] : ")
+    .replace(/🟡\s*\[SAVOIR\]\s*:?\s*/gi, "🟡 [SAVOIR] : ")
+    .replace(/🔴\s*\[INSPIRATION\]\s*:?\s*/gi, "🔴 [INSPIRATION] : ")
+    .replace(/❓\s*\[CONSOLIDATION\]\s*:?\s*/gi, "❓ [CONSOLIDATION] : ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function harmoniserEspacesBlocsPedagogiques(texte = "") {
+  return normaliserBalisesPedagogiques(texte);
+}
+
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
-  let t = String(corps || "").trim();
+  let t = normaliserBalisesPedagogiques(corps);
+
   const aVecu = /🔵\s*\[VÉCU\]/i.test(t);
   const aSavoir = /🟡\s*\[SAVOIR\]/i.test(t);
   const aInspiration = /🔴\s*\[INSPIRATION\]/i.test(t);
   const aConsolidation = /❓\s*\[CONSOLIDATION\]/i.test(t);
+
   if (aVecu && aSavoir && aInspiration && aConsolidation) return t;
+
   const vecu = aVecu ? "" : construireVecuNaturel(user, question, historique);
   const savoir = aSavoir ? "" : "🟡 [SAVOIR] : Voici l'idée essentielle à retenir.";
   const inspiration = aInspiration ? "" : "🔴 [INSPIRATION] : Une notion bien comprise te rend plus solide.";
   const consolidation = aConsolidation ? "" : "❓ [CONSOLIDATION] : Dis-moi maintenant ce que tu retiens.";
+
   const morceaux = [];
   if (!aVecu) morceaux.push(vecu);
   morceaux.push(t);
   if (!aSavoir) morceaux.push(savoir);
   if (!aInspiration) morceaux.push(inspiration);
   if (!aConsolidation) morceaux.push(consolidation);
-  return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+
+  return normaliserBalisesPedagogiques(morceaux.join("\n\n"));
 }
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
@@ -2757,23 +2782,20 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
     bypassFormat: false
   };
 }
-function harmoniserEspacesBlocsPedagogiques(texte = "") {
-  return String(texte || "")
-    .replace(/🔵\s*\[VÉCU\]\s*:?\s*/gi, "🔵 [VÉCU] : ")
-    .replace(/🟡\s*\[SAVOIR\]\s*:?\s*/gi, "🟡 [SAVOIR] : ")
-    .replace(/🔴\s*\[INSPIRATION\]\s*:?\s*/gi, "🔴 [INSPIRATION] : ")
-    .replace(/❓\s*\[CONSOLIDATION\]\s*:?\s*/gi, "❓ [CONSOLIDATION] : ")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+
 function construireMessageFinal(user, reponse, historique, question, fiche) {
-  let message = reponse;
+  let message = normaliserBalisesPedagogiques(reponse);
   
-  const resultat = appliquerLes4EtapesScientifiques(reponse, question, fiche);
-  message = resultat.texte;
+  const resultat = appliquerLes4EtapesScientifiques(message, question, fiche);
+  message = normaliserBalisesPedagogiques(resultat.texte);
   
-  if (!/🔵\s*\[VÉCU\]/.test(message)) {
+  const structureComplete =
+    /🔵\s*\[VÉCU\]/i.test(message) &&
+    /🟡\s*\[SAVOIR\]/i.test(message) &&
+    /🔴\s*\[INSPIRATION\]/i.test(message) &&
+    /❓\s*\[CONSOLIDATION\]/i.test(message);
+
+  if (!structureComplete) {
     message = verifierStructureMwalimu(message, user, historique, question);
   }
   
@@ -3375,7 +3397,7 @@ function nettoyerFuitesContexteAcademique(texte = "") {
 }
 
 function nettoyerDoublonsPedagogiques(texte = "") {
-  let t = String(texte || "").trim();
+  let t = normaliserBalisesPedagogiques(texte);
   if (!t) return "";
 
   const sections = [
@@ -3408,146 +3430,42 @@ function nettoyerDoublonsPedagogiques(texte = "") {
   for (const ligne of lignes) {
     const l = String(ligne || "").trim();
     const n = l.toLowerCase();
+
     if (!l) {
       if (sorties[sorties.length - 1] !== "") sorties.push("");
       continue;
     }
+
     if (/mwalimu edtech\s*:\s*ton mentor/i.test(l)) {
       if (headerDejaVu) continue;
       headerDejaVu = true;
     }
-    if (/^👉/.test(l)) {
+
+    if (l.startsWith("👉")) {
       if (ouvertureDejaVue) continue;
       ouvertureDejaVue = true;
     }
-    if (/^🌟\s*mot d['’]encouragement/i.test(l)) {
+
+    if (l.startsWith("🌟")) {
       if (encouragementDejaVu) continue;
-      encouragementDejaVu = true;
+      encouragementDejaVue = true;
     }
+
     if (/^\*\*\*«/.test(l)) {
       if (citationDejaVue) continue;
       citationDejaVue = true;
     }
-    if (sorties.length && sorties[sorties.length - 1].trim().toLowerCase() === n) continue;
+
+    if (n.includes("voici l'idée essentielle à retenir") && sorties.some(x => x.includes("🟡 [SAVOIR]"))) continue;
+    if (n.includes("une notion bien comprise te rend plus solide") && sorties.some(x => x.includes("🔴 [INSPIRATION]"))) continue;
+    if (n.includes("résume avec tes mots l'idée principale de general") && sorties.some(x => x.includes("❓ [CONSOLIDATION]"))) continue;
+
     sorties.push(ligne.trimEnd());
   }
 
-  return sorties.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return normaliserBalisesPedagogiques(sorties.join("\n"));
 }
 
-async function traiterQuestionDeCoursActivee(user, texteUtilisateur, historique = [], detection = {}) {
-  const matiere = detection?.matiere || "general";
-  const systemInstruction = `${construireSystemPrompt(user)}
-MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
-- Tu réponds uniquement à une question de cours ou de définition.
-- N'utilise pas Google Search.
-- FIDÉLITÉ ABSOLUE À L'ÉNONCÉ : avant toute explication, recopie l'énoncé reçu exactement.
-- Interdiction de modifier un signe, un exposant, une lettre, une inconnue, un coefficient ou une unité.
-- Interdiction de transformer par exemple 2x en 2, x² en x, + en -, ou d'oublier un terme.
-- Si l'énoncé contient une équation du second degré, ne la traite jamais comme une équation simple du premier degré.
-- Si l'énoncé est ambigu, demande une précision au lieu de corriger ou d'inventer.
-- Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
-- Réponds comme un précepteur professionnel, simple, clair et humain.
-- Donne une définition courte, puis une explication, puis un exemple concret.
-- Ne sois pas bavard.
-- Ne génère jamais le header Mwalimu.
-- Ne génère jamais de citation finale.
-- Ne génère jamais d'ouverture finale.
-- Ne génère jamais de mot d'encouragement final.
-- Structure obligatoire, une seule fois chacune :
-🔵 [VÉCU]
-🟡 [SAVOIR]
-🔴 [INSPIRATION]
-❓ [CONSOLIDATION]
-- La consolidation doit contenir une seule petite question directement liée à la notion.`;
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction
-  });
-
-  const contents = [
-    ...toGeminiContents(historique.slice(-6)),
-    {
-      role: "user",
-      parts: [
-        {
-          text: `Question de cours détectée.
-Matière détectée : ${matiere}
-Question de l'élève : ${texteUtilisateur}
-
-Réponds avec la structure Mwalimu, sans doublons.`
-        }
-      ]
-    }
-  ];
-
-  const reponse = await safeAI(async () => {
-    const r = await genererAvecRetry(model, {
-      contents,
-      generationConfig: { temperature: 0.15 }
-    });
-    return r.response.text();
-  }, `🔵 [VÉCU] : J'ai bien reçu ta question.
-🟡 [SAVOIR] : C'est une notion de cours. Reprenons-la simplement.
-🔴 [INSPIRATION] : Comprendre les bases aide à progresser avec confiance.
-❓ [CONSOLIDATION] : Peux-tu reformuler cette notion avec tes propres mots ?`);
-
-  return nettoyerDoublonsPedagogiques(
-    nettoyerFuitesContexteAcademique(reponse)
-  );
-}
-
-
-
-/* =========================================================
-   ROUTAGE ACADÉMIQUE ÉCRIT — PHASE 3 : EXERCICE À RÉSOLUTION
-   Activation limitée : méthode + démarrage, sans réponse finale directe
-========================================================= */
-
-function extraireEquationOuEnonceCourt(texte = "") {
-  const brut = String(texte || "").trim();
-  if (!brut) return "";
-
-  const stopWords = [
-    "aide-moi", "aide moi", "aidez-moi", "aidez moi", "tu peux", "peux-tu", "peux tu",
-    "s'il te plait", "s il te plait", "svp", "stp", "explique", "explique-moi", "explique moi",
-    "resous", "résous", "resoudre", "résoudre", "calcule", "calcule-moi", "calcule moi",
-    "comment", "merci"
-  ];
-
-  let segment = brut;
-  const normalise = retirerAccents(brut.toLowerCase());
-  let cutIndex = -1;
-
-  for (const mot of stopWords) {
-    const m = retirerAccents(mot.toLowerCase());
-    const idx = normalise.indexOf(m);
-    if (idx > 0 && (cutIndex === -1 || idx < cutIndex)) {
-      cutIndex = idx;
-    }
-  }
-
-  if (cutIndex > 0) {
-    segment = brut.slice(0, cutIndex).trim();
-  }
-
-  const equation = segment.match(/([0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+?)\s*=\s*([0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+)/);
-  if (equation && equation[1] && equation[2]) {
-    const gauche = equation[1].replace(/\s+/g, " ").trim();
-    const droite = equation[2]
-      .replace(/\s+/g, " ")
-      .replace(/[,;:.!?]+$/g, "")
-      .trim();
-
-    if (gauche && droite) return `${gauche} = ${droite}`;
-  }
-
-  return segment
-    .replace(/\s+/g, " ")
-    .replace(/[,;:.!?]+$/g, "")
-    .trim();
-}
 
 function imposerEnonceExactExercice(reponse = "", enonceExact = "") {
   let t = String(reponse || "").trim();
