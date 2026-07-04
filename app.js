@@ -2171,13 +2171,10 @@ async function logUnansweredQuestion(user, texte, type, reason) {
   });
 }
 
-async function resetStudentAttempt(phone, sujet) {
+async function resetStudentAttempt(phone, sujet = "") {
   try {
     await pool.query(
-      `INSERT INTO student_attempts (phone, sujet, attempts) 
-       VALUES ($1, $2, 1) 
-       ON CONFLICT (phone, sujet) 
-       DO UPDATE SET attempts = student_attempts.attempts + 1, updated_at = NOW()`,
+      `DELETE FROM student_attempts WHERE phone = $1 AND sujet = $2`,
       [phone, sujet]
     );
   } catch (e) {
@@ -2993,7 +2990,7 @@ const MATIERES_ACADEMIQUES_ECRITES = {
     famille: "resolution",
     besoinWeb: false,
     mots: ["math", "maths", "mathematique", "mathematiques", "equation", "inequation", "calcul", "fraction", "racine", "puissance", "geometrie", "algebre", "fonction", "derivee", "integrale", "polynome"],
-    symboles: [/[a-zA-Z]\s*[+\-*/=]\s*[a-zA-Z0-9]/, /\d+\s*[+\-*/=]\s*[a-zA-Z0-9]/, /x²|x\^2|√|\bdelta\b|\bcos\b|\bsin\b|\btan\b/i]
+    symboles: [/\d+\s*[+*/=]\s*[a-zA-Z0-9]/, /\b[xXyY]\s*[+*/=]\s*[a-zA-Z0-9]/, /[a-zA-Z0-9]\s*=\s*[a-zA-Z0-9]/, /x²|x\^2|√|\bdelta\b|\bcos\b|\bsin\b|\btan\b/i]
   },
   francais: {
     famille: "cours",
@@ -3082,9 +3079,9 @@ function detecterIntentionAcademiqueEcrite(texte = "") {
   const demandeAide = /\b(aide moi|aide-moi|peux tu m aider|tu peux m aider|aidez moi|aidez-moi|explique|explique moi|resous|résous|resoudre|résoudre|calcule|calculer|comment faire|donne moi|tu peux me donner)\b/i.test(t);
   const demandeDefinition = /\b(qu est ce que|c est quoi|definition|définition|definis|définis|explique|explique moi|resume|résume|difference entre|quelle est la difference)\b/i.test(t);
   const formeQuestion = /\?$/.test(brut.trim()) || /\b(qui|que|quoi|quand|ou|où|pourquoi|comment|combien|quel|quelle|quels|quelles)\b/i.test(t);
-  const symbolesResolution = /[a-zA-Z]\s*[+\-*/=]\s*[a-zA-Z0-9]/.test(brut) || /\d+\s*[+\-*/=]\s*[a-zA-Z0-9]/.test(brut) || /\d+\s*(v|a|ohm|ω|n|kg|m\/s|m2|m²|cm2|cm²|usd|fc|cdf)\b/i.test(brut);
+  const symbolesResolution = /\d+\s*[+*/=]\s*[a-zA-Z0-9]/.test(brut) || /\b[xXyY]\s*[+*/=]\s*[a-zA-Z0-9]/.test(brut) || /[a-zA-Z0-9]\s*=\s*[a-zA-Z0-9]/.test(brut) || /\d+\s*(v|a|ohm|ω|n|kg|m\/s|m2|m²|cm2|cm²|usd|fc|cdf)\b/i.test(brut);
   const procedureResolution = /\b(exercice|devoir|probleme|problème|resous|résous|resoudre|résoudre|calcule|calculer|trouve|determiner|déterminer|demontrer|démontrer|simplifie|developpe|développe|factorise|corrige|correction)\b/i.test(t);
-  const reponseExplicite = /^(ma reponse|ma réponse|voici ma reponse|voici ma réponse|j ai trouve|j ai trouvé|je trouve|cela donne|ca donne|ça donne|la reponse est|la réponse est|reponse|réponse)\b/i.test(t);
+  const reponseExplicite = /^(ma reponse|voici ma reponse|j ai trouve|je trouve|j obtiens|j ai obtenu|cela donne|ca donne|la reponse est|le resultat est|mon resultat est|reponse)\b/i.test(t);
 
   return {
     demandeAide,
@@ -3175,7 +3172,6 @@ function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) 
   const t = nettoyerPourDetectionAcademique(texte);
   const matiereDetectee = detecterMatiereAcademiqueEcrite(texte);
   const web = detecterQuestionJuridiqueOuWebEcrite(texte, matiereDetectee);
-  const intention = detecterIntentionAcademiqueEcrite(texte);
 
   const resultat = {
     mode: "observation_seulement",
@@ -3205,7 +3201,7 @@ function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) 
     return resultat;
   }
 
-  // Les questions qui exigent une source externe passent avant la logique réponse élève.
+  // 1) Questions nécessitant une vérification externe : droit, OHADA, RDC, géographie administrative, actualité.
   if (web.besoinWeb) {
     resultat.route = web.famille;
     resultat.confiance = "forte";
@@ -3213,18 +3209,21 @@ function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) 
     return resultat;
   }
 
-  // Les exercices détectés par symboles, procédure ou famille résolution passent avant réponse élève.
-  if (detecterExerciceAResolutionEcrit(texte, matiereDetectee)) {
-    resultat.route = "exercice_a_resolution";
-    resultat.exerciceAResolution = true;
-    resultat.reponseEleve = false;
+  // 2) Réponse explicite de l'élève : à traiter avant les exercices.
+  // Exemple : "Ma réponse est x=2" ne doit pas devenir un nouvel exercice.
+  if (detecterReponseEleveEcrite(texte, historique)) {
+    resultat.route = "reponse_eleve";
+    resultat.reponseEleve = true;
+    resultat.exerciceAResolution = false;
     resultat.besoinWeb = false;
     resultat.familleWeb = "sans_web";
     resultat.confiance = "forte";
-    resultat.raison = "Exercice ou procédure de résolution détecté";
+    resultat.raison = "Réponse proposée par l'élève";
     return resultat;
   }
 
+  // 3) Question de cours / définition : avant les exercices.
+  // Cela évite que "qu'est-ce" ou "est-ce" soient pris pour des signes mathématiques.
   if (detecterQuestionDeCoursEcrite(texte, matiereDetectee)) {
     resultat.route = "question_de_cours";
     resultat.exerciceAResolution = false;
@@ -3236,11 +3235,15 @@ function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) 
     return resultat;
   }
 
-  if (detecterReponseEleveEcrite(texte, historique)) {
-    resultat.route = "reponse_eleve";
-    resultat.reponseEleve = true;
-    resultat.confiance = "moyenne";
-    resultat.raison = "Le message ressemble à une réponse proposée par l'élève";
+  // 4) Exercice à résolution : calcul, équation, procédure technique, comptabilité, sciences, etc.
+  if (detecterExerciceAResolutionEcrit(texte, matiereDetectee)) {
+    resultat.route = "exercice_a_resolution";
+    resultat.exerciceAResolution = true;
+    resultat.reponseEleve = false;
+    resultat.besoinWeb = false;
+    resultat.familleWeb = "sans_web";
+    resultat.confiance = "forte";
+    resultat.raison = "Exercice ou procédure de résolution détecté";
     return resultat;
   }
 
