@@ -3108,6 +3108,31 @@ function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) 
   const t = nettoyerPourDetectionAcademique(texte);
   const matiereDetectee = detecterMatiereAcademiqueEcrite(texte);
   const web = detecterQuestionJuridiqueOuWebEcrite(texte);
+   const texteBrut = String(texte || "").trim();
+const texteNormalise = normaliserTexteRelationnel(texteBrut);
+
+const demandeAide =
+  /\b(aide moi|aide-moi|peux tu m aider|tu peux m aider|explique|resous|résous|calcule|comment faire)\b/i.test(texteNormalise);
+
+const contientEquationOuCalcul =
+  /[a-zA-Z]\s*[+\-*/=]\s*[a-zA-Z0-9]/.test(texteBrut) ||
+  /\d+\s*[+\-*/=]\s*[a-zA-Z0-9]/.test(texteBrut) ||
+  /\b\d+\s*x\b/i.test(texteBrut);
+
+if (demandeAide && contientEquationOuCalcul) {
+  return {
+    route: "exercice_a_resolution",
+    matiere: "mathematiques",
+    besoinWeb: false,
+    familleWeb: "sans_web",
+    exerciceAResolution: true,
+    reponseEleve: false,
+    consolidationEnSouffrance: false,
+    confiance: "forte",
+    raison: "Demande d'aide sur une équation ou un calcul.",
+    preview: texteBrut.slice(0, 120)
+  };
+}
 
   const resultat = {
     mode: "observation_seulement",
