@@ -3430,6 +3430,81 @@ Réponds avec la structure Mwalimu, sans doublons.`
   );
 }
 
+
+
+/* =========================================================
+   ROUTAGE ACADÉMIQUE ÉCRIT — PHASE 3 : EXERCICE À RÉSOLUTION
+   Activation limitée : méthode + démarrage, sans réponse finale directe
+========================================================= */
+function nettoyerReponseExerciceAResolution(texte = "") {
+  let t = nettoyerFuitesContexteAcademique(texte);
+  t = nettoyerDoublonsPedagogiques(t);
+  t = t.replace(/\b(?:donc|ainsi),?\s*(?:la\s+)?r[ée]ponse\s+finale\s+est\s*:?\s*.*$/gim, "");
+  t = t.replace(/\b(?:solution\s+finale|r[ée]sultat\s+final)\s*:?\s*.*$/gim, "");
+  return t.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function traiterExerciceAResolutionActive(user, texteUtilisateur, historique = [], detection = {}) {
+  const matiere = detection?.matiere || "general";
+
+  const systemInstruction = `${construireSystemPrompt(user)}
+MODE EXERCICE À RÉSOLUTION — ACTIVATION PRUDENTE :
+- Tu traites uniquement un exercice, un devoir, un calcul ou une procédure à résoudre.
+- Matières possibles : maths, physique, chimie, électricité, mécanique, résistance des matériaux, électronique, comptabilité, statistique, algorithmique, économie quantitative, sciences techniques.
+- N'utilise pas Google Search.
+- Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
+- Réponds comme un précepteur professionnel, simple, clair et humain.
+- Explique la méthode pas à pas.
+- Montre seulement le démarrage utile ou la première étape importante.
+- Ne donne pas directement toute la réponse finale.
+- Termine en demandant à l'élève de continuer ou de proposer sa réponse.
+- Si l'exercice est ambigu, demande une précision au lieu d'inventer.
+- Ne génère jamais le header Mwalimu.
+- Ne génère jamais de citation finale.
+- Ne génère jamais d'ouverture finale.
+- Ne génère jamais de mot d'encouragement final.
+- Structure obligatoire, une seule fois chacune :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+- Dans [CONSOLIDATION], demande à l'élève de faire l'étape suivante ou de proposer sa réponse finale.`;
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction
+  });
+
+  const contents = [
+    ...toGeminiContents(historique.slice(-6)),
+    {
+      role: "user",
+      parts: [
+        {
+          text: `Exercice à résolution détecté.
+Matière détectée : ${matiere}
+Exercice de l'élève : ${texteUtilisateur}
+
+Réponds comme Mwalimu : explique la méthode, démarre la résolution, mais ne donne pas directement toute la réponse finale.`
+        }
+      ]
+    }
+  ];
+
+  const reponse = await safeAI(async () => {
+    const r = await genererAvecRetry(model, {
+      contents,
+      generationConfig: { temperature: 0.12 }
+    });
+    return r.response.text();
+  }, `🔵 [VÉCU] : J'ai bien reçu ton exercice.
+🟡 [SAVOIR] : Nous allons commencer par identifier la méthode, puis avancer étape par étape.
+🔴 [INSPIRATION] : Chercher soi-même la suite aide à vraiment comprendre.
+❓ [CONSOLIDATION] : Fais la première étape que tu proposes, puis envoie-moi ta réponse pour correction.`);
+
+  return nettoyerReponseExerciceAResolution(reponse);
+}
+
 /* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
@@ -3463,6 +3538,34 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     });
 
     return { reponse: reponseCours, fiche: null, bypassFormat: false };
+  }
+
+  if (detectionAcademiqueEcrite?.route === "exercice_a_resolution") {
+    const cacheKeyExercice = makeCacheKey(user, `exercice_a_resolution|${texteUtilisateur}`);
+    const cachedExercice = getCache(cacheKeyExercice);
+    if (cachedExercice) {
+      logInfo("cache_hit_exercice_a_resolution", { phone: user?.phone || "", cacheKey: cacheKeyExercice });
+      return { reponse: cachedExercice, fiche: null, bypassFormat: false };
+    }
+
+    const reponseExercice = await traiterExerciceAResolutionActive(
+      user,
+      texteUtilisateur,
+      historique,
+      detectionAcademiqueEcrite
+    );
+
+    if (reponseExercice && String(reponseExercice).trim()) {
+      setCache(cacheKeyExercice, reponseExercice);
+    }
+
+    logInfo("routage_academique_exercice_a_resolution_active", {
+      phone: user?.phone || "",
+      matiere: detectionAcademiqueEcrite.matiere,
+      preview: tronquerTexte(texteUtilisateur, 160)
+    });
+
+    return { reponse: reponseExercice, fiche: null, bypassFormat: false };
   }
 
   if (
