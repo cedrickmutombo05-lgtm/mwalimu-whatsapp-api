@@ -3378,6 +3378,11 @@ async function traiterQuestionDeCoursActivee(user, texteUtilisateur, historique 
 MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 - Tu réponds uniquement à une question de cours ou de définition.
 - N'utilise pas Google Search.
+- FIDÉLITÉ ABSOLUE À L'ÉNONCÉ : avant toute explication, recopie l'énoncé reçu exactement.
+- Interdiction de modifier un signe, un exposant, une lettre, une inconnue, un coefficient ou une unité.
+- Interdiction de transformer par exemple 2x en 2, x² en x, + en -, ou d'oublier un terme.
+- Si l'énoncé contient une équation du second degré, ne la traite jamais comme une équation simple du premier degré.
+- Si l'énoncé est ambigu, demande une précision au lieu de corriger ou d'inventer.
 - Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
 - Réponds comme un précepteur professionnel, simple, clair et humain.
 - Donne une définition courte, puis une explication, puis un exemple concret.
@@ -3436,6 +3441,47 @@ Réponds avec la structure Mwalimu, sans doublons.`
    ROUTAGE ACADÉMIQUE ÉCRIT — PHASE 3 : EXERCICE À RÉSOLUTION
    Activation limitée : méthode + démarrage, sans réponse finale directe
 ========================================================= */
+
+function extraireEquationOuEnonceCourt(texte = "") {
+  const brut = String(texte || "").trim();
+  if (!brut) return "";
+
+  const equation = brut.match(/[0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+=[0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+/);
+  if (equation && equation[0]) {
+    return equation[0]
+      .replace(/\s+/g, " ")
+      .replace(/[,;:.!?]+$/g, "")
+      .trim();
+  }
+
+  return brut
+    .replace(/\s+/g, " ")
+    .replace(/[,;:.!?]+$/g, "")
+    .trim();
+}
+
+function insererEnonceExactSiAbsent(reponse = "", enonceExact = "") {
+  let t = String(reponse || "").trim();
+  const e = String(enonceExact || "").trim();
+  if (!t || !e) return t;
+
+  const compact = (v = "") => String(v || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/`/g, "")
+    .trim();
+
+  if (compact(t).includes(compact(e))) return t;
+
+  const rappel = `Énoncé reçu exactement : \`${e}\`.`;
+
+  if (/🔵\s*\[VÉCU\]\s*:/i.test(t)) {
+    return t.replace(/(🔵\s*\[VÉCU\]\s*:)/i, `$1 ${rappel}\n`);
+  }
+
+  return `🔵 [VÉCU] : ${rappel}\n\n${t}`;
+}
+
 function nettoyerReponseExerciceAResolution(texte = "") {
   let t = nettoyerFuitesContexteAcademique(texte);
   t = nettoyerDoublonsPedagogiques(t);
@@ -3446,6 +3492,7 @@ function nettoyerReponseExerciceAResolution(texte = "") {
 
 async function traiterExerciceAResolutionActive(user, texteUtilisateur, historique = [], detection = {}) {
   const matiere = detection?.matiere || "general";
+  const enonceExact = extraireEquationOuEnonceCourt(texteUtilisateur);
 
   const systemInstruction = `${construireSystemPrompt(user)}
 MODE EXERCICE À RÉSOLUTION — ACTIVATION PRUDENTE :
@@ -3483,9 +3530,13 @@ MODE EXERCICE À RÉSOLUTION — ACTIVATION PRUDENTE :
         {
           text: `Exercice à résolution détecté.
 Matière détectée : ${matiere}
-Exercice de l'élève : ${texteUtilisateur}
+ÉNONCÉ EXACT À RESPECTER CARACTÈRE PAR CARACTÈRE :
+<<<${enonceExact || texteUtilisateur}>>>
 
-Réponds comme Mwalimu : explique la méthode, démarre la résolution, mais ne donne pas directement toute la réponse finale.`
+Message complet de l'élève :
+${texteUtilisateur}
+
+Réponds comme Mwalimu : recopie d'abord l'énoncé exact, explique la méthode, démarre la résolution, mais ne donne pas directement toute la réponse finale.`
         }
       ]
     }
@@ -3502,7 +3553,10 @@ Réponds comme Mwalimu : explique la méthode, démarre la résolution, mais ne 
 🔴 [INSPIRATION] : Chercher soi-même la suite aide à vraiment comprendre.
 ❓ [CONSOLIDATION] : Fais la première étape que tu proposes, puis envoie-moi ta réponse pour correction.`);
 
-  return nettoyerReponseExerciceAResolution(reponse);
+  return insererEnonceExactSiAbsent(
+    nettoyerReponseExerciceAResolution(reponse),
+    enonceExact
+  );
 }
 
 /* =========================================================
