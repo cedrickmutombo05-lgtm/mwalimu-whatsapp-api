@@ -3460,26 +3460,22 @@ function extraireEquationOuEnonceCourt(texte = "") {
     .trim();
 }
 
-function insererEnonceExactSiAbsent(reponse = "", enonceExact = "") {
+function imposerEnonceExactExercice(reponse = "", enonceExact = "") {
   let t = String(reponse || "").trim();
   const e = String(enonceExact || "").trim();
   if (!t || !e) return t;
 
-  const compact = (v = "") => String(v || "")
-    .toLowerCase()
-    .replace(/\s+/g, "")
-    .replace(/`/g, "")
+  // On supprime les rappels d’énoncé générés par l’IA pour éviter
+  // qu’elle affiche une équation modifiée ou un doublon.
+  t = t
+    .replace(/^\s*L['’]énoncé\s+de\s+ton\s+exercice\s+est\s*:?\s*`?[^`\n]*`?\s*$/gim, "")
+    .replace(/^\s*Énoncé\s+reçu\s+exactement\s*:?\s*`?[^`\n]*`?\s*\.?\s*$/gim, "")
+    .replace(/^\s*L['’]énoncé\s+exact\s*:?\s*`?[^`\n]*`?\s*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  if (compact(t).includes(compact(e))) return t;
-
-  const rappel = `Énoncé reçu exactement : \`${e}\`.`;
-
-  if (/🔵\s*\[VÉCU\]\s*:/i.test(t)) {
-    return t.replace(/(🔵\s*\[VÉCU\]\s*:)/i, `$1 ${rappel}\n`);
-  }
-
-  return `🔵 [VÉCU] : ${rappel}\n\n${t}`;
+  const blocEnonce = `L'énoncé de ton exercice est :\n\`${e}\``;
+  return `${blocEnonce}\n\n${t}`.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function nettoyerReponseExerciceAResolution(texte = "") {
@@ -3502,6 +3498,7 @@ MODE EXERCICE À RÉSOLUTION — ACTIVATION PRUDENTE :
 - Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
 - Réponds comme un précepteur professionnel, simple, clair et humain.
 - Explique la méthode pas à pas.
+- Ne recopie pas l'énoncé toi-même : le système l'ajoutera automatiquement avec exactitude.
 - Montre seulement le démarrage utile ou la première étape importante.
 - Ne donne pas directement toute la réponse finale.
 - Termine en demandant à l'élève de continuer ou de proposer sa réponse.
@@ -3536,7 +3533,7 @@ Matière détectée : ${matiere}
 Message complet de l'élève :
 ${texteUtilisateur}
 
-Réponds comme Mwalimu : recopie d'abord l'énoncé exact, explique la méthode, démarre la résolution, mais ne donne pas directement toute la réponse finale.`
+Réponds comme Mwalimu : explique la méthode, démarre la résolution, mais ne donne pas directement toute la réponse finale. Ne recopie pas l'énoncé toi-même.`
         }
       ]
     }
@@ -3553,7 +3550,7 @@ Réponds comme Mwalimu : recopie d'abord l'énoncé exact, explique la méthode,
 🔴 [INSPIRATION] : Chercher soi-même la suite aide à vraiment comprendre.
 ❓ [CONSOLIDATION] : Fais la première étape que tu proposes, puis envoie-moi ta réponse pour correction.`);
 
-  return insererEnonceExactSiAbsent(
+  return imposerEnonceExactExercice(
     nettoyerReponseExerciceAResolution(reponse),
     enonceExact
   );
