@@ -2171,13 +2171,11 @@ async function logUnansweredQuestion(user, texte, type, reason) {
   });
 }
 
-async function resetStudentAttempt(phone, sujet) {
+
+async function resetStudentAttempt(phone, sujet = "") {
   try {
     await pool.query(
-      `INSERT INTO student_attempts (phone, sujet, attempts) 
-       VALUES ($1, $2, 1) 
-       ON CONFLICT (phone, sujet) 
-       DO UPDATE SET attempts = student_attempts.attempts + 1, updated_at = NOW()`,
+      `DELETE FROM student_attempts WHERE phone = $1 AND sujet = $2`,
       [phone, sujet]
     );
   } catch (e) {
