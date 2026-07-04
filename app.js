@@ -2976,10 +2976,244 @@ ${JSON.stringify(decision)}`
   );
 }
 
+
+/* =========================================================
+   ROUTAGE ACADÉMIQUE ÉCRIT — PHASE 1 : DÉTECTION SEULEMENT
+   IMPORTANT : ce bloc observe et journalise, il ne change aucune réponse.
+========================================================= */
+function nettoyerPourDetectionAcademique(texte = "") {
+  return normaliserTexteRelationnel(texte)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detecterMatiereAcademiqueEcrite(texte = "") {
+  const t = nettoyerPourDetectionAcademique(texte);
+
+  const matieres = [
+    { id: "mathematiques", mots: ["math", "maths", "mathematique", "mathematiques", "equation", "calcul", "fraction", "racine", "puissance", "geometrie", "algebre", "fonction"] },
+    { id: "physique", mots: ["physique", "force", "vitesse", "energie", "mouvement", "pression", "masse", "poids", "newton"] },
+    { id: "chimie", mots: ["chimie", "molecule", "atome", "reaction", "solution", "acide", "base", "h2o", "co2", "nacl"] },
+    { id: "electricite", mots: ["electricite", "tension", "intensite", "courant", "resistance", "ohm", "volt", "ampere", "circuit"] },
+    { id: "mecanique", mots: ["mecanique", "moment", "couple", "vitesse", "acceleration", "cinematique", "dynamique", "statique"] },
+    { id: "rdm", mots: ["resistance des materiaux", "rdm", "contrainte", "deformation", "traction", "flexion", "cisaillement", "poutre"] },
+    { id: "electronique", mots: ["electronique", "diode", "transistor", "condensateur", "resistance", "bobine", "circuit", "led"] },
+    { id: "comptabilite", mots: ["comptabilite", "bilan", "journal", "debit", "credit", "compte", "grand livre", "balance", "actif", "passif"] },
+    { id: "statistique", mots: ["statistique", "moyenne", "mediane", "mode", "variance", "ecart type", "probabilite", "pourcentage"] },
+    { id: "informatique", mots: ["informatique", "algorithme", "algorithmique", "programme", "code", "fonction", "variable", "boucle"] },
+    { id: "francais", mots: ["francais", "grammaire", "conjugaison", "orthographe", "verbe", "phrase", "complement", "sujet"] },
+    { id: "histoire", mots: ["histoire", "colonisation", "independance", "royaume", "empire", "date historique"] },
+    { id: "geographie", mots: ["geographie", "climat", "relief", "fleuve", "lac", "province", "territoire", "commune", "ville"] },
+    { id: "droit", mots: ["droit", "loi", "code", "article", "constitution", "ohada", "tribunal", "procedure", "ordonnance", "juridique"] },
+    { id: "general", mots: ["cours", "lecon", "chapitre", "definition", "explique", "resume"] }
+  ];
+
+  let meilleure = "general";
+  let scoreMax = 0;
+
+  for (const matiere of matieres) {
+    let score = 0;
+    for (const mot of matiere.mots) {
+      if (t.includes(mot)) score += 1;
+    }
+    if (score > scoreMax) {
+      scoreMax = score;
+      meilleure = matiere.id;
+    }
+  }
+
+  return { matiere: meilleure, score: scoreMax };
+}
+
+function detecterExerciceAResolutionEcrit(texte = "") {
+  const t = nettoyerPourDetectionAcademique(texte);
+  if (!t) return false;
+
+  const indices = [
+    "resous", "resoudre", "calcule", "calculer", "trouve", "determiner", "determine",
+    "equation", "inequation", "probleme", "exercice", "devoir", "corrige", "correction",
+    "demontrer", "demontre", "deduis", "deduire", "simplifie", "developpe", "factorise",
+    "bilan", "journal", "debit", "credit", "circuit", "tension", "intensite", "resistance",
+    "contrainte", "deformation", "flexion", "algorithme", "programme"
+  ];
+
+  if (indices.some((m) => t.includes(m))) return true;
+
+  // Indices symboliques fréquents dans les exercices.
+  if (/[0-9]+\s*[x×*+\-=/]\s*[0-9a-z]/i.test(texte)) return true;
+  if (/[a-z]\s*=\s*[-+]?\d+/i.test(texte)) return true;
+  if (/\d+\s*(v|a|ohm|ω|n|kg|m\/s|m2|m²|cm2|cm²|usd|fc|cdf)\b/i.test(texte)) return true;
+
+  return false;
+}
+
+function detecterQuestionDeCoursEcrite(texte = "") {
+  const t = nettoyerPourDetectionAcademique(texte);
+  if (!t) return false;
+
+  const indices = [
+    "c est quoi", "qu est ce que", "definition", "definis", "explique", "explique moi",
+    "resume", "cours", "lecon", "chapitre", "notion", "difference entre", "pourquoi", "comment fonctionne"
+  ];
+
+  return indices.some((m) => t.includes(m));
+}
+
+function detecterQuestionJuridiqueOuWebEcrite(texte = "") {
+  const t = nettoyerPourDetectionAcademique(texte);
+  const droitWeb = ["droit", "loi", "code", "article", "constitution", "ohada", "juridique", "tribunal", "ordonnance", "journal officiel", "procedure", "fiscalite", "impot", "taxe"];
+  const geoWeb = ["rdc", "congo", "province", "territoire", "territoires", "commune", "communes", "ville", "villes", "secteur", "chefferie", "haut katanga", "haut-katanga"];
+  const actualite = ["actualite", "recent", "actuel", "aujourd hui", "maintenant", "2025", "2026"];
+
+  if (droitWeb.some((m) => t.includes(m))) return { besoinWeb: true, famille: "juridique_web" };
+  if (geoWeb.some((m) => t.includes(m))) return { besoinWeb: true, famille: "geographie_rdc_web" };
+  if (actualite.some((m) => t.includes(m))) return { besoinWeb: true, famille: "actualite_web" };
+  return { besoinWeb: false, famille: "sans_web" };
+}
+
+function detecterReponseEleveEcrite(texte = "", historique = []) {
+  const t = nettoyerPourDetectionAcademique(texte);
+  if (!t) return false;
+
+  if (estSoumissionReponse(texte)) return true;
+
+  const derniersAssistants = [...historique]
+    .reverse()
+    .filter((m) => m?.role === "assistant")
+    .slice(0, 2)
+    .map((m) => String(m.content || "").toLowerCase())
+    .join("\n");
+
+  const assistantAttendReponse =
+    /envoie-moi ta reponse|propose ta reponse|essaie maintenant|a toi|dis-moi ce que tu retiens|consolidation/i.test(derniersAssistants);
+
+  if (!assistantAttendReponse) return false;
+
+  const court = t.length <= 180;
+  const ressembleReponse =
+    /^(ma reponse|voici|j ai trouve|je trouve|cela donne|ca donne|la reponse est|reponse)/.test(t) ||
+    /^[0-9a-z+\-*/=().,\s]+$/i.test(t) ||
+    t.split(" ").length <= 20;
+
+  return court && ressembleReponse;
+}
+
+function detecterConsolidationEnSouffrance(historique = []) {
+  const dernierAssistant = [...historique].reverse().find((m) => m?.role === "assistant");
+  if (!dernierAssistant) return false;
+
+  const contenu = String(dernierAssistant.content || "");
+  return /❓\s*\[CONSOLIDATION\]/i.test(contenu) || /dis-moi ce que tu retiens|peux-tu m'expliquer|avec tes mots/i.test(contenu);
+}
+
+function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) {
+  const t = nettoyerPourDetectionAcademique(texte);
+  const matiereDetectee = detecterMatiereAcademiqueEcrite(texte);
+  const web = detecterQuestionJuridiqueOuWebEcrite(texte);
+
+  const resultat = {
+    mode: "observation_seulement",
+    route: "non_academique",
+    matiere: matiereDetectee.matiere,
+    scoreMatiere: matiereDetectee.score,
+    besoinWeb: web.besoinWeb,
+    familleWeb: web.famille,
+    exerciceAResolution: false,
+    reponseEleve: false,
+    consolidationEnSouffrance: detecterConsolidationEnSouffrance(historique),
+    confiance: "faible",
+    raison: "Aucune règle académique forte détectée"
+  };
+
+  if (!t) {
+    resultat.route = "vide";
+    resultat.raison = "Message vide";
+    return resultat;
+  }
+
+  if (estMessageRelationnelSimple(texte) || estMessagePurementSocial(texte)) {
+    resultat.route = "social";
+    resultat.confiance = "forte";
+    resultat.raison = "Message social détecté, hors routage académique";
+    return resultat;
+  }
+
+  if (detecterReponseEleveEcrite(texte, historique)) {
+    resultat.route = "reponse_eleve";
+    resultat.reponseEleve = true;
+    resultat.confiance = "moyenne";
+    resultat.raison = "Le message ressemble à une réponse proposée par l'élève";
+    return resultat;
+  }
+
+  if (web.besoinWeb) {
+    resultat.route = web.famille;
+    resultat.confiance = "forte";
+    resultat.raison = "Question nécessitant probablement une vérification externe";
+    return resultat;
+  }
+
+  if (detecterExerciceAResolutionEcrit(texte)) {
+    resultat.route = "exercice_a_resolution";
+    resultat.exerciceAResolution = true;
+    resultat.confiance = "forte";
+    resultat.raison = "Exercice ou procédure de résolution détecté";
+    return resultat;
+  }
+
+  if (detecterQuestionDeCoursEcrite(texte)) {
+    resultat.route = "question_de_cours";
+    resultat.confiance = "moyenne";
+    resultat.raison = "Question de cours ou demande d'explication détectée";
+    return resultat;
+  }
+
+  if (t.length < 8) {
+    resultat.route = "question_floue";
+    resultat.confiance = "moyenne";
+    resultat.raison = "Message trop court pour une classification académique sûre";
+    return resultat;
+  }
+
+  resultat.route = "academique_general";
+  resultat.confiance = matiereDetectee.score > 0 ? "moyenne" : "faible";
+  resultat.raison = "Message potentiellement académique, sans action en phase 1";
+  return resultat;
+}
+
+function observerRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) {
+  try {
+    const detection = detecterRoutageAcademiqueEcrit(user, texte, historique);
+    logInfo("routage_academique_ecrit_detection_only", {
+      phone: user?.phone || "",
+      route: detection.route,
+      matiere: detection.matiere,
+      besoinWeb: detection.besoinWeb,
+      familleWeb: detection.familleWeb,
+      exerciceAResolution: detection.exerciceAResolution,
+      reponseEleve: detection.reponseEleve,
+      consolidationEnSouffrance: detection.consolidationEnSouffrance,
+      confiance: detection.confiance,
+      raison: detection.raison,
+      preview: tronquerTexte(texte, 160)
+    });
+    return detection;
+  } catch (e) {
+    logError("routage_academique_ecrit_detection_only_error", e, {
+      phone: user?.phone || "",
+      preview: tronquerTexte(texte, 160)
+    });
+    return null;
+  }
+}
+
 /* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
+  // Phase 1 : observation uniquement. Ne modifie aucune réponse envoyée à l'élève.
+  observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
+
   if (
     dernierMessageEstInvitationChoixMatiere(historique) &&
     estReponseGeneriqueExploration(texteUtilisateur) &&
