@@ -3446,15 +3446,41 @@ function extraireEquationOuEnonceCourt(texte = "") {
   const brut = String(texte || "").trim();
   if (!brut) return "";
 
-  const equation = brut.match(/[0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+=[0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+/);
-  if (equation && equation[0]) {
-    return equation[0]
+  const stopWords = [
+    "aide-moi", "aide moi", "aidez-moi", "aidez moi", "tu peux", "peux-tu", "peux tu",
+    "s'il te plait", "s il te plait", "svp", "stp", "explique", "explique-moi", "explique moi",
+    "resous", "résous", "resoudre", "résoudre", "calcule", "calcule-moi", "calcule moi",
+    "comment", "merci"
+  ];
+
+  let segment = brut;
+  const normalise = retirerAccents(brut.toLowerCase());
+  let cutIndex = -1;
+
+  for (const mot of stopWords) {
+    const m = retirerAccents(mot.toLowerCase());
+    const idx = normalise.indexOf(m);
+    if (idx > 0 && (cutIndex === -1 || idx < cutIndex)) {
+      cutIndex = idx;
+    }
+  }
+
+  if (cutIndex > 0) {
+    segment = brut.slice(0, cutIndex).trim();
+  }
+
+  const equation = segment.match(/([0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+?)\s*=\s*([0-9a-zA-ZÀ-ÿ²³√+\-*/×÷().,\s]+)/);
+  if (equation && equation[1] && equation[2]) {
+    const gauche = equation[1].replace(/\s+/g, " ").trim();
+    const droite = equation[2]
       .replace(/\s+/g, " ")
       .replace(/[,;:.!?]+$/g, "")
       .trim();
+
+    if (gauche && droite) return `${gauche} = ${droite}`;
   }
 
-  return brut
+  return segment
     .replace(/\s+/g, " ")
     .replace(/[,;:.!?]+$/g, "")
     .trim();
