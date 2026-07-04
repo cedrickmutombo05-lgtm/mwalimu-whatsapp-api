@@ -996,16 +996,52 @@ function choisirCitationFinale(question = "", corps = "") {
   return citationsMixtes[matiere] || citationsMixtes.general;
 }
 
+function detecterMatiereFineConclusion(question = "", corps = "") {
+  const base = retirerAccents(`${question || ""} ${corps || ""}`.toLowerCase());
+
+  const contient = (mots = []) => mots.some((mot) => base.includes(retirerAccents(String(mot).toLowerCase())));
+
+  if (contient(["photosynthese", "chlorophylle", "plante", "plantes", "feuille", "feuilles", "cellule", "cellules", "biologie", "respiration", "ecosysteme", "organisme", "organismes", "vivant", "vivants", "oxygene", "dioxyde de carbone", "co2", "h2o"])) return "biologie";
+  if (contient(["equation", "inequation", "calcul", "fraction", "racine", "puissance", "fonction", "derivee", "integrale", "polynome", "algebre", "geometrie"]) || /[0-9xy]\s*[+\-*/=]/i.test(base)) return "math";
+  if (contient(["electricite", "tension", "intensite", "courant", "resistance", "ohm", "volt", "ampere", "circuit", "diode", "transistor", "condensateur"])) return "electricite";
+  if (contient(["mecanique", "force", "vitesse", "acceleration", "mouvement", "masse", "poids", "newton", "pression", "energie cinetique", "travail mecanique"])) return "physique";
+  if (contient(["chimie", "molecule", "atome", "reaction", "solution", "acide", "base", "nacl", "h2so4"])) return "chimie";
+  if (contient(["comptabilite", "debit", "credit", "bilan", "journal", "grand livre", "actif", "passif", "charge", "produit", "amortissement"])) return "comptabilite";
+  if (contient(["algorithme", "algorithmique", "programmation", "javascript", "python", "variable", "boucle", "condition", "tableau"])) return "informatique";
+  if (contient(["rdm", "resistance des materiaux", "poutre", "contrainte", "deformation", "traction", "flexion", "cisaillement"])) return "technique";
+
+  return detecterMatierePrincipale(question, corps);
+}
+
 function choisirCitationContextuelle(reponse = "", question = "") {
-  const matiere = detecterMatierePrincipale(question, reponse);
   if (estMessageRelationnelSimple(question)) return "";
-  if (matiere === "droit") return pick(CITATIONS.civisme);
-  if (matiere === "geographie") return pick(CITATIONS.geographie);
-  if (matiere === "histoire") return pick(CITATIONS.histoire);
-  if (matiere === "math") return pick(CITATIONS.mathematiques);
-  if (matiere === "physique" || matiere === "chimie") return pick(CITATIONS.sciences);
-  if (matiere === "francais") return pick(CITATIONS.francais);
-  return pick(CITATIONS.general);
+
+  const matiere = detecterMatiereFineConclusion(question, reponse);
+
+  const citationsParMatiere = {
+    droit: "***« Comprendre le droit, c’est apprendre à défendre la justice avec intelligence. »***",
+    geographie: "***« Connaître son pays, c’est déjà commencer à mieux le servir. »***",
+    histoire: "***« Comprendre l’histoire aide un peuple à mieux préparer son avenir. »***",
+    math: "***« La rigueur dans le calcul forme aussi la rigueur dans la pensée. »***",
+    physique: "***« Observer les lois de la nature apprend à raisonner avec précision. »***",
+    chimie: "***« Comprendre la matière, c’est mieux comprendre les transformations du monde. »***",
+    biologie: "***« Comprendre le vivant, c’est apprendre à respecter la nature et la vie. »***",
+    electricite: "***« Maîtriser l’électricité, c’est apprendre à canaliser l’énergie avec intelligence. »***",
+    technique: "***« La technique bien comprise transforme la connaissance en solution concrète. »***",
+    comptabilite: "***« Une bonne comptabilité éclaire les décisions et protège l’avenir. »***",
+    informatique: "***« Un bon raisonnement algorithmique transforme un problème en solution. »***",
+    francais: "***« Bien parler et bien écrire donnent de la force à la pensée. »***",
+    general: "***« Apprendre avec méthode aujourd’hui, c’est mieux construire demain. »***"
+  };
+
+  return citationsParMatiere[matiere] || citationsParMatiere.general;
+}
+
+function retirerCitationsFinales(texte = "") {
+  return String(texte || "")
+    .replace(/^\s*\*\*\*«[^»]+»\*\*\*\s*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
@@ -1029,14 +1065,33 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
 }
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
-  const matiere = detecterMatierePrincipale(question, reponse);
-  const q = String(question || "").toLowerCase();
+  const q = String(question || "").trim();
+  const qNorm = normaliserTexteRelationnel(q);
   if (estMessageRelationnelSimple(q)) return "";
-  if (matiere === "droit") return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
-  if (matiere === "geographie") return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
-  if (matiere === "histoire") return "👉 Si tu veux, nous pouvons prendre un autre point d'histoire ensuite.";
-  if (matiere === "math" || matiere === "physique" || matiere === "chimie") return "👉 Essaie maintenant de reformuler l'idée ou de faire une étape, puis envoie-moi ta réponse.";
-  return "👉 Dis-moi maintenant ce que tu retiens en une phrase simple.";
+
+  let intention = null;
+  try {
+    intention = detecterIntentionAcademiqueEcrite(q);
+  } catch (_) {
+    intention = null;
+  }
+
+  const estExercice = Boolean(intention?.symbolesResolution || intention?.procedureResolution);
+  const estQuestionCours = Boolean(intention?.demandeDefinition) || /\b(qu est ce que|c est quoi|explique|definition|definis)\b/i.test(qNorm);
+  const matiere = detecterMatiereFineConclusion(q, reponse);
+
+  if (estExercice) {
+    return "👉 Fais l’étape demandée, puis envoie-moi ta réponse pour correction.";
+  }
+
+  if (estQuestionCours) {
+    return "👉 Réponds d’abord à la question de consolidation, puis nous continuerons.";
+  }
+
+  if (matiere === "droit") return "👉 Réponds d’abord à la question de consolidation juridique, puis nous continuerons.";
+  if (matiere === "geographie") return "👉 Réponds d’abord à la question de consolidation géographique, puis nous continuerons.";
+
+  return "👉 Réponds d’abord à la question de consolidation, puis nous continuerons.";
 }
 
 function choisirEncouragementContextuel(reponse = "", question = "") {
@@ -2724,11 +2779,9 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
     const encouragement = choisirEncouragementContextuel(message, question);
     if (encouragement) message += `\n${encouragement}`;
   }
-  
-  if (!message.includes("***«")) {
-    const citation = choisirCitationContextuelle(message, question);
-    if (citation) message += `\n${citation}`;
-  }
+  message = retirerCitationsFinales(message);
+  const citation = choisirCitationContextuelle(message, question);
+  if (citation) message += `\n${citation}`;
   
   message = nettoyerReponseIA(message);
   message = supprimerFormulesLourdesDAppel(message, user);
@@ -2741,6 +2794,7 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
   
   message = nettoyerDoublonsPedagogiques(message);
   message = nettoyerFuitesContexteAcademique(message);
+  message = harmoniserEspacesBlocsPedagogiques(message);
 
   return message.replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -3003,7 +3057,7 @@ const MATIERES_ACADEMIQUES_ECRITES = {
   sciences: {
     famille: "resolution",
     besoinWeb: false,
-    mots: ["physique", "chimie", "biologie", "science", "force", "vitesse", "energie", "mouvement", "pression", "masse", "poids", "newton", "molecule", "atome", "reaction", "solution", "acide", "base", "h2o", "co2", "nacl"]
+    mots: ["physique", "chimie", "biologie", "science", "photosynthese", "chlorophylle", "plante", "plantes", "cellule", "cellules", "respiration", "ecosysteme", "oxygene", "force", "vitesse", "energie", "mouvement", "pression", "masse", "poids", "newton", "molecule", "atome", "reaction", "solution", "acide", "base", "h2o", "co2", "nacl"]
   },
   technique: {
     famille: "resolution",
@@ -3507,6 +3561,8 @@ function imposerEnonceExactExercice(reponse = "", enonceExact = "") {
 function nettoyerReponseExerciceAResolution(texte = "") {
   let t = nettoyerFuitesContexteAcademique(texte);
   t = nettoyerDoublonsPedagogiques(t);
+  t = t.replace(/^\s*Je\s+vois\s+que\s+tu\s+me\s+redonnes\s+la\s+m[êe]me\s+[^\n]*\.?\s*$/gim, "");
+  t = t.replace(/^\s*Tu\s+me\s+redonnes\s+la\s+m[êe]me\s+[^\n]*\.?\s*$/gim, "");
   t = t.replace(/\b(?:donc|ainsi),?\s*(?:la\s+)?r[ée]ponse\s+finale\s+est\s*:?\s*.*$/gim, "");
   t = t.replace(/\b(?:solution\s+finale|r[ée]sultat\s+final)\s*:?\s*.*$/gim, "");
   return t.replace(/\n{3,}/g, "\n\n").trim();
