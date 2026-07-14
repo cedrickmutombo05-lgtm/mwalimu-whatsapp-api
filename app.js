@@ -3702,12 +3702,239 @@ Réponds comme Mwalimu : explique la méthode, démarre la résolution, mais ne 
   );
 }
 
+
+/* =========================================================
+   ROUTAGE ACADÉMIQUE ÉCRIT — RÉPONSE DE L'ÉLÈVE
+   Activation limitée, sans modifier les autres routes
+========================================================= */
+function extraireContextePedagogiqueReponseEleve(historique = [], texteActuel = "") {
+  const messages = Array.isArray(historique) ? historique : [];
+  if (!messages.length) {
+    return { questionInitiale: "", derniereConsigne: "" };
+  }
+
+  const normaliseActuel = normaliserTexteMemoire(texteActuel);
+  let indexActuel = messages.length;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const item = messages[i];
+    if (item?.role !== "user") continue;
+    const contenuNormalise = normaliserTexteMemoire(item.content || "");
+    if (!normaliseActuel || contenuNormalise === normaliseActuel) {
+      indexActuel = i;
+      break;
+    }
+  }
+
+  let indexAssistant = -1;
+  for (let i = indexActuel - 1; i >= 0; i--) {
+    const item = messages[i];
+    if (item?.role !== "assistant") continue;
+    const contenu = String(item.content || "");
+    if (
+      /❓\s*\[CONSOLIDATION\]/i.test(contenu) ||
+      /écris-moi|ecris-moi|propose ta réponse|propose ta reponse|envoie-moi ta réponse|envoie-moi ta reponse|à toi|a toi/i.test(contenu)
+    ) {
+      indexAssistant = i;
+      break;
+    }
+  }
+
+  if (indexAssistant < 0) {
+    for (let i = indexActuel - 1; i >= 0; i--) {
+      if (messages[i]?.role === "assistant") {
+        indexAssistant = i;
+        break;
+      }
+    }
+  }
+
+  let questionInitiale = "";
+  if (indexAssistant >= 0) {
+    for (let i = indexAssistant - 1; i >= 0; i--) {
+      const item = messages[i];
+      if (item?.role !== "user") continue;
+      const contenu = String(item.content || "").trim();
+      if (!contenu || estMessageRelationnelSimple(contenu)) continue;
+      questionInitiale = contenu;
+      break;
+    }
+  }
+
+  return {
+    questionInitiale,
+    derniereConsigne: indexAssistant >= 0
+      ? tronquerTexte(messages[indexAssistant]?.content || "", 2600)
+      : ""
+  };
+}
+
+function nettoyerChampEvaluation(texte = "") {
+  return String(texte || "")
+    .replace(/🔵|🟡|🔴|❓/g, "")
+    .replace(/\[(VÉCU|SAVOIR|INSPIRATION|CONSOLIDATION)\]/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function evaluerReponseEleveActivee(user, texteUtilisateur, historique = [], detection = {}) {
+  const contexte = extraireContextePedagogiqueReponseEleve(historique, texteUtilisateur);
+  const matiere = detection?.matiere || detecterMatiereAcademiqueEcrite(
+    `${contexte.questionInitiale} ${contexte.derniereConsigne} ${texteUtilisateur}`
+  )?.matiere || "general";
+
+  const schemaEvaluation = {
+    type: "OBJECT",
+    properties: {
+      verdict: { type: "STRING" },
+      matiere: { type: "STRING" },
+      explicationCourte: { type: "STRING" },
+      erreurPrincipale: { type: "STRING" },
+      exempleVie: { type: "STRING" },
+      prochaineEtape: { type: "STRING" },
+      questionConsolidation: { type: "STRING" }
+    },
+    required: [
+      "verdict",
+      "matiere",
+      "explicationCourte",
+      "erreurPrincipale",
+      "exempleVie",
+      "prochaineEtape",
+      "questionConsolidation"
+    ]
+  };
+
+  const systemInstruction = `${construireSystemPrompt(user)}
+MODE CORRECTION D'UNE RÉPONSE D'ÉLÈVE :
+- Réponds uniquement en JSON valide.
+- verdict possible : correcte, incorrecte, incertaine.
+- Évalue la réponse uniquement à partir de la question initiale et de la dernière consigne de Mwalimu.
+- N'invente jamais une question absente du contexte.
+- Si la réponse est correcte, explique brièvement pourquoi.
+- Si elle est incorrecte, identifie la première erreur, réexplique le même chemin avec un exemple simple de la vie et donne seulement un indice pour une nouvelle tentative.
+- Si le contexte ne permet pas de vérifier, utilise le verdict incertaine.
+- En cas d'erreur, ne donne jamais directement la réponse finale.
+- La question de consolidation doit rester dans la même matière.`;
+
+  let evaluation = null;
+  try {
+    evaluation = await appelerJsonStrict({
+      systemInstruction,
+      prompt: `QUESTION OU EXERCICE INITIAL :\n${contexte.questionInitiale || "Non retrouvé"}\n\nDERNIÈRE CONSIGNE DE MWALIMU :\n${contexte.derniereConsigne || "Non retrouvée"}\n\nRÉPONSE PROPOSÉE PAR L'ÉLÈVE :\n${texteUtilisateur}\n\nMATIÈRE DÉTECTÉE : ${matiere}`,
+      schema: schemaEvaluation,
+      history: []
+    });
+  } catch (e) {
+    logError("evaluer_reponse_eleve_activee", e, {
+      phone: user?.phone || "",
+      preview: tronquerTexte(texteUtilisateur, 120)
+    });
+  }
+
+  const verdictBrut = String(evaluation?.verdict || "incertaine").toLowerCase().trim();
+  const verdict = ["correcte", "incorrecte", "incertaine"].includes(verdictBrut)
+    ? verdictBrut
+    : "incertaine";
+
+  return {
+    verdict,
+    matiere: String(evaluation?.matiere || matiere || "general").trim(),
+    explicationCourte: nettoyerChampEvaluation(evaluation?.explicationCourte || ""),
+    erreurPrincipale: nettoyerChampEvaluation(evaluation?.erreurPrincipale || ""),
+    exempleVie: nettoyerChampEvaluation(evaluation?.exempleVie || ""),
+    prochaineEtape: nettoyerChampEvaluation(evaluation?.prochaineEtape || ""),
+    questionConsolidation: nettoyerChampEvaluation(evaluation?.questionConsolidation || ""),
+    questionInitiale: contexte.questionInitiale,
+    derniereConsigne: contexte.derniereConsigne
+  };
+}
+
+async function traiterReponseEleveActivee(user, texteUtilisateur, historique = [], detection = {}) {
+  const evaluation = await evaluerReponseEleveActivee(
+    user,
+    texteUtilisateur,
+    historique,
+    detection
+  );
+
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+  let reponse = "";
+
+  if (evaluation.verdict === "correcte") {
+    const explication = evaluation.explicationCourte ||
+      "Ta démarche et ton résultat correspondent bien à la question posée.";
+    const consolidation = evaluation.questionConsolidation ||
+      "Peux-tu expliquer en une phrase la méthode que tu viens d'utiliser ?";
+
+    reponse = `🔵 [VÉCU] : Oui ${appel}, ta réponse est correcte 😊
+
+🟡 [SAVOIR] : ${explication}
+
+🔴 [INSPIRATION] : Très bon travail. Tu as avancé avec sérieux et méthode ; continue ainsi.
+
+❓ [CONSOLIDATION] : ${consolidation}`;
+  } else if (evaluation.verdict === "incorrecte") {
+    const erreur = evaluation.erreurPrincipale ||
+      "Ta tentative contient encore une petite erreur dans la démarche.";
+    const explication = evaluation.explicationCourte ||
+      "Reprenons exactement la dernière étape, sans changer de méthode.";
+    const exemple = evaluation.exempleVie
+      ? ` Exemple de la vie : ${evaluation.exempleVie}`
+      : "";
+    const prochaineEtape = evaluation.prochaineEtape ||
+      "Reprends la dernière étape et propose-moi une nouvelle réponse.";
+
+    reponse = `🔵 [VÉCU] : Merci d'avoir essayé ${appel}. Ta tentative est utile, même si elle n'est pas encore correcte.
+
+🟡 [SAVOIR] : ${erreur} ${explication}${exemple}
+
+🔴 [INSPIRATION] : Ce n'est pas grave. On garde le même chemin et on avance plus doucement, étape par étape.
+
+❓ [CONSOLIDATION] : ${prochaineEtape}`;
+  } else {
+    reponse = `🔵 [VÉCU] : J'ai bien reçu ta réponse, ${appel}.
+
+🟡 [SAVOIR] : Je n'ai pas assez de contexte pour la vérifier avec certitude sans risquer de t'induire en erreur.
+
+🔴 [INSPIRATION] : Nous pouvons reprendre proprement sans perdre ton effort.
+
+❓ [CONSOLIDATION] : Rappelle-moi brièvement la question ou l'exercice, puis renvoie ta réponse.`;
+  }
+
+  logInfo("routage_academique_reponse_eleve_active", {
+    phone: user?.phone || "",
+    verdict: evaluation.verdict,
+    matiere: evaluation.matiere,
+    questionInitiale: tronquerTexte(evaluation.questionInitiale, 140),
+    reponseEleve: tronquerTexte(texteUtilisateur, 140)
+  });
+
+  return nettoyerDoublonsPedagogiques(reponse);
+}
+
 /* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
   // Phase 2 limitée : question_de_cours active. Le reste reste en observation seulement.
   const detectionAcademiqueEcrite = observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
+
+  if (detectionAcademiqueEcrite?.route === "reponse_eleve") {
+    const reponseCorrection = await traiterReponseEleveActivee(
+      user,
+      texteUtilisateur,
+      historique,
+      detectionAcademiqueEcrite
+    );
+
+    return {
+      reponse: reponseCorrection,
+      fiche: null,
+      bypassFormat: false
+    };
+  }
 
   if (detectionAcademiqueEcrite?.route === "question_de_cours") {
     const cacheKeyCours = makeCacheKey(user, `question_de_cours|${texteUtilisateur}`);
