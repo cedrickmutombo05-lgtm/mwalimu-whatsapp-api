@@ -2197,6 +2197,25 @@ async function initDB() {
         UNIQUE(phone, sujet)
       );
 
+      CREATE TABLE IF NOT EXISTS pedagogical_states (
+        id SERIAL PRIMARY KEY,
+        phone VARCHAR(20) NOT NULL,
+        kind VARCHAR(40) NOT NULL,
+        subject VARCHAR(100) DEFAULT 'general',
+        sub_subject VARCHAR(150) DEFAULT '',
+        main_question TEXT NOT NULL,
+        pending_prompt TEXT DEFAULT '',
+        status VARCHAR(40) DEFAULT 'pending',
+        reminder_count INTEGER DEFAULT 0,
+        step_index INTEGER DEFAULT 0,
+        final_answer_required BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pedagogical_states_phone_status
+      ON pedagogical_states (phone, status, updated_at DESC);
+
       CREATE TABLE IF NOT EXISTS bibliotheque (
         id SERIAL PRIMARY KEY,
         titre VARCHAR(500) DEFAULT '',
@@ -2310,6 +2329,168 @@ async function resetAllStudentAttempts(phone) {
   } catch (e) {
     logError("resetAllStudentAttempts", e, { phone });
   }
+}
+
+
+/* =========================================================
+   ÉTAT PÉDAGOGIQUE PERSISTANT
+   - cours : une consolidation, non bloquante
+   - exercice : bloquant jusqu'à la réponse finale corrigée
+========================================================= */
+function extraireQuestionConsolidation(texte = "") {
+  const t = String(texte || "");
+  const match = t.match(
+    /❓\s*\*{0,2}\[CONSOLIDATION\]\*{0,2}\s*:?\s*([\s\S]*?)(?=\n👉|\n🌟|\n\*\*\*«|\n🔵|\n🟡|\n🔴|$)/i
+  );
+  if (!match) return "";
+  return String(match[1] || "")
+    .replace(/^\s*[-•]\s*/gm, "")
+    .replace(/\n{2,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function getEtatPedagogiqueActif(phone = "") {
+  if (!phone) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM pedagogical_states
+       WHERE phone = $1
+         AND status IN ('pending', 'awaiting_answer')
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1`,
+      [phone]
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logError("getEtatPedagogiqueActif", e, { phone });
+    return null;
+  }
+}
+
+async function enregistrerEtatPedagogique({
+  phone = "",
+  kind = "course",
+  subject = "general",
+  subSubject = "",
+  mainQuestion = "",
+  pendingPrompt = "",
+  status = "pending",
+  finalAnswerRequired = false
+} = {}) {
+  if (!phone || !String(mainQuestion || "").trim()) return null;
+  try {
+    const { rows: existingRows } = await pool.query(
+      `SELECT id
+       FROM pedagogical_states
+       WHERE phone = $1
+         AND kind = $2
+         AND main_question = $3
+         AND status IN ('pending', 'awaiting_answer')
+       ORDER BY id DESC
+       LIMIT 1`,
+      [phone, kind, String(mainQuestion).trim()]
+    );
+
+    if (existingRows[0]?.id) {
+      const { rows } = await pool.query(
+        `UPDATE pedagogical_states
+         SET subject = $1,
+             sub_subject = $2,
+             pending_prompt = $3,
+             status = $4,
+             final_answer_required = $5,
+             updated_at = NOW()
+         WHERE id = $6
+         RETURNING *`,
+        [
+          subject || "general",
+          subSubject || "",
+          pendingPrompt || "",
+          status,
+          Boolean(finalAnswerRequired),
+          existingRows[0].id
+        ]
+      );
+      return rows[0] || null;
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO pedagogical_states
+       (phone, kind, subject, sub_subject, main_question, pending_prompt, status, final_answer_required)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        phone,
+        kind,
+        subject || "general",
+        subSubject || "",
+        String(mainQuestion).trim(),
+        pendingPrompt || "",
+        status,
+        Boolean(finalAnswerRequired)
+      ]
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logError("enregistrerEtatPedagogique", e, { phone, kind });
+    return null;
+  }
+}
+
+async function mettreAJourEtatPedagogique(id, champs = {}) {
+  if (!id) return null;
+  const autorises = {
+    pendingPrompt: "pending_prompt",
+    status: "status",
+    reminderCount: "reminder_count",
+    stepIndex: "step_index",
+    finalAnswerRequired: "final_answer_required"
+  };
+
+  const sets = [];
+  const values = [];
+  for (const [cle, colonne] of Object.entries(autorises)) {
+    if (!(cle in champs)) continue;
+    values.push(champs[cle]);
+    sets.push(`${colonne} = $${values.length}`);
+  }
+  if (!sets.length) return null;
+
+  values.push(id);
+  try {
+    const { rows } = await pool.query(
+      `UPDATE pedagogical_states
+       SET ${sets.join(", ")}, updated_at = NOW()
+       WHERE id = $${values.length}
+       RETURNING *`,
+      values
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logError("mettreAJourEtatPedagogique", e, { id });
+    return null;
+  }
+}
+
+async function cloturerEtatPedagogique(id, status = "closed") {
+  return mettreAJourEtatPedagogique(id, { status });
+}
+
+function construireRappelExerciceBloquant(user = {}, etat = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+  const consigne = String(etat?.pending_prompt || "").trim();
+  const exercice = String(etat?.main_question || "cet exercice").trim();
+
+  return `Nous avons encore cet exercice en cours, ${appel} :\n\`${exercice}\`\n\n${consigne || "Propose d'abord ta réponse finale afin que je la corrige."}\n\nDès que ta réponse finale est corrigée, nous passerons à la nouvelle question.`;
+}
+
+function ajouterRappelConsolidationDifferee(reponse = "", etat = {}) {
+  const rappel = String(etat?.pending_prompt || "").trim();
+  if (!rappel) return String(reponse || "").trim();
+  return `${String(reponse || "").trim()}\n\nPetit rappel : nous avions encore cette consolidation en attente : « ${rappel} ». Je la mets de côté pour ne pas te bloquer.`.trim();
 }
 
 function estReponseJourneeBienEtre(texte) {
@@ -3665,9 +3846,23 @@ Réponds avec la structure Mwalimu, sans doublons.`
 🔴 [INSPIRATION] : Comprendre les bases aide à progresser avec confiance.
 ❓ [CONSOLIDATION] : Peux-tu reformuler cette notion avec tes propres mots ?`);
 
-  return nettoyerDoublonsPedagogiques(
+  const reponsePropre = nettoyerDoublonsPedagogiques(
     nettoyerFuitesContexteAcademique(reponse)
   );
+
+  const consolidation = extraireQuestionConsolidation(reponsePropre);
+  await enregistrerEtatPedagogique({
+    phone: user?.phone || "",
+    kind: "course",
+    subject: matiere,
+    subSubject: detection?.sousMatiere || "",
+    mainQuestion: texteUtilisateur,
+    pendingPrompt: consolidation,
+    status: "pending",
+    finalAnswerRequired: false
+  });
+
+  return reponsePropre;
 }
 
 
@@ -3811,10 +4006,24 @@ Réponds comme Mwalimu : explique la méthode, démarre la résolution, mais ne 
 🔴 [INSPIRATION] : Chercher soi-même la suite aide à vraiment comprendre.
 ❓ [CONSOLIDATION] : Fais la première étape que tu proposes, puis envoie-moi ta réponse pour correction.`);
 
-  return imposerEnonceExactExercice(
+  const reponsePropre = imposerEnonceExactExercice(
     nettoyerReponseExerciceAResolution(reponse),
     enonceExact
   );
+
+  const prochaineConsigne = extraireQuestionConsolidation(reponsePropre);
+  await enregistrerEtatPedagogique({
+    phone: user?.phone || "",
+    kind: "exercise",
+    subject: matiere,
+    subSubject: detection?.sousMatiere || "",
+    mainQuestion: enonceExact || texteUtilisateur,
+    pendingPrompt: prochaineConsigne,
+    status: "awaiting_answer",
+    finalAnswerRequired: true
+  });
+
+  return reponsePropre;
 }
 
 
@@ -3892,6 +4101,156 @@ function nettoyerChampEvaluation(texte = "") {
     .trim();
 }
 
+
+async function traiterReponseConsolidationCoursPersistante(user, texteUtilisateur, etat = {}) {
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      verdict: { type: "STRING" },
+      explication: { type: "STRING" },
+      correction: { type: "STRING" }
+    },
+    required: ["verdict", "explication", "correction"]
+  };
+
+  const systemInstruction = `${construireSystemPrompt(user)}
+MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
+- Réponds uniquement en JSON valide.
+- verdict possible : acceptable, partielle, incorrecte, hors_sujet.
+- Évalue la réponse par rapport à la question de consolidation.
+- Une réponse acceptable, partielle ou incorrecte clôture la consolidation après une correction courte.
+- Ne crée jamais une nouvelle question de consolidation.
+- Ne pose aucune autre question à la fin.`;
+
+  const evaluation = await appelerJsonStrict({
+    systemInstruction,
+    prompt: `QUESTION PRINCIPALE :\n${etat?.main_question || ""}\n\nQUESTION DE CONSOLIDATION :\n${etat?.pending_prompt || ""}\n\nRÉPONSE DE L'ÉLÈVE :\n${texteUtilisateur}`,
+    schema,
+    history: []
+  }).catch((e) => {
+    logError("evaluer_consolidation_cours", e, { phone: user?.phone || "" });
+    return null;
+  });
+
+  const verdict = String(evaluation?.verdict || "partielle").toLowerCase().trim();
+  const explication = nettoyerChampEvaluation(evaluation?.explication || "");
+  const correction = nettoyerChampEvaluation(evaluation?.correction || "");
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  if (verdict === "hors_sujet") {
+    const rappels = Number(etat?.reminder_count || 0);
+    if (rappels < 1) {
+      await mettreAJourEtatPedagogique(etat.id, { reminderCount: rappels + 1 });
+      return {
+        reponse: `Je comprends ${appel}. Avant de fermer ce point, réponds simplement à cette question : ${etat?.pending_prompt || "la question de consolidation en attente"}`,
+        bypassFormat: true
+      };
+    }
+
+    await cloturerEtatPedagogique(etat.id, "deferred");
+    return {
+      reponse: `D'accord ${appel}. Nous mettons cette consolidation de côté pour ne pas te bloquer. Tu peux poursuivre avec ta nouvelle préoccupation.`,
+      bypassFormat: true
+    };
+  }
+
+  await cloturerEtatPedagogique(etat.id, "closed");
+
+  if (verdict === "acceptable") {
+    return {
+      reponse: `Très bien ${appel} 😊 Ta réponse montre que tu as compris. ${explication || "Nous pouvons clôturer cette notion et passer à la suite."}`,
+      bypassFormat: true
+    };
+  }
+
+  const texteCorrection = correction || explication || "Voici l'idée correcte à retenir.";
+  return {
+    reponse: `Merci pour ta réponse ${appel}. ${texteCorrection}\n\nCette consolidation est maintenant clôturée ; nous pouvons passer à la suite.`,
+    bypassFormat: true
+  };
+}
+
+async function traiterReponseExercicePersistant(user, texteUtilisateur, etat = {}) {
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      verdict: { type: "STRING" },
+      explication: { type: "STRING" },
+      erreurPrincipale: { type: "STRING" },
+      exempleVie: { type: "STRING" },
+      prochaineEtape: { type: "STRING" }
+    },
+    required: ["verdict", "explication", "erreurPrincipale", "exempleVie", "prochaineEtape"]
+  };
+
+  const systemInstruction = `${construireSystemPrompt(user)}
+MODE SUIVI PERSISTANT D'UN EXERCICE :
+- Réponds uniquement en JSON valide.
+- verdict possible : finale_correcte, etape_correcte, incorrecte, incertaine.
+- finale_correcte seulement si l'élève fournit la réponse finale complète et correcte de l'exercice principal.
+- etape_correcte si l'élève réussit seulement l'étape demandée mais que l'exercice n'est pas encore terminé.
+- incorrecte si la démarche ou le résultat est faux.
+- En cas d'erreur, ne donne pas la réponse finale : réexplique le même chemin avec un exemple concret.
+- prochaineEtape doit demander exactement la suite utile, sans changer d'exercice.`;
+
+  const evaluation = await appelerJsonStrict({
+    systemInstruction,
+    prompt: `EXERCICE PRINCIPAL :\n${etat?.main_question || ""}\n\nÉTAPE OU RÉPONSE ATTENDUE :\n${etat?.pending_prompt || ""}\n\nRÉPONSE DE L'ÉLÈVE :\n${texteUtilisateur}`,
+    schema,
+    history: []
+  }).catch((e) => {
+    logError("evaluer_exercice_persistant", e, { phone: user?.phone || "" });
+    return null;
+  });
+
+  const verdict = String(evaluation?.verdict || "incertaine").toLowerCase().trim();
+  const explication = nettoyerChampEvaluation(evaluation?.explication || "");
+  const erreur = nettoyerChampEvaluation(evaluation?.erreurPrincipale || "");
+  const exemple = nettoyerChampEvaluation(evaluation?.exempleVie || "");
+  const prochaineEtape = nettoyerChampEvaluation(evaluation?.prochaineEtape || "") ||
+    "Reprends l'étape demandée et envoie-moi ta nouvelle proposition.";
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+
+  if (verdict === "finale_correcte") {
+    await cloturerEtatPedagogique(etat.id, "closed");
+    return {
+      reponse: `Excellent travail ${appel} 😊 Ta réponse finale est correcte. ${explication || "Ta démarche est cohérente et l'exercice est maintenant terminé."}\n\nNous pouvons passer à une autre question.`,
+      bypassFormat: true
+    };
+  }
+
+  if (verdict === "etape_correcte") {
+    await mettreAJourEtatPedagogique(etat.id, {
+      pendingPrompt: prochaineEtape,
+      stepIndex: Number(etat?.step_index || 0) + 1,
+      status: "awaiting_answer"
+    });
+    return {
+      reponse: `🔵 [VÉCU] : Très bien ${appel}, cette étape est correcte.\n\n🟡 [SAVOIR] : ${explication || "Tu avances dans la bonne direction."}\n\n🔴 [INSPIRATION] : Continue avec la même rigueur.\n\n❓ [CONSOLIDATION] : ${prochaineEtape}`,
+      bypassFormat: false
+    };
+  }
+
+  if (verdict === "incorrecte") {
+    await mettreAJourEtatPedagogique(etat.id, {
+      pendingPrompt: prochaineEtape,
+      status: "awaiting_answer"
+    });
+    const exempleTexte = exemple ? ` Exemple concret : ${exemple}` : "";
+    return {
+      reponse: `🔵 [VÉCU] : Merci d'avoir essayé ${appel}.\n\n🟡 [SAVOIR] : ${erreur || "Il reste une erreur dans cette étape."} ${explication || "Reprenons le même chemin plus doucement."}${exempleTexte}\n\n🔴 [INSPIRATION] : L'erreur fait partie de l'apprentissage ; garde la même méthode.\n\n❓ [CONSOLIDATION] : ${prochaineEtape}`,
+      bypassFormat: false
+    };
+  }
+
+  return {
+    reponse: `Je n'arrive pas encore à vérifier cette réponse avec certitude. Rappelle-moi clairement ton calcul ou ta réponse finale pour l'exercice : ${etat?.main_question || "en cours"}.`,
+    bypassFormat: true
+  };
+}
+
 async function evaluerReponseEleveActivee(user, texteUtilisateur, historique = [], detection = {}) {
   const contexte = extraireContextePedagogiqueReponseEleve(historique, texteUtilisateur);
   const matiere = detection?.matiere || detecterMatiereAcademiqueEcrite(
@@ -3965,7 +4324,7 @@ MODE CORRECTION D'UNE RÉPONSE D'ÉLÈVE :
   };
 }
 
-async function traiterReponseEleveActivee(user, texteUtilisateur, historique = [], detection = {}) {
+async function traiterReponseEleveSansEtatPersistant(user, texteUtilisateur, historique = [], detection = {}) {
   const evaluation = await evaluerReponseEleveActivee(
     user,
     texteUtilisateur,
@@ -4029,15 +4388,63 @@ async function traiterReponseEleveActivee(user, texteUtilisateur, historique = [
   return nettoyerDoublonsPedagogiques(reponse);
 }
 
+async function traiterReponseEleveActivee(user, texteUtilisateur, historique = [], detection = {}) {
+  const etat = await getEtatPedagogiqueActif(user?.phone || "");
+
+  if (etat?.kind === "course") {
+    return traiterReponseConsolidationCoursPersistante(
+      user,
+      texteUtilisateur,
+      etat
+    );
+  }
+
+  if (etat?.kind === "exercise") {
+    return traiterReponseExercicePersistant(
+      user,
+      texteUtilisateur,
+      etat
+    );
+  }
+
+  const reponse = await traiterReponseEleveSansEtatPersistant(
+    user,
+    texteUtilisateur,
+    historique,
+    detection
+  );
+
+  return {
+    reponse,
+    bypassFormat: false
+  };
+}
+
+
+
 /* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  // Phase 2 limitée : question_de_cours active. Le reste reste en observation seulement.
+  // Détection sémantique, puis application du régime pédagogique actif.
   const detectionAcademiqueEcrite = await observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
+  const etatPedagogiqueActif = await getEtatPedagogiqueActif(user?.phone || "");
+
+  // Un exercice/devoir reste bloquant jusqu'à la réponse finale corrigée.
+  if (
+    etatPedagogiqueActif?.kind === "exercise" &&
+    detectionAcademiqueEcrite?.route !== "reponse_eleve" &&
+    detectionAcademiqueEcrite?.route !== "social"
+  ) {
+    return {
+      reponse: construireRappelExerciceBloquant(user, etatPedagogiqueActif),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
 
   if (detectionAcademiqueEcrite?.route === "reponse_eleve") {
-    const reponseCorrection = await traiterReponseEleveActivee(
+    const resultatCorrection = await traiterReponseEleveActivee(
       user,
       texteUtilisateur,
       historique,
@@ -4045,10 +4452,19 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     );
 
     return {
-      reponse: reponseCorrection,
+      reponse: resultatCorrection?.reponse || resultatCorrection || "",
       fiche: null,
-      bypassFormat: false
+      bypassFormat: Boolean(resultatCorrection?.bypassFormat)
     };
+  }
+
+  let consolidationCoursDifferee = null;
+  if (
+    etatPedagogiqueActif?.kind === "course" &&
+    detectionAcademiqueEcrite?.route !== "social"
+  ) {
+    consolidationCoursDifferee = etatPedagogiqueActif;
+    await cloturerEtatPedagogique(etatPedagogiqueActif.id, "deferred");
   }
 
   if (detectionAcademiqueEcrite?.route === "question_de_cours") {
@@ -4056,7 +4472,20 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     const cachedCours = getCache(cacheKeyCours);
     if (cachedCours) {
       logInfo("cache_hit_question_de_cours", { phone: user?.phone || "", cacheKey: cacheKeyCours });
-      return { reponse: cachedCours, fiche: null, bypassFormat: false };
+      await enregistrerEtatPedagogique({
+        phone: user?.phone || "",
+        kind: "course",
+        subject: detectionAcademiqueEcrite?.matiere || "general",
+        subSubject: detectionAcademiqueEcrite?.sousMatiere || "",
+        mainQuestion: texteUtilisateur,
+        pendingPrompt: extraireQuestionConsolidation(cachedCours),
+        status: "pending",
+        finalAnswerRequired: false
+      });
+      const sortieCoursCache = consolidationCoursDifferee
+        ? ajouterRappelConsolidationDifferee(cachedCours, consolidationCoursDifferee)
+        : cachedCours;
+      return { reponse: sortieCoursCache, fiche: null, bypassFormat: false };
     }
 
     const reponseCours = await traiterQuestionDeCoursActivee(
@@ -4076,7 +4505,11 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       preview: tronquerTexte(texteUtilisateur, 160)
     });
 
-    return { reponse: reponseCours, fiche: null, bypassFormat: false };
+    const sortieCours = consolidationCoursDifferee
+      ? ajouterRappelConsolidationDifferee(reponseCours, consolidationCoursDifferee)
+      : reponseCours;
+
+    return { reponse: sortieCours, fiche: null, bypassFormat: false };
   }
 
   if (detectionAcademiqueEcrite?.route === "exercice_a_resolution") {
@@ -4084,6 +4517,16 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     const cachedExercice = getCache(cacheKeyExercice);
     if (cachedExercice) {
       logInfo("cache_hit_exercice_a_resolution", { phone: user?.phone || "", cacheKey: cacheKeyExercice });
+      await enregistrerEtatPedagogique({
+        phone: user?.phone || "",
+        kind: "exercise",
+        subject: detectionAcademiqueEcrite?.matiere || "general",
+        subSubject: detectionAcademiqueEcrite?.sousMatiere || "",
+        mainQuestion: extraireEquationOuEnonceCourt(texteUtilisateur) || texteUtilisateur,
+        pendingPrompt: extraireQuestionConsolidation(cachedExercice),
+        status: "awaiting_answer",
+        finalAnswerRequired: true
+      });
       return { reponse: cachedExercice, fiche: null, bypassFormat: false };
     }
 
