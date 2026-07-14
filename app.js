@@ -2509,10 +2509,22 @@ function construireRappelExerciceBloquant(user = {}, etat = {}) {
   return `Nous avons encore cet exercice en cours, ${appel} :\n\`${exercice}\`\n\n${consigne || "Propose d'abord ta réponse finale afin que je la corrige."}\n\nDès que ta réponse finale est corrigée, nous passerons à la nouvelle question.`;
 }
 
-function ajouterRappelConsolidationDifferee(reponse = "", etat = {}) {
+function retirerBlocConsolidationPedagogique(texte = "") {
+  return String(texte || "")
+    .replace(
+      /\n?❓\s*\*{0,2}\[CONSOLIDATION\]\*{0,2}\s*:?\s*[\s\S]*?(?=\n(?:👉|🌟|\*\*\*«|🔵|🟡|🔴)|$)/gi,
+      ""
+    )
+    .replace(/^\s*👉.*(?:consolidation|réponds d'abord|reponds d'abord).*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function ajouterRappelConsolidationEnAttente(reponse = "", etat = {}) {
   const rappel = String(etat?.pending_prompt || "").trim();
-  if (!rappel) return String(reponse || "").trim();
-  return `${String(reponse || "").trim()}\n\nPetit rappel : nous avions encore cette consolidation en attente : « ${rappel} ». Je la mets de côté pour ne pas te bloquer.`.trim();
+  const corps = retirerBlocConsolidationPedagogique(reponse);
+  if (!rappel) return corps;
+  return `${corps}\n\nPetit rappel : nous avons encore une seule question de consolidation en attente : « ${rappel} ». Réponds-y quand tu es prêt ; je n'en créerai pas une nouvelle avant sa clôture.`.trim();
 }
 
 function estReponseJourneeBienEtre(texte) {
@@ -3810,8 +3822,29 @@ function nettoyerDoublonsPedagogiques(texte = "") {
   return sorties.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-async function traiterQuestionDeCoursActivee(user, texteUtilisateur, historique = [], detection = {}) {
+async function traiterQuestionDeCoursActivee(
+  user,
+  texteUtilisateur,
+  historique = [],
+  detection = {},
+  options = {}
+) {
   const matiere = detection?.matiere || "general";
+  const sansNouvelleConsolidation = Boolean(options?.sansNouvelleConsolidation);
+
+  const regleStructure = sansNouvelleConsolidation
+    ? `- Structure obligatoire, une seule fois chacune :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+- Ne génère aucun bloc CONSOLIDATION et ne pose aucune question finale.`
+    : `- Structure obligatoire, une seule fois chacune :
+🔵 [VÉCU]
+🟡 [SAVOIR]
+🔴 [INSPIRATION]
+❓ [CONSOLIDATION]
+- La consolidation doit contenir une seule petite question directement liée à la notion.`;
+
   const systemInstruction = `${construireSystemPrompt(user)}
 MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 - Tu réponds uniquement à une question de cours ou de définition.
@@ -3829,12 +3862,7 @@ MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 - Ne génère jamais de citation finale.
 - Ne génère jamais d'ouverture finale.
 - Ne génère jamais de mot d'encouragement final.
-- Structure obligatoire, une seule fois chacune :
-🔵 [VÉCU]
-🟡 [SAVOIR]
-🔴 [INSPIRATION]
-❓ [CONSOLIDATION]
-- La consolidation doit contenir une seule petite question directement liée à la notion.`;
+${regleStructure}`;
 
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -3851,11 +3879,20 @@ MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 Matière détectée : ${matiere}
 Question de l'élève : ${texteUtilisateur}
 
-Réponds avec la structure Mwalimu, sans doublons.`
+Réponds avec la structure Mwalimu, sans doublons.${sansNouvelleConsolidation ? " N'ajoute aucune nouvelle consolidation." : ""}`
         }
       ]
     }
   ];
+
+  const fallback = sansNouvelleConsolidation
+    ? `🔵 [VÉCU] : J'ai bien reçu ta question.
+🟡 [SAVOIR] : C'est une notion de cours. Reprenons-la simplement.
+🔴 [INSPIRATION] : Comprendre les bases aide à progresser avec confiance.`
+    : `🔵 [VÉCU] : J'ai bien reçu ta question.
+🟡 [SAVOIR] : C'est une notion de cours. Reprenons-la simplement.
+🔴 [INSPIRATION] : Comprendre les bases aide à progresser avec confiance.
+❓ [CONSOLIDATION] : Peux-tu reformuler cette notion avec tes propres mots ?`;
 
   const reponse = await safeAI(async () => {
     const r = await genererAvecRetry(model, {
@@ -3863,14 +3900,16 @@ Réponds avec la structure Mwalimu, sans doublons.`
       generationConfig: { temperature: 0.15 }
     });
     return r.response.text();
-  }, `🔵 [VÉCU] : J'ai bien reçu ta question.
-🟡 [SAVOIR] : C'est une notion de cours. Reprenons-la simplement.
-🔴 [INSPIRATION] : Comprendre les bases aide à progresser avec confiance.
-❓ [CONSOLIDATION] : Peux-tu reformuler cette notion avec tes propres mots ?`);
+  }, fallback);
 
-  const reponsePropre = nettoyerDoublonsPedagogiques(
+  let reponsePropre = nettoyerDoublonsPedagogiques(
     nettoyerFuitesContexteAcademique(reponse)
   );
+
+  if (sansNouvelleConsolidation) {
+    reponsePropre = retirerBlocConsolidationPedagogique(reponsePropre);
+    return reponsePropre;
+  }
 
   const consolidation = extraireQuestionConsolidation(reponsePropre);
   await enregistrerEtatPedagogique({
@@ -3886,7 +3925,6 @@ Réponds avec la structure Mwalimu, sans doublons.`
 
   return reponsePropre;
 }
-
 
 
 /* =========================================================
@@ -4480,33 +4518,44 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     };
   }
 
-  let consolidationCoursDifferee = null;
-  if (
+  const consolidationCoursEnAttente = (
     etatPedagogiqueActif?.kind === "course" &&
-    detectionAcademiqueEcrite?.route !== "social"
-  ) {
-    consolidationCoursDifferee = etatPedagogiqueActif;
-    await cloturerEtatPedagogique(etatPedagogiqueActif.id, "deferred");
-  }
+    detectionAcademiqueEcrite?.route !== "social" &&
+    detectionAcademiqueEcrite?.route !== "reponse_eleve"
+  ) ? etatPedagogiqueActif : null;
 
   if (detectionAcademiqueEcrite?.route === "question_de_cours") {
-    const cacheKeyCours = makeCacheKey(user, `question_de_cours|${texteUtilisateur}`);
+    const sansNouvelleConsolidation = Boolean(consolidationCoursEnAttente);
+    const modeCacheCours = sansNouvelleConsolidation
+      ? "question_de_cours_sans_nouvelle_consolidation"
+      : "question_de_cours";
+    const cacheKeyCours = makeCacheKey(user, `${modeCacheCours}|${texteUtilisateur}`);
     const cachedCours = getCache(cacheKeyCours);
+
     if (cachedCours) {
-      logInfo("cache_hit_question_de_cours", { phone: user?.phone || "", cacheKey: cacheKeyCours });
-      await enregistrerEtatPedagogique({
+      logInfo("cache_hit_question_de_cours", {
         phone: user?.phone || "",
-        kind: "course",
-        subject: detectionAcademiqueEcrite?.matiere || "general",
-        subSubject: detectionAcademiqueEcrite?.sousMatiere || "",
-        mainQuestion: texteUtilisateur,
-        pendingPrompt: extraireQuestionConsolidation(cachedCours),
-        status: "pending",
-        finalAnswerRequired: false
+        cacheKey: cacheKeyCours,
+        sansNouvelleConsolidation
       });
-      const sortieCoursCache = consolidationCoursDifferee
-        ? ajouterRappelConsolidationDifferee(cachedCours, consolidationCoursDifferee)
+
+      if (!sansNouvelleConsolidation) {
+        await enregistrerEtatPedagogique({
+          phone: user?.phone || "",
+          kind: "course",
+          subject: detectionAcademiqueEcrite?.matiere || "general",
+          subSubject: detectionAcademiqueEcrite?.sousMatiere || "",
+          mainQuestion: texteUtilisateur,
+          pendingPrompt: extraireQuestionConsolidation(cachedCours),
+          status: "pending",
+          finalAnswerRequired: false
+        });
+      }
+
+      const sortieCoursCache = sansNouvelleConsolidation
+        ? ajouterRappelConsolidationEnAttente(cachedCours, consolidationCoursEnAttente)
         : cachedCours;
+
       return { reponse: sortieCoursCache, fiche: null, bypassFormat: false };
     }
 
@@ -4514,7 +4563,8 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       user,
       texteUtilisateur,
       historique,
-      detectionAcademiqueEcrite
+      detectionAcademiqueEcrite,
+      { sansNouvelleConsolidation }
     );
 
     if (reponseCours && String(reponseCours).trim()) {
@@ -4524,11 +4574,12 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     logInfo("routage_academique_question_de_cours_active", {
       phone: user?.phone || "",
       matiere: detectionAcademiqueEcrite.matiere,
+      sansNouvelleConsolidation,
       preview: tronquerTexte(texteUtilisateur, 160)
     });
 
-    const sortieCours = consolidationCoursDifferee
-      ? ajouterRappelConsolidationDifferee(reponseCours, consolidationCoursDifferee)
+    const sortieCours = sansNouvelleConsolidation
+      ? ajouterRappelConsolidationEnAttente(reponseCours, consolidationCoursEnAttente)
       : reponseCours;
 
     return { reponse: sortieCours, fiche: null, bypassFormat: false };
@@ -4604,7 +4655,10 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   const cached = getCache(cacheKey);
   if (cached) {
     logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
-    return { reponse: cached, fiche: null, bypassFormat: false };
+    const sortieCache = consolidationCoursEnAttente
+      ? ajouterRappelConsolidationEnAttente(cached, consolidationCoursEnAttente)
+      : cached;
+    return { reponse: sortieCache, fiche: null, bypassFormat: false };
   }
 
   let analyse = {
@@ -4642,7 +4696,11 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     await resetStudentAttempt(user.phone, antiBoucle.sujet || analyse.sujet || "general");
   }
 
-  return { reponse, fiche: fiche || null, bypassFormat: false };
+  const sortieFinaleTexte = consolidationCoursEnAttente
+    ? ajouterRappelConsolidationEnAttente(reponse, consolidationCoursEnAttente)
+    : reponse;
+
+  return { reponse: sortieFinaleTexte, fiche: fiche || null, bypassFormat: false };
 }
 
 /* =========================================================
