@@ -3098,9 +3098,10 @@ ${JSON.stringify(decision)}`
 
 
 /* =========================================================
-   ROUTAGE ACADÉMIQUE ÉCRIT — PHASE 1 : DÉTECTION SEULEMENT
-   IMPORTANT : ce bloc observe et journalise, il ne change aucune réponse.
-   Version hybride : dictionnaire central + score + intention.
+   ROUTAGE ACADÉMIQUE ÉCRIT — CLASSIFICATION SÉMANTIQUE GLOBALE
+   - Analyse le sens de la phrase complète et le contexte récent.
+   - Les règles locales sont réservées aux cas structurellement certains.
+   - Aucune liste de mots du message n'est utilisée pour classer les matières.
 ========================================================= */
 function nettoyerPourDetectionAcademique(texte = "") {
   return normaliserTexteRelationnel(texte)
@@ -3108,179 +3109,96 @@ function nettoyerPourDetectionAcademique(texte = "") {
     .trim();
 }
 
-const MATIERES_ACADEMIQUES_ECRITES = {
-  mathematiques: {
-    famille: "resolution",
-    besoinWeb: false,
-    mots: ["math", "maths", "mathematique", "mathematiques", "equation", "inequation", "calcul", "fraction", "racine", "puissance", "geometrie", "algebre", "fonction", "derivee", "integrale", "polynome"],
-    symboles: [/\d+\s*[+*/=]\s*[a-zA-Z0-9]/, /\b[xXyY]\s*[+*/=]\s*[a-zA-Z0-9]/, /[a-zA-Z0-9]\s*=\s*[a-zA-Z0-9]/, /x²|x\^2|√|\bdelta\b|\bcos\b|\bsin\b|\btan\b/i]
-  },
-  francais: {
-    famille: "cours",
-    besoinWeb: false,
-    mots: ["francais", "grammaire", "conjugaison", "orthographe", "phrase", "verbe", "nom", "adjectif", "pronom", "adverbe", "complement", "sujet", "accord", "temps", "mode", "participe", "texte"]
-  },
-  sciences: {
-    famille: "resolution",
-    besoinWeb: false,
-    mots: ["physique", "chimie", "biologie", "science", "force", "vitesse", "energie", "mouvement", "pression", "masse", "poids", "newton", "molecule", "atome", "reaction", "solution", "acide", "base", "h2o", "co2", "nacl"]
-  },
-  technique: {
-    famille: "resolution",
-    besoinWeb: false,
-    mots: ["electricite", "electronique", "mecanique", "rdm", "resistance des materiaux", "tension", "intensite", "courant", "resistance", "ohm", "volt", "ampere", "circuit", "diode", "transistor", "condensateur", "bobine", "poutre", "contrainte", "deformation", "traction", "flexion", "cisaillement"]
-  },
-  gestion: {
-    famille: "resolution",
-    besoinWeb: false,
-    mots: ["comptabilite", "bilan", "journal", "debit", "credit", "compte", "grand livre", "balance", "actif", "passif", "charge", "produit", "amortissement", "stock", "tva", "economie", "statistique", "moyenne", "mediane", "mode", "variance", "ecart type", "probabilite", "pourcentage"]
-  },
-  informatique: {
-    famille: "resolution",
-    besoinWeb: false,
-    mots: ["informatique", "algorithme", "algorithmique", "programme", "programmation", "code", "fonction", "variable", "boucle", "condition", "tableau", "javascript", "python", "html", "css"]
-  },
-  droit: {
-    famille: "juridique_web",
-    besoinWeb: true,
-    mots: ["droit", "loi", "code", "article", "constitution", "ohada", "tribunal", "procedure", "ordonnance", "juridique", "fiscalite", "impot", "taxe", "journal officiel", "arret", "jugement"]
-  },
-  geographie: {
-    famille: "geographie_rdc_web",
-    besoinWeb: true,
-    mots: ["geographie", "rdc", "congo", "province", "territoire", "territoires", "commune", "communes", "ville", "villes", "secteur", "chefferie", "haut katanga", "haut-katanga", "climat", "relief", "fleuve", "lac"]
-  },
-  histoire: {
-    famille: "cours",
-    besoinWeb: false,
-    mots: ["histoire", "independance", "colonisation", "royaume", "empire", "revolution", "guerre", "date historique", "evenement historique"]
-  },
-  general: {
-    famille: "cours",
-    besoinWeb: false,
-    mots: ["cours", "lecon", "chapitre", "notion", "definition", "resume", "explique"]
-  }
+const MATIERES_SEMANTIQUES_AUTORISEES = {
+  mathematiques: { famille: "resolution", besoinWeb: false },
+  francais: { famille: "cours", besoinWeb: false },
+  sciences: { famille: "resolution", besoinWeb: false },
+  technique: { famille: "resolution", besoinWeb: false },
+  gestion: { famille: "resolution", besoinWeb: false },
+  informatique: { famille: "resolution", besoinWeb: false },
+  droit: { famille: "juridique_web", besoinWeb: true },
+  geographie: { famille: "geographie_rdc_web", besoinWeb: true },
+  histoire: { famille: "cours", besoinWeb: false },
+  general: { famille: "cours", besoinWeb: false }
 };
 
-function detecterMatiereAcademiqueEcrite(texte = "") {
-  const t = nettoyerPourDetectionAcademique(texte);
-  const brut = String(texte || "");
-  const scores = {};
+const ROUTES_ACADEMIQUES_AUTORISEES = new Set([
+  "social",
+  "question_de_cours",
+  "exercice_a_resolution",
+  "reponse_eleve",
+  "juridique_web",
+  "geographie_rdc_web",
+  "actualite_web",
+  "academique_general",
+  "question_floue",
+  "non_academique"
+]);
 
-  for (const [matiere, config] of Object.entries(MATIERES_ACADEMIQUES_ECRITES)) {
-    let score = 0;
+function normaliserMatiereSemantique(matiere = "") {
+  const m = retirerAccents(String(matiere || "").toLowerCase()).trim();
 
-    for (const mot of config.mots || []) {
-      if (t.includes(mot)) score += mot.includes(" ") ? 4 : 3;
-    }
+  const correspondances = {
+    math: "mathematiques",
+    maths: "mathematiques",
+    mathematique: "mathematiques",
+    mathematiques: "mathematiques",
+    algebre: "mathematiques",
+    geometrie: "mathematiques",
 
-    for (const regex of config.symboles || []) {
-      if (regex.test(brut)) score += 6;
-    }
+    francais: "francais",
+    grammaire: "francais",
+    conjugaison: "francais",
+    orthographe: "francais",
+    litterature: "francais",
 
-    scores[matiere] = score;
-  }
+    biologie: "sciences",
+    botanique: "sciences",
+    zoologie: "sciences",
+    ecologie: "sciences",
+    physique: "sciences",
+    chimie: "sciences",
+    sciences: "sciences",
+    science: "sciences",
 
-  const meilleur = Object.entries(scores).sort((a, b) => b[1] - a[1])[0] || ["general", 0];
-  const matiere = meilleur[0];
-  const score = meilleur[1];
-  const config = MATIERES_ACADEMIQUES_ECRITES[matiere] || MATIERES_ACADEMIQUES_ECRITES.general;
+    electricite: "technique",
+    electronique: "technique",
+    mecanique: "technique",
+    electrotechnique: "technique",
+    rdm: "technique",
+    technique: "technique",
 
-  return {
-    matiere: score > 0 ? matiere : "general",
-    score,
-    famille: score > 0 ? config.famille : "cours",
-    besoinWeb: score > 0 ? Boolean(config.besoinWeb) : false,
-    confiance: score >= 6 ? "forte" : score >= 3 ? "moyenne" : "faible"
+    comptabilite: "gestion",
+    economie: "gestion",
+    statistique: "gestion",
+    gestion: "gestion",
+
+    informatique: "informatique",
+    programmation: "informatique",
+    algorithmique: "informatique",
+
+    droit: "droit",
+    juridique: "droit",
+
+    geographie: "geographie",
+
+    histoire: "histoire",
+
+    general: "general",
+    autre: "general"
   };
+
+  return correspondances[m] || (MATIERES_SEMANTIQUES_AUTORISEES[m] ? m : "general");
 }
 
-function detecterIntentionAcademiqueEcrite(texte = "") {
-  const t = nettoyerPourDetectionAcademique(texte);
-  const brut = String(texte || "");
-
-  const demandeAide = /\b(aide moi|aide-moi|peux tu m aider|tu peux m aider|aidez moi|aidez-moi|explique|explique moi|resous|résous|resoudre|résoudre|calcule|calculer|comment faire|donne moi|tu peux me donner)\b/i.test(t);
-  const demandeDefinition = /\b(qu est ce que|c est quoi|definition|définition|definis|définis|explique|explique moi|resume|résume|difference entre|quelle est la difference)\b/i.test(t);
-  const formeQuestion = /\?$/.test(brut.trim()) || /\b(qui|que|quoi|quand|ou|où|pourquoi|comment|combien|quel|quelle|quels|quelles)\b/i.test(t);
-  const symbolesResolution = /\d+\s*[+*/=]\s*[a-zA-Z0-9]/.test(brut) || /\b[xXyY]\s*[+*/=]\s*[a-zA-Z0-9]/.test(brut) || /[a-zA-Z0-9]\s*=\s*[a-zA-Z0-9]/.test(brut) || /\d+\s*(v|a|ohm|ω|n|kg|m\/s|m2|m²|cm2|cm²|usd|fc|cdf)\b/i.test(brut);
-  const procedureResolution = /\b(exercice|devoir|probleme|problème|resous|résous|resoudre|résoudre|calcule|calculer|trouve|determiner|déterminer|demontrer|démontrer|simplifie|developpe|développe|factorise|corrige|correction)\b/i.test(t);
-  const reponseExplicite = /^(ma reponse|voici ma reponse|j ai trouve|je trouve|j obtiens|j ai obtenu|cela donne|ca donne|la reponse est|le resultat est|mon resultat est|reponse)\b/i.test(t);
-
-  return {
-    demandeAide,
-    demandeDefinition,
-    formeQuestion,
-    symbolesResolution,
-    procedureResolution,
-    reponseExplicite
-  };
-}
-
-function detecterQuestionJuridiqueOuWebEcrite(texte = "", matiereDetectee = null) {
-  const t = nettoyerPourDetectionAcademique(texte);
-  const matiere = matiereDetectee || detecterMatiereAcademiqueEcrite(texte);
-
-  if (matiere.besoinWeb && matiere.famille) {
-    return { besoinWeb: true, famille: matiere.famille };
-  }
-
-  const actualite = ["actualite", "recent", "actuel", "aujourd hui", "maintenant", "2025", "2026"];
-  if (actualite.some((m) => t.includes(m))) return { besoinWeb: true, famille: "actualite_web" };
-
-  return { besoinWeb: false, famille: "sans_web" };
-}
-
-function detecterExerciceAResolutionEcrit(texte = "", matiereDetectee = null) {
-  const matiere = matiereDetectee || detecterMatiereAcademiqueEcrite(texte);
-  const intention = detecterIntentionAcademiqueEcrite(texte);
-
-  if (intention.symbolesResolution && (intention.demandeAide || intention.procedureResolution || matiere.matiere === "mathematiques")) return true;
-  if (intention.procedureResolution && ["resolution", "technique", "gestion"].includes(matiere.famille)) return true;
-  if (intention.demandeAide && matiere.famille === "resolution") return true;
-
-  return false;
-}
-
-function detecterQuestionDeCoursEcrite(texte = "", matiereDetectee = null) {
-  const matiere = matiereDetectee || detecterMatiereAcademiqueEcrite(texte);
-  const intention = detecterIntentionAcademiqueEcrite(texte);
-
-  if (intention.demandeDefinition) return true;
-  if (intention.formeQuestion && matiere.score > 0 && matiere.famille !== "resolution") return true;
-  if (intention.formeQuestion && matiere.matiere === "general") return true;
-
-  return false;
-}
-
-function detecterReponseEleveEcrite(texte = "", historique = []) {
-  const t = nettoyerPourDetectionAcademique(texte);
-  if (!t) return false;
-
-  const intention = detecterIntentionAcademiqueEcrite(texte);
-
-  // Une demande, une question ou un exercice ne doit jamais être pris pour une réponse d'élève.
-  if (intention.demandeAide || intention.demandeDefinition || intention.formeQuestion) return false;
-
-  if (intention.reponseExplicite || estSoumissionReponse(texte)) return true;
-
-  const derniersAssistants = [...historique]
-    .reverse()
-    .filter((m) => m?.role === "assistant")
-    .slice(0, 2)
-    .map((m) => String(m.content || "").toLowerCase())
+function extraireContexteSemantiqueRecent(historique = []) {
+  return historique
+    .slice(-6)
+    .map((m) => {
+      const role = m?.role === "assistant" ? "Mwalimu" : "Élève";
+      return `${role}: ${tronquerTexte(m?.content || "", 600)}`;
+    })
     .join("\n");
-
-  const assistantAttendReponse =
-    /envoie-moi ta reponse|propose ta reponse|essaie maintenant|a toi|à toi|dis-moi ce que tu retiens|consolidation/i.test(derniersAssistants);
-
-  if (!assistantAttendReponse) return false;
-
-  const court = t.length <= 180;
-  const ressembleReponse =
-    /^[0-9a-z+\-*/=().,\s]+$/i.test(t) ||
-    t.split(" ").length <= 20;
-
-  return court && ressembleReponse;
 }
 
 function detecterConsolidationEnSouffrance(historique = []) {
@@ -3288,122 +3206,319 @@ function detecterConsolidationEnSouffrance(historique = []) {
   if (!dernierAssistant) return false;
 
   const contenu = String(dernierAssistant.content || "");
-  return /❓\s*\[CONSOLIDATION\]/i.test(contenu) || /dis-moi ce que tu retiens|peux-tu m'expliquer|avec tes mots/i.test(contenu);
+  return /❓\s*\*{0,2}\[CONSOLIDATION\]\*{0,2}/i.test(contenu) ||
+    /dis-moi ce que tu retiens|peux-tu m'expliquer|avec tes mots|propose ta réponse|écris-moi la nouvelle équation/i.test(contenu);
 }
 
-function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) {
-  const t = nettoyerPourDetectionAcademique(texte);
-  const matiereDetectee = detecterMatiereAcademiqueEcrite(texte);
-  const web = detecterQuestionJuridiqueOuWebEcrite(texte, matiereDetectee);
+function detecterCasAcademiqueCertainParStructure(texte = "", historique = []) {
+  const brut = String(texte || "").trim();
+  const t = nettoyerPourDetectionAcademique(brut);
 
-  const resultat = {
-    mode: "observation_seulement",
-    route: "non_academique",
-    matiere: matiereDetectee.matiere,
-    scoreMatiere: matiereDetectee.score,
-    besoinWeb: web.besoinWeb,
-    familleWeb: web.famille,
-    exerciceAResolution: false,
-    reponseEleve: false,
-    consolidationEnSouffrance: detecterConsolidationEnSouffrance(historique),
-    confiance: matiereDetectee.confiance,
-    raison: "Aucune règle académique forte détectée",
-    preview: String(texte || "").slice(0, 120)
+  if (!t) return null;
+
+  if (estMessageRelationnelSimple(brut) || estMessagePurementSocial(brut)) {
+    return {
+      route: "social",
+      matiere: "general",
+      sousMatiere: "conversation sociale",
+      besoinWeb: false,
+      confiance: "forte",
+      raison: "Message social reconnu par le routeur social existant",
+      sourceDetection: "regle_certaine"
+    };
+  }
+
+  const attenteReponse = detecterConsolidationEnSouffrance(historique);
+  const reponseExplicite = /^(ma\s+r[ée]ponse|voici\s+ma\s+r[ée]ponse|j['’]?ai\s+trouv[ée]|j['’]?obtiens|le\s+r[ée]sultat\s+est|cela\s+donne|ça\s+donne)\b/i.test(brut);
+
+  if (reponseExplicite && attenteReponse) {
+    return {
+      route: "reponse_eleve",
+      matiere: "general",
+      sousMatiere: "réponse à une activité en cours",
+      besoinWeb: false,
+      confiance: "forte",
+      raison: "L'élève annonce explicitement une réponse dans un contexte où Mwalimu attend une réponse",
+      sourceDetection: "regle_certaine"
+    };
+  }
+
+  const expressionMathematique =
+    /(?:\d|[xyz])\s*(?:[+\-*/=]|²|³|\^|√)\s*(?:\d|[xyz])/i.test(brut) ||
+    /\b(?:sin|cos|tan|log|ln)\s*\(/i.test(brut);
+  const demandeResolution = /\b(aide(?:z)?[- ]?moi|r[ée]sous|r[ée]soudre|calcule|calculer|simplifie|factorise|d[ée]termine|trouve)\b/i.test(brut);
+
+  if (expressionMathematique && (demandeResolution || /\?$/.test(brut))) {
+    return {
+      route: "exercice_a_resolution",
+      matiere: "mathematiques",
+      sousMatiere: "calcul ou équation",
+      besoinWeb: false,
+      confiance: "forte",
+      raison: "Expression mathématique structurée accompagnée d'une demande de résolution",
+      sourceDetection: "regle_certaine"
+    };
+  }
+
+  const referenceJuridiqueCertaine =
+    /\barticle\s+\d+[\w.-]*\b/i.test(brut) ||
+    /\b(?:loi|ordonnance|d[ée]cret)\s+n[°o]?\s*[\w./-]+/i.test(brut) ||
+    /\bcode\s+de\s+[a-zà-ÿ\s'-]+/i.test(brut) ||
+    /\bohada\b/i.test(brut);
+
+  if (referenceJuridiqueCertaine) {
+    return {
+      route: "juridique_web",
+      matiere: "droit",
+      sousMatiere: "texte juridique ou source officielle",
+      besoinWeb: true,
+      confiance: "forte",
+      raison: "Référence juridique structurée nécessitant une vérification externe",
+      sourceDetection: "regle_certaine"
+    };
+  }
+
+  return null;
+}
+
+async function classifierRoutageAcademiqueSemantiqueGlobal(user = {}, texte = "", historique = []) {
+  const casCertain = detecterCasAcademiqueCertainParStructure(texte, historique);
+  if (casCertain) return casCertain;
+
+  const contexteRecent = extraireContexteSemantiqueRecent(historique);
+  const matieres = Object.keys(MATIERES_SEMANTIQUES_AUTORISEES).join(", ");
+  const routes = [...ROUTES_ACADEMIQUES_AUTORISEES].join(", ");
+
+  const fallback = {
+    route: "academique_general",
+    matiere: "general",
+    sousMatiere: "non déterminée",
+    besoinWeb: false,
+    confiance: "faible",
+    raison: "Classification sémantique indisponible",
+    sourceDetection: "fallback"
   };
 
-  if (!t) {
-    resultat.route = "vide";
-    resultat.raison = "Message vide";
-    return resultat;
-  }
+  try {
+    const parsed = await appelerJsonStrict({
+      systemInstruction: `Tu es le classificateur sémantique global de Mwalimu EdTech.
+Tu dois comprendre le SENS COMPLET du message et son contexte, et non chercher des mots isolés.
 
-  if (estMessageRelationnelSimple(texte) || estMessagePurementSocial(texte)) {
-    resultat.route = "social";
-    resultat.confiance = "forte";
-    resultat.raison = "Message social détecté, hors routage académique";
-    return resultat;
-  }
+MATIÈRES PRINCIPALES AUTORISÉES : ${matieres}.
+ROUTES AUTORISÉES : ${routes}.
 
-  // 1) Questions nécessitant une vérification externe : droit, OHADA, RDC, géographie administrative, actualité.
-  if (web.besoinWeb) {
-    resultat.route = web.famille;
-    resultat.confiance = "forte";
-    resultat.raison = "Question nécessitant probablement une vérification externe";
-    return resultat;
-  }
+PRINCIPES OBLIGATOIRES :
+- "Comment fonctionne le cœur ?" relève des sciences, pas des mathématiques.
+- "Étudier une fonction affine" relève des mathématiques.
+- "Fonctionnement d'un circuit" relève de la technique.
+- Une question de définition ou d'explication est généralement question_de_cours.
+- Un calcul, un devoir chiffré ou une procédure à réaliser est exercice_a_resolution.
+- reponse_eleve seulement si le message répond réellement à une consigne ou consolidation précédente.
+- juridique_web seulement pour le droit ou les textes officiels à vérifier.
+- geographie_rdc_web seulement pour les listes administratives, données territoriales ou informations géographiques nécessitant une vérification.
+- actualite_web seulement pour une information actuelle ou récente.
+- besoinWeb est false pour les cours stables et exercices ordinaires.
+- Si le message est ambigu, utilise confiance faible et question_floue ou academique_general.
+- Ne classe jamais une matière à cause d'une simple ressemblance entre deux mots.
+- Réponds uniquement en JSON valide.`,
+      prompt: `MESSAGE ACTUEL DE L'ÉLÈVE :
+${String(texte || "")}
 
-  // 2) Réponse explicite de l'élève : à traiter avant les exercices.
-  // Exemple : "Ma réponse est x=2" ne doit pas devenir un nouvel exercice.
-  if (detecterReponseEleveEcrite(texte, historique)) {
-    resultat.route = "reponse_eleve";
-    resultat.reponseEleve = true;
-    resultat.exerciceAResolution = false;
-    resultat.besoinWeb = false;
-    resultat.familleWeb = "sans_web";
-    resultat.confiance = "forte";
-    resultat.raison = "Réponse proposée par l'élève";
-    return resultat;
-  }
+CONTEXTE RÉCENT :
+${contexteRecent || "Aucun contexte antérieur utile."}
 
-  // 3) Question de cours / définition : avant les exercices.
-  // Cela évite que "qu'est-ce" ou "est-ce" soient pris pour des signes mathématiques.
-  if (detecterQuestionDeCoursEcrite(texte, matiereDetectee)) {
-    resultat.route = "question_de_cours";
-    resultat.exerciceAResolution = false;
-    resultat.reponseEleve = false;
-    resultat.besoinWeb = false;
-    resultat.familleWeb = "sans_web";
-    resultat.confiance = matiereDetectee.score > 0 ? "forte" : "moyenne";
-    resultat.raison = "Question de cours ou demande d'explication détectée";
-    return resultat;
-  }
+Classe globalement le message.`,
+      schema: {
+        type: "OBJECT",
+        properties: {
+          route: { type: "STRING" },
+          matiere: { type: "STRING" },
+          sousMatiere: { type: "STRING" },
+          besoinWeb: { type: "BOOLEAN" },
+          confiance: { type: "STRING" },
+          raison: { type: "STRING" }
+        },
+        required: ["route", "matiere", "sousMatiere", "besoinWeb", "confiance", "raison"]
+      },
+      history: []
+    });
 
-  // 4) Exercice à résolution : calcul, équation, procédure technique, comptabilité, sciences, etc.
-  if (detecterExerciceAResolutionEcrit(texte, matiereDetectee)) {
-    resultat.route = "exercice_a_resolution";
-    resultat.exerciceAResolution = true;
-    resultat.reponseEleve = false;
-    resultat.besoinWeb = false;
-    resultat.familleWeb = "sans_web";
-    resultat.confiance = "forte";
-    resultat.raison = "Exercice ou procédure de résolution détecté";
-    return resultat;
-  }
+    const routeBrute = String(parsed?.route || "").trim().toLowerCase();
+    const route = ROUTES_ACADEMIQUES_AUTORISEES.has(routeBrute)
+      ? routeBrute
+      : "academique_general";
+    const matiere = normaliserMatiereSemantique(parsed?.matiere || "general");
+    const config = MATIERES_SEMANTIQUES_AUTORISEES[matiere] || MATIERES_SEMANTIQUES_AUTORISEES.general;
+    const confianceBrute = String(parsed?.confiance || "moyenne").trim().toLowerCase();
+    const confiance = ["forte", "moyenne", "faible"].includes(confianceBrute)
+      ? confianceBrute
+      : "moyenne";
 
-  if (t.length < 8) {
-    resultat.route = "question_floue";
-    resultat.confiance = "moyenne";
-    resultat.raison = "Message trop court pour une classification académique sûre";
-    return resultat;
-  }
+    let besoinWeb = Boolean(parsed?.besoinWeb);
+    if (["juridique_web", "geographie_rdc_web", "actualite_web"].includes(route)) besoinWeb = true;
+    if (["question_de_cours", "exercice_a_resolution", "reponse_eleve"].includes(route) && !config.besoinWeb) besoinWeb = false;
 
-  resultat.route = matiereDetectee.score > 0 ? "academique_general" : "non_academique";
-  resultat.confiance = matiereDetectee.confiance;
-  resultat.raison = matiereDetectee.score > 0
-    ? "Message académique détecté par score, sans action en phase 1"
-    : "Aucun indice académique suffisant";
-  return resultat;
+    return {
+      route,
+      matiere,
+      sousMatiere: String(parsed?.sousMatiere || "").trim() || "non précisée",
+      besoinWeb,
+      confiance,
+      raison: String(parsed?.raison || "Classification sémantique globale").trim(),
+      sourceDetection: "ia_semantique_globale"
+    };
+  } catch (e) {
+    logError("classification_semantique_globale_error", e, {
+      phone: user?.phone || "",
+      preview: tronquerTexte(texte, 160)
+    });
+    return fallback;
+  }
 }
 
-function observerRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) {
+// Compatibilité avec les fonctions existantes qui attendent encore une détection synchrone.
+// Elle ne décide que les cas structurellement certains ; le routeur principal utilise l'IA sémantique globale.
+function detecterMatiereAcademiqueEcrite(texte = "") {
+  const certain = detecterCasAcademiqueCertainParStructure(texte, []);
+  const matiere = certain?.matiere || "general";
+  const config = MATIERES_SEMANTIQUES_AUTORISEES[matiere] || MATIERES_SEMANTIQUES_AUTORISEES.general;
+
+  return {
+    matiere,
+    score: certain ? 10 : 0,
+    secondScore: 0,
+    ambigu: !certain,
+    famille: config.famille,
+    besoinWeb: Boolean(certain?.besoinWeb || config.besoinWeb),
+    confiance: certain?.confiance || "faible",
+    sousMatiere: certain?.sousMatiere || "non déterminée",
+    sourceDetection: certain?.sourceDetection || "fallback_synchrone"
+  };
+}
+
+async function detecterMatiereAcademiqueHybride(texte = "", historique = [], user = {}) {
+  const classification = await classifierRoutageAcademiqueSemantiqueGlobal(
+    user,
+    texte,
+    historique
+  );
+  const config = MATIERES_SEMANTIQUES_AUTORISEES[classification.matiere] || MATIERES_SEMANTIQUES_AUTORISEES.general;
+
+  return {
+    ...classification,
+    score: classification.confiance === "forte" ? 10 : classification.confiance === "moyenne" ? 6 : 2,
+    secondScore: 0,
+    ambigu: classification.confiance === "faible",
+    famille: config.famille
+  };
+}
+
+function detecterRoutageAcademiqueEcrit(user = {}, texte = "", historique = [], classification = null) {
+  const t = nettoyerPourDetectionAcademique(texte);
+  const c = classification || {
+    route: "academique_general",
+    matiere: "general",
+    sousMatiere: "non déterminée",
+    besoinWeb: false,
+    confiance: "faible",
+    raison: "Classification absente",
+    sourceDetection: "fallback"
+  };
+
+  const route = ROUTES_ACADEMIQUES_AUTORISEES.has(c.route)
+    ? c.route
+    : "academique_general";
+  const familleWeb = route === "juridique_web"
+    ? "juridique_web"
+    : route === "geographie_rdc_web"
+      ? "geographie_rdc_web"
+      : route === "actualite_web"
+        ? "actualite_web"
+        : "sans_web";
+
+  return {
+    mode: "routage_semantique_global",
+    route: t ? route : "vide",
+    matiere: normaliserMatiereSemantique(c.matiere),
+    sousMatiere: c.sousMatiere || "non précisée",
+    scoreMatiere: c.score || 0,
+    besoinWeb: Boolean(c.besoinWeb),
+    familleWeb,
+    exerciceAResolution: route === "exercice_a_resolution",
+    reponseEleve: route === "reponse_eleve",
+    consolidationEnSouffrance: detecterConsolidationEnSouffrance(historique),
+    confiance: c.confiance || "faible",
+    sourceDetection: c.sourceDetection || "ia_semantique_globale",
+    raison: c.raison || "Classification sémantique globale",
+    preview: String(texte || "").slice(0, 120)
+  };
+}
+
+async function observerRoutageAcademiqueEcrit(user = {}, texte = "", historique = []) {
   try {
-    const detection = detecterRoutageAcademiqueEcrit(user, texte, historique);
-    logInfo("routage_academique_ecrit_detection_only", {
+    const socialCertain = detecterCasAcademiqueCertainParStructure(texte, historique);
+    if (socialCertain?.route === "social") {
+      const detectionSociale = detecterRoutageAcademiqueEcrit(
+        user,
+        texte,
+        historique,
+        socialCertain
+      );
+      logInfo("routage_academique_ecrit_semantique", {
+        phone: user?.phone || "",
+        route: detectionSociale.route,
+        matiere: detectionSociale.matiere,
+        sousMatiere: detectionSociale.sousMatiere,
+        besoinWeb: detectionSociale.besoinWeb,
+        confiance: detectionSociale.confiance,
+        sourceDetection: detectionSociale.sourceDetection,
+        preview: tronquerTexte(texte, 160)
+      });
+      return detectionSociale;
+    }
+
+    const contexteCache = historique
+      .slice(-2)
+      .map((m) => `${m?.role}:${tronquerTexte(m?.content || "", 120)}`)
+      .join("|");
+    const cacheKey = `routage_semantique|${normaliserTexteRelationnel(texte)}|${contexteCache}`;
+    let classification = getCache(cacheKey);
+
+    if (!classification) {
+      classification = await detecterMatiereAcademiqueHybride(
+        texte,
+        historique,
+        user
+      );
+      setCache(cacheKey, classification);
+    }
+
+    const detection = detecterRoutageAcademiqueEcrit(
+      user,
+      texte,
+      historique,
+      classification
+    );
+
+    logInfo("routage_academique_ecrit_semantique", {
       phone: user?.phone || "",
       route: detection.route,
       matiere: detection.matiere,
+      sousMatiere: detection.sousMatiere,
       besoinWeb: detection.besoinWeb,
       familleWeb: detection.familleWeb,
       exerciceAResolution: detection.exerciceAResolution,
       reponseEleve: detection.reponseEleve,
       consolidationEnSouffrance: detection.consolidationEnSouffrance,
       confiance: detection.confiance,
+      sourceDetection: detection.sourceDetection,
       raison: detection.raison,
       preview: tronquerTexte(texte, 160)
     });
+
     return detection;
   } catch (e) {
-    logError("routage_academique_ecrit_detection_only_error", e, {
+    logError("routage_academique_ecrit_semantique_error", e, {
       phone: user?.phone || "",
       preview: tronquerTexte(texte, 160)
     });
@@ -3919,7 +4034,7 @@ async function traiterReponseEleveActivee(user, texteUtilisateur, historique = [
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
   // Phase 2 limitée : question_de_cours active. Le reste reste en observation seulement.
-  const detectionAcademiqueEcrite = observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
+  const detectionAcademiqueEcrite = await observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
 
   if (detectionAcademiqueEcrite?.route === "reponse_eleve") {
     const reponseCorrection = await traiterReponseEleveActivee(
