@@ -4481,14 +4481,178 @@ async function traiterReponseEleveActivee(user, texteUtilisateur, historique = [
 }
 
 
+async function classifierRelationAvecConsolidationCours(
+  user = {},
+  texteUtilisateur = "",
+  etat = {}
+) {
+  const fallback = {
+    relation: "ambigu",
+    confiance: "faible",
+    raison: "Classification contextuelle indisponible"
+  };
+
+  try {
+    const parsed = await appelerJsonStrict({
+      systemInstruction: `Tu es le contrôleur de continuité pédagogique de Mwalimu EdTech.
+Tu dois déterminer si le message actuel de l'élève répond à la consolidation en attente ou s'il pose une nouvelle question.
+
+RELATIONS AUTORISÉES :
+- reponse_consolidation
+- nouvelle_question
+- social
+- ambigu
+
+RÈGLES STRICTES :
+- Une réponse courte directement compatible avec la question en attente est reponse_consolidation.
+- Une phrase interrogative qui demande une autre information est nouvelle_question.
+- Une nouvelle question académique ne doit jamais être transformée en réponse à la consolidation.
+- Le fait qu'une consolidation soit en attente ne suffit pas pour classer tout nouveau message comme reponse_consolidation.
+- Un salut, un merci ou un échange de bien-être est social.
+- Analyse le sens complet des deux textes, pas des mots isolés.
+- Réponds uniquement en JSON valide.`,
+      prompt: `QUESTION DE CONSOLIDATION EN ATTENTE :
+${String(etat?.pending_prompt || "")}
+
+QUESTION PRINCIPALE D'ORIGINE :
+${String(etat?.main_question || "")}
+
+MESSAGE ACTUEL DE L'ÉLÈVE :
+${String(texteUtilisateur || "")}
+
+Détermine la relation exacte du message actuel.`,
+      schema: {
+        type: "OBJECT",
+        properties: {
+          relation: { type: "STRING" },
+          confiance: { type: "STRING" },
+          raison: { type: "STRING" }
+        },
+        required: ["relation", "confiance", "raison"]
+      },
+      history: []
+    });
+
+    const relationBrute = String(parsed?.relation || "").trim().toLowerCase();
+    const relations = new Set([
+      "reponse_consolidation",
+      "nouvelle_question",
+      "social",
+      "ambigu"
+    ]);
+
+    return {
+      relation: relations.has(relationBrute) ? relationBrute : "ambigu",
+      confiance: String(parsed?.confiance || "moyenne").trim().toLowerCase(),
+      raison: String(parsed?.raison || "Classification contextuelle").trim()
+    };
+  } catch (e) {
+    logError("classifier_relation_consolidation_cours", e, {
+      phone: user?.phone || "",
+      preview: tronquerTexte(texteUtilisateur, 160)
+    });
+    return fallback;
+  }
+}
+
+function finaliserReponseAvecConsolidationEnAttente(
+  user = {},
+  reponse = "",
+  historique = [],
+  question = "",
+  fiche = null,
+  etat = {}
+) {
+  let message = construireMessageFinal(
+    user,
+    reponse,
+    historique,
+    question,
+    fiche
+  );
+
+  message = retirerBlocConsolidationPedagogique(message);
+
+  // Évite toute relance d'exercice ou consolidation ajoutée automatiquement.
+  message = String(message || "")
+    .replace(
+      /^\s*👉\s*(?:essaie|écris|réponds|reponds|dis-moi|propose).*$/gim,
+      ""
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const rappel = String(etat?.pending_prompt || "").trim();
+  if (rappel && !message.includes("une seule question de consolidation en attente")) {
+    message += `\n\nPetit rappel : nous avons encore une seule question de consolidation en attente : « ${rappel} ». Réponds-y quand tu es prêt ; je n'en créerai pas une nouvelle avant sa clôture.`;
+  }
+
+  return nettoyerDoublonsPedagogiques(message)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+
 
 /* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
   // Détection sémantique, puis application du régime pédagogique actif.
-  const detectionAcademiqueEcrite = await observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
+  let detectionAcademiqueEcrite = await observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
   const etatPedagogiqueActif = await getEtatPedagogiqueActif(user?.phone || "");
+
+  // Une consolidation de cours ne doit jamais avaler une nouvelle question.
+  if (
+    etatPedagogiqueActif?.kind === "course" &&
+    detectionAcademiqueEcrite?.route !== "social"
+  ) {
+    const relationCours = await classifierRelationAvecConsolidationCours(
+      user,
+      texteUtilisateur,
+      etatPedagogiqueActif
+    );
+
+    logInfo("relation_consolidation_cours", {
+      phone: user?.phone || "",
+      relation: relationCours.relation,
+      confiance: relationCours.confiance,
+      raison: relationCours.raison,
+      preview: tronquerTexte(texteUtilisateur, 160)
+    });
+
+    if (relationCours.relation === "reponse_consolidation") {
+      const resultatConsolidation = await traiterReponseConsolidationCoursPersistante(
+        user,
+        texteUtilisateur,
+        etatPedagogiqueActif
+      );
+
+      return {
+        reponse: resultatConsolidation?.reponse || "",
+        fiche: null,
+        bypassFormat: Boolean(resultatConsolidation?.bypassFormat)
+      };
+    }
+
+    if (
+      relationCours.relation === "nouvelle_question" &&
+      detectionAcademiqueEcrite?.route === "reponse_eleve"
+    ) {
+      const classificationNeutre = await classifierRoutageAcademiqueSemantiqueGlobal(
+        user,
+        texteUtilisateur,
+        []
+      );
+
+      detectionAcademiqueEcrite = detecterRoutageAcademiqueEcrit(
+        user,
+        texteUtilisateur,
+        [],
+        classificationNeutre
+      );
+    }
+  }
 
   // Un exercice/devoir reste bloquant jusqu'à la réponse finale corrigée.
   if (
@@ -4552,11 +4716,19 @@ async function traiterTexte(user, texteUtilisateur, historique) {
         });
       }
 
-      const sortieCoursCache = sansNouvelleConsolidation
-        ? ajouterRappelConsolidationEnAttente(cachedCours, consolidationCoursEnAttente)
-        : cachedCours;
+      if (sansNouvelleConsolidation) {
+        const sortieCoursCache = finaliserReponseAvecConsolidationEnAttente(
+          user,
+          cachedCours,
+          historique,
+          texteUtilisateur,
+          null,
+          consolidationCoursEnAttente
+        );
+        return { reponse: sortieCoursCache, fiche: null, bypassFormat: true };
+      }
 
-      return { reponse: sortieCoursCache, fiche: null, bypassFormat: false };
+      return { reponse: cachedCours, fiche: null, bypassFormat: false };
     }
 
     const reponseCours = await traiterQuestionDeCoursActivee(
@@ -4578,11 +4750,19 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       preview: tronquerTexte(texteUtilisateur, 160)
     });
 
-    const sortieCours = sansNouvelleConsolidation
-      ? ajouterRappelConsolidationEnAttente(reponseCours, consolidationCoursEnAttente)
-      : reponseCours;
+    if (sansNouvelleConsolidation) {
+      const sortieCours = finaliserReponseAvecConsolidationEnAttente(
+        user,
+        reponseCours,
+        historique,
+        texteUtilisateur,
+        null,
+        consolidationCoursEnAttente
+      );
+      return { reponse: sortieCours, fiche: null, bypassFormat: true };
+    }
 
-    return { reponse: sortieCours, fiche: null, bypassFormat: false };
+    return { reponse: reponseCours, fiche: null, bypassFormat: false };
   }
 
   if (detectionAcademiqueEcrite?.route === "exercice_a_resolution") {
@@ -4655,10 +4835,20 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   const cached = getCache(cacheKey);
   if (cached) {
     logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
-    const sortieCache = consolidationCoursEnAttente
-      ? ajouterRappelConsolidationEnAttente(cached, consolidationCoursEnAttente)
-      : cached;
-    return { reponse: sortieCache, fiche: null, bypassFormat: false };
+
+    if (consolidationCoursEnAttente) {
+      const sortieCache = finaliserReponseAvecConsolidationEnAttente(
+        user,
+        cached,
+        historique,
+        texteUtilisateur,
+        null,
+        consolidationCoursEnAttente
+      );
+      return { reponse: sortieCache, fiche: null, bypassFormat: true };
+    }
+
+    return { reponse: cached, fiche: null, bypassFormat: false };
   }
 
   let analyse = {
@@ -4696,11 +4886,24 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     await resetStudentAttempt(user.phone, antiBoucle.sujet || analyse.sujet || "general");
   }
 
-  const sortieFinaleTexte = consolidationCoursEnAttente
-    ? ajouterRappelConsolidationEnAttente(reponse, consolidationCoursEnAttente)
-    : reponse;
+  if (consolidationCoursEnAttente) {
+    const sortieFinaleTexte = finaliserReponseAvecConsolidationEnAttente(
+      user,
+      reponse,
+      historique,
+      texteUtilisateur,
+      fiche,
+      consolidationCoursEnAttente
+    );
 
-  return { reponse: sortieFinaleTexte, fiche: fiche || null, bypassFormat: false };
+    return {
+      reponse: sortieFinaleTexte,
+      fiche: fiche || null,
+      bypassFormat: true
+    };
+  }
+
+  return { reponse, fiche: fiche || null, bypassFormat: false };
 }
 
 /* =========================================================
