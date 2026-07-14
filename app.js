@@ -972,11 +972,24 @@ function blocEstPertinent(bloc = "") {
 
 
 function normaliserBalisesPedagogiques(texte = "") {
-  return String(texte || "")
+  let t = String(texte || "");
+
+  // Balises complètes, avec ou sans gras Markdown.
+  t = t
     .replace(/🔵\s*\*{0,2}\s*\[VÉCU\]\s*\*{0,2}\s*:?\s*/gi, "🔵 [VÉCU] : ")
     .replace(/🟡\s*\*{0,2}\s*\[SAVOIR\]\s*\*{0,2}\s*:?\s*/gi, "🟡 [SAVOIR] : ")
     .replace(/🔴\s*\*{0,2}\s*\[INSPIRATION\]\s*\*{0,2}\s*:?\s*/gi, "🔴 [INSPIRATION] : ")
-    .replace(/❓\s*\*{0,2}\s*\[CONSOLIDATION\]\s*\*{0,2}\s*:?\s*/gi, "❓ [CONSOLIDATION] : ")
+    .replace(/❓\s*\*{0,2}\s*\[CONSOLIDATION\]\s*\*{0,2}\s*:?\s*/gi, "❓ [CONSOLIDATION] : ");
+
+  // Balises abrégées produites parfois par l'IA : « 🔵 texte », « 🟡 texte », etc.
+  // Le début de ligne protège le header 🔴🟡🔵 de Mwalimu.
+  t = t
+    .replace(/(^|\n)\s*🔵\s+(?!\[VÉCU\])/g, "$1🔵 [VÉCU] : ")
+    .replace(/(^|\n)\s*🟡\s+(?!\[SAVOIR\])/g, "$1🟡 [SAVOIR] : ")
+    .replace(/(^|\n)\s*🔴\s+(?!\[INSPIRATION\])/g, "$1🔴 [INSPIRATION] : ")
+    .replace(/(^|\n)\s*❓\s+(?!\[CONSOLIDATION\])/g, "$1❓ [CONSOLIDATION] : ");
+
+  return t
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -1063,14 +1076,23 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
 }
 
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
-  const matiere = detecterMatierePrincipale(question, reponse);
   const q = String(question || "").toLowerCase();
+  const r = String(reponse || "");
+
   if (estMessageRelationnelSimple(q)) return "";
-  if (matiere === "droit") return "👉 Si tu veux, nous pouvons revoir un autre terme juridique ensuite.";
-  if (matiere === "geographie") return "👉 Si tu veux, nous pouvons continuer avec une autre petite question de géographie.";
-  if (matiere === "histoire") return "👉 Si tu veux, nous pouvons prendre un autre point d'histoire ensuite.";
-  if (matiere === "math" || matiere === "physique" || matiere === "chimie") return "👉 Essaie maintenant de reformuler l'idée ou de faire une étape, puis envoie-moi ta réponse.";
-  return "👉 Dis-moi maintenant ce que tu retiens en une phrase simple.";
+
+  // Question de cours : la question de CONSOLIDATION suffit.
+  // Aucun second appel à reformuler ou à faire une étape ne doit être ajouté.
+  const estExerciceAResolution =
+    /L['’]énoncé de ton exercice est/i.test(r) ||
+    /\b(exercice|devoir|résous|resous|résoudre|resoudre|calcule|calculer|équation|equation)\b/i.test(q) ||
+    /[0-9a-zA-Z²³√]+\s*[=+\-*/×÷]\s*[0-9a-zA-Z²³√]+/.test(String(question || ""));
+
+  if (estExerciceAResolution) {
+    return "👉 Fais maintenant l'étape demandée et envoie-moi ta réponse.";
+  }
+
+  return "";
 }
 
 function choisirEncouragementContextuel(reponse = "", question = "") {
