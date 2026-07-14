@@ -948,8 +948,20 @@ function blocEstPertinent(bloc = "") {
   return lignesSignificatives.some(l => l.length > 5);
 }
 
+
+function normaliserBalisesPedagogiques(texte = "") {
+  return String(texte || "")
+    .replace(/🔵\s*\*{0,2}\s*\[VÉCU\]\s*\*{0,2}\s*:?\s*/gi, "🔵 [VÉCU] : ")
+    .replace(/🟡\s*\*{0,2}\s*\[SAVOIR\]\s*\*{0,2}\s*:?\s*/gi, "🟡 [SAVOIR] : ")
+    .replace(/🔴\s*\*{0,2}\s*\[INSPIRATION\]\s*\*{0,2}\s*:?\s*/gi, "🔴 [INSPIRATION] : ")
+    .replace(/❓\s*\*{0,2}\s*\[CONSOLIDATION\]\s*\*{0,2}\s*:?\s*/gi, "❓ [CONSOLIDATION] : ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
-  let t = String(corps || "").trim();
+  let t = normaliserBalisesPedagogiques(corps);
   if (!t) return t;
   const blocRegex = /❓\s*\[CONSOLIDATION\][\s\S]*?(?=\n👉|\n🌟|\n\*\*\*«|$)/i;
   const existingBloc = t.match(blocRegex)?.[0] || "";
@@ -1009,7 +1021,7 @@ function choisirCitationContextuelle(reponse = "", question = "") {
 }
 
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
-  let t = String(corps || "").trim();
+  let t = normaliserBalisesPedagogiques(corps);
   const aVecu = /🔵\s*\[VÉCU\]/i.test(t);
   const aSavoir = /🟡\s*\[SAVOIR\]/i.test(t);
   const aInspiration = /🔴\s*\[INSPIRATION\]/i.test(t);
@@ -2707,7 +2719,7 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
   let message = reponse;
   
   const resultat = appliquerLes4EtapesScientifiques(reponse, question, fiche);
-  message = resultat.texte;
+  message = normaliserBalisesPedagogiques(resultat.texte);
   
   if (!/🔵\s*\[VÉCU\]/.test(message)) {
     message = verifierStructureMwalimu(message, user, historique, question);
@@ -2739,6 +2751,7 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
     message = `${HEADER_MWALIMU}\n────────────────\n${message}`;
   }
   
+  message = normaliserBalisesPedagogiques(message);
   message = nettoyerDoublonsPedagogiques(message);
   message = nettoyerFuitesContexteAcademique(message);
 
@@ -3312,7 +3325,7 @@ function nettoyerFuitesContexteAcademique(texte = "") {
 }
 
 function nettoyerDoublonsPedagogiques(texte = "") {
-  let t = String(texte || "").trim();
+  let t = normaliserBalisesPedagogiques(texte);
   if (!t) return "";
 
   const sections = [
