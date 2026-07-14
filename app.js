@@ -488,6 +488,28 @@ function normaliserTexteRelationnel(texte = "") {
   return t;
 }
 
+function normaliserRepetitionsSociales(texte = "") {
+  let t = normaliserTexteRelationnel(texte);
+  if (!t) return "";
+
+  // Réduit seulement les répétitions sociales courantes.
+  // Exemples : "oui oui" → "oui", "d accord d accord" → "d accord".
+  t = t
+    .replace(/\b(oui|non|ok|okay|merci|parfait|entendu|compris|super|cool)\b(?:\s+\1\b)+/gi, "$1")
+    .replace(/\bd accord\b(?:\s+d accord\b)+/gi, "d accord")
+    .replace(/\btres bien\b(?:\s+tres bien\b)+/gi, "tres bien")
+    .replace(/\bca marche\b(?:\s+ca marche\b)+/gi, "ca marche")
+    .replace(/\bc est bon\b(?:\s+c est bon\b)+/gi, "c est bon")
+    .replace(/\bon continue\b(?:\s+on continue\b)+/gi, "on continue")
+    .replace(/\bbonjour\b(?:\s+bonjour\b)+/gi, "bonjour")
+    .replace(/\bbonsoir\b(?:\s+bonsoir\b)+/gi, "bonsoir")
+    .replace(/\bsalut\b(?:\s+salut\b)+/gi, "salut")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return t;
+}
+
 function adapterTexteGenre(texte = "", nom = "") {
   const appel = construireAppel({ nom });
   return String(texte || "")
@@ -526,7 +548,7 @@ function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
    DÉTECTION SOCIALE
 ========================================================= */
 function estMessagePurementSocial(texte = "") {
-  const t = normaliserTexteRelationnel(texte);
+  const t = normaliserRepetitionsSociales(texte);
   if (!t) return false;
 
   const academiqueFort = [
@@ -1815,7 +1837,7 @@ function construireReponseHumaineSimple(user, texte) {
   const prenom = premierPrenom(user?.nom || "");
   const genre = genreEleve(user?.nom || "");
   const appel = prenom ? `${genre} **${prenom}**` : "toi";
-  const t = normaliserTexteRelationnel(texte);
+  const t = normaliserRepetitionsSociales(texte);
 
   if (!t) return null;
 
@@ -1845,7 +1867,7 @@ function construireReponseHumaineSimple(user, texte) {
     return pick(accroches);
   }
 
-  if (estMessageSalutation(texte)) {
+  if (estMessageSalutation(t)) {
     if (/^(bonsoir|bsr)\b/.test(t)) {
       return `Bonsoir ${appel} 😊 Comment puis-je t’aider ce soir ?`;
     }
@@ -1864,7 +1886,7 @@ function construireReponseHumaineSimple(user, texte) {
     return `Bonjour ${appel} 😊 Comment puis-je t’aider aujourd’hui ?`;
   }
 
-  if (estMessageRemerciement(texte)) {
+  if (estMessageRemerciement(t)) {
     const formules = [
       `Avec plaisir ${appel} 😊`,
       `Je t’en prie ${appel} 😊`,
@@ -1889,7 +1911,7 @@ function construireReponseHumaineSimple(user, texte) {
     return `Très bien ${appel} 😊 On continue.`;
   }
 
-  if (estMessagePurementSocial(texte)) {
+  if (estMessagePurementSocial(t)) {
     return `Je t’écoute ${appel} 😊`;
   }
 
