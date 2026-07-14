@@ -1921,16 +1921,94 @@ function construireReponseHumaineSimple(user, texte) {
 /* =========================================================
    AUDIO SOCIAL STRICT - SÉPARÉ DE L'AUDIO ACADÉMIQUE
 ========================================================= */
-function construireReponseHumaineSimpleAudio(user = {}, texte = "") {
-  const reponseTexteSociale = construireReponseHumaineSimple(user, texte);
+function estAudioPurementSocialRenforce(texte = "") {
+  const t = normaliserRepetitionsSociales(texte);
+  if (!t) return false;
 
-  if (reponseTexteSociale && String(reponseTexteSociale).trim()) {
-    return reponseTexteSociale;
+  // Une salutation suivie d'une vraie question scolaire reste académique.
+  const sansSalutation = t
+    .replace(/^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)\s+/, "")
+    .trim();
+
+  if (sansSalutation !== t && sansSalutation && contientQuestionAcademique(sansSalutation)) {
+    return false;
   }
 
+  const motifsSociauxAudio = [
+    /^(bonjour|bonsoir|salut|hello|coucou|bjr|bsr|mbote|yo|cc|slt)(\s+(comment tu vas|comment vas tu|tu vas bien|comment ca va))?$/,
+    /^(merci|merci beaucoup|grand merci|mille mercis|merci infiniment|merci encore|merci bien|je te remercie|je vous remercie)$/,
+    /^(oui|non|ok|okay|d accord|entendu|compris|parfait|tres bien|nickel|super|cool|ca marche)$/,
+    /^(bonne nuit|bonne soiree|bonne journee|bonne matinee|bon apres midi|bon week end|bon weekend|a demain|a bientot)$/,
+    /\b(comment tu vas|comment vas tu|tu vas bien|vous allez bien|comment ca va|et toi|et vous)\b/,
+    /\b(je vais bien|je vais tres bien|je vais super bien|je me porte bien|je me sens bien|ca va merci|bien merci|tranquille|pas mal|au top|ca roule|imboko)\b/,
+    /\b(je ne vais pas bien|ca ne va pas|je suis fatigue|je suis fatiguee|je suis triste|j ai passe une mauvaise journee|ma journee s est mal passee)\b/,
+    /\b(tu m ecoutes|m ecoutes|tu es la|tu es encore la|tu me suis|tu me lis|tu m entends|allo)\b/,
+    /\b(je t ecoute|je suis la|vas y|continue|poursuis|reprends|on continue|allons y|on peut commencer|je suis pret|je suis prete)\b/,
+    /\b(ce n est pas ca|ce n est pas la bonne maniere|ce n est pas la bonne facon|tu as mal repondu|mauvaise reponse|tu ne comprends pas|tu n as pas compris|reponds mieux|sois naturel|parle normalement)\b/,
+    /\b(ca fait longtemps|content de te retrouver|contente de te retrouver|tu m as manque|quoi de neuf|tu fais quoi|comment s est passee ta journee)\b/
+  ];
+
+  if (motifsSociauxAudio.some((regex) => regex.test(t))) return true;
+  if (contientQuestionAcademique(t)) return false;
+
+  return estMessagePurementSocial(t);
+}
+
+function construireReponseHumaineSimpleAudio(user = {}, texte = "") {
   const prenom = premierPrenom(user?.nom || "");
   const genre = genreEleve(user?.nom || "");
   const appel = prenom ? `${genre} **${prenom}**` : "toi";
+  const t = normaliserRepetitionsSociales(texte);
+
+  if (!t) {
+    return `J’ai bien reçu ton audio ${appel} 😊 Je t’écoute.`;
+  }
+
+  // En audio, la salutation ouvre d'abord un véritable échange humain.
+  if (/^(bonjour|salut|hello|coucou|bjr|mbote|yo|cc|slt)$/.test(t)) {
+    return `Bonjour ${appel} 😊 Comment vas-tu aujourd’hui ?`;
+  }
+
+  if (/^(bonsoir|bsr)$/.test(t)) {
+    return `Bonsoir ${appel} 😊 Comment vas-tu ce soir ?`;
+  }
+
+  if (/\b(comment tu vas|comment vas tu|tu vas bien|vous allez bien|comment ca va|et toi|et vous)\b/.test(t)) {
+    return pick([
+      `Je vais bien, merci ${appel} 😊 Et toi, comment vas-tu ?`,
+      `Tout va bien de mon côté ${appel}, merci de demander 😊 Et toi ?`,
+      `Je vais très bien ${appel} 😊 Comment te sens-tu aujourd’hui ?`
+    ]);
+  }
+
+  if (/\b(je vais bien|je vais tres bien|je vais super bien|je me porte bien|je me sens bien|ca va merci|bien merci|tranquille|pas mal|au top|ca roule|imboko)\b/.test(t)) {
+    return genererRepriseApresBienEtre(user);
+  }
+
+  if (/\b(je ne vais pas bien|ca ne va pas|je suis fatigue|je suis fatiguee|je suis triste|j ai passe une mauvaise journee|ma journee s est mal passee)\b/.test(t)) {
+    return `Je suis désolé de l’entendre ${appel}. Prenons les choses doucement 😊 Tu préfères m’en parler un peu ou commencer par quelque chose de simple ?`;
+  }
+
+  if (/\b(tu m ecoutes|m ecoutes|tu es la|tu es encore la|tu me suis|tu me lis|tu m entends|allo)\b/.test(t)) {
+    return `Oui ${appel}, je suis bien là et je t’écoute attentivement 😊`;
+  }
+
+  if (/\b(ca fait longtemps|content de te retrouver|contente de te retrouver|tu m as manque)\b/.test(t)) {
+    return `Ça me fait plaisir de te retrouver ${appel} 😊 Comment vas-tu depuis tout ce temps ?`;
+  }
+
+  if (/\b(quoi de neuf|tu fais quoi|comment s est passee ta journee)\b/.test(t)) {
+    return `Je suis là pour t’accompagner ${appel} 😊 Et toi, quoi de neuf aujourd’hui ?`;
+  }
+
+  if (/\b(je t ecoute|je suis la|vas y|continue|poursuis|reprends|on continue|allons y|on peut commencer|je suis pret|je suis prete)\b/.test(t)) {
+    return `Très bien ${appel} 😊 Nous pouvons continuer. Dis-moi simplement où tu veux reprendre.`;
+  }
+
+  const reponseTexteSociale = construireReponseHumaineSimple(user, t);
+  if (reponseTexteSociale && String(reponseTexteSociale).trim()) {
+    return reponseTexteSociale;
+  }
 
   return `J’ai bien reçu ton audio ${appel} 😊 Je t’écoute.`;
 }
@@ -1940,34 +2018,41 @@ function construireResponseHumaineSimpleAudio(user = {}, texte = "") {
 }
 
 function traiterAudioPurementSocial(user = {}, transcription = "", typeAudio = "", historique = []) {
-  const texte = String(transcription || "").trim();
+  const texteBrut = String(transcription || "").trim();
+  const texte = normaliserRepetitionsSociales(texteBrut);
   const type = String(typeAudio || "").toLowerCase().trim();
 
-  if (texte && contientQuestionAcademique(texte)) {
-    return null;
-  }
-
-  if (estSecondTourSalutation(historique, texte)) {
+  if (texte && estSecondTourSalutation(historique, texte)) {
+    const reponse = genererRepriseApresBienEtre(user);
+    logInfo("audio_social_routing", {
+      phone: user?.phone || "",
+      route: "second_tour_bien_etre",
+      transcription: texte.slice(0, 120)
+    });
     return {
-      reponse: genererRepriseApresBienEtre(user),
+      reponse,
       fiche: null,
-      bypassFormat: true
+      bypassFormat: true,
+      transcription: texteBrut || texte
     };
   }
 
-  if (type === "social") {
-    return {
-      reponse: construireReponseHumaineSimpleAudio(user, texte),
-      fiche: null,
-      bypassFormat: true
-    };
-  }
+  const socialDetecte = estAudioPurementSocialRenforce(texte);
+  const academiqueDetecte = texte ? contientQuestionAcademique(texte) : false;
 
-  if (texte && estMessagePurementSocial(texte)) {
+  if (socialDetecte || (type === "social" && !academiqueDetecte)) {
+    const reponse = construireReponseHumaineSimpleAudio(user, texteBrut || texte);
+    logInfo("audio_social_routing", {
+      phone: user?.phone || "",
+      route: "social_audio",
+      typeAudio: type || "inconnu",
+      transcription: texte.slice(0, 120)
+    });
     return {
-      reponse: construireReponseHumaineSimpleAudio(user, texte),
+      reponse,
       fiche: null,
-      bypassFormat: true
+      bypassFormat: true,
+      transcription: texteBrut || texte
     };
   }
 
@@ -3759,7 +3844,7 @@ async function traiterTexte(user, texteUtilisateur, historique) {
 async function traiterAudio(user, msg, historique) {
   const audioId = msg.audio?.id;
   if (!audioId) {
-    return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true };
+    return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true, transcription: "" };
   }
 
   // Télécharger l'audio une seule fois
@@ -3770,20 +3855,26 @@ async function traiterAudio(user, msg, historique) {
     mimeType = media.mimeType;
   } catch (e) {
     logError("audio_download_error", e, { phone: user?.phone });
-    return { reponse: "Je n'arrive pas à télécharger ton audio. Réessaie.", fiche: null, bypassFormat: true };
+    return { reponse: "Je n'arrive pas à télécharger ton audio. Réessaie.", fiche: null, bypassFormat: true, transcription: "" };
   }
 
   logInfo("audio_received", { phone: user?.phone || "", mimeType });
 
   if (!estMimeAudioSupporte(mimeType)) {
-    return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true };
+    return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true, transcription: "" };
   }
 
-  // Toujours analyser l'audio via l'IA pour déterminer son type
+  // Toujours analyser l'audio via l'IA pour obtenir sa transcription et son type.
   const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
   const transcriptionBrute = String(analyse?.transcription || "").trim();
-  const transcription = normaliserTexteRelationnel(transcriptionBrute);
+  const transcription = normaliserRepetitionsSociales(transcriptionBrute);
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
+
+  logInfo("audio_transcription", {
+    phone: user?.phone || "",
+    typeAudio,
+    transcription: transcription.slice(0, 140)
+  });
 
   const audioSocial = traiterAudioPurementSocial(
     user,
@@ -3796,64 +3887,68 @@ async function traiterAudio(user, msg, historique) {
     return audioSocial;
   }
 
-  // Vérifications sociales APRÈS l'analyse IA
+  // Vérifications sociales complémentaires après l'analyse IA.
   if (
     estReponseJourneeBienEtre(transcriptionBrute) ||
     estReponseJourneeBienEtre(transcription)
   ) {
     const rep = genererRepriseApresBienEtre(user);
-    return { reponse: rep, fiche: null, bypassFormat: true };
+    return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
   }
 
   if (estSecondTourSalutation(historique, transcription || transcriptionBrute)) {
     const rep = genererRepriseApresBienEtre(user);
-    return { reponse: rep, fiche: null, bypassFormat: true };
+    return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
   }
 
   if (transcription && estMessagePurementSocial(transcription) && !contientQuestionAcademique(transcription)) {
-    const rep = construireReponseHumaineSimple(user, transcription);
-    if (rep) return { reponse: rep, fiche: null, bypassFormat: true };
+    const rep = construireReponseHumaineSimpleAudio(user, transcription);
+    if (rep) return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
   }
+
   if (transcriptionBrute && estMessagePurementSocial(transcriptionBrute) && !contientQuestionAcademique(transcriptionBrute)) {
-    const rep = construireReponseHumaineSimple(user, transcriptionBrute);
-    if (rep) return { reponse: rep, fiche: null, bypassFormat: true };
+    const rep = construireReponseHumaineSimpleAudio(user, transcriptionBrute);
+    if (rep) return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute };
   }
 
-  const tMini = normaliserTexteRelationnel(transcriptionBrute);
-  if (tMini && tMini.split(" ").length <= 5 && estMessagePurementSocial(tMini) && !contientQuestionAcademique(tMini)) {
-    return {
-      reponse: construireReponseHumaineSimple(user, tMini) || "Je t'en prie 😊",
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
-  // Si l'IA a détecté un audio social ET pas de contenu académique
   if (typeAudio === "social" && !contientQuestionAcademique(transcription || transcriptionBrute)) {
-    const rep = construireReponseHumaineSimple(user, transcription || transcriptionBrute);
+    const rep = construireReponseHumaineSimpleAudio(user, transcription || transcriptionBrute);
     return {
-      reponse: rep || genererRepriseApresBienEtre(user),
+      reponse: rep,
       fiche: null,
-      bypassFormat: true
+      bypassFormat: true,
+      transcription: transcriptionBrute || transcription
     };
   }
 
-  // Pour les audios académiques ou questions, traitement IA complet
+  // Les audios académiques restent traités par le moteur existant.
   let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
-  const texteAudioNormalise = normaliserTexteRelationnel(reponse);
+  const texteAudioNormalise = normaliserRepetitionsSociales(reponse);
 
   if (texteAudioNormalise && estMessagePurementSocial(texteAudioNormalise) && !contientQuestionAcademique(texteAudioNormalise)) {
-    const repSimple = construireReponseHumaineSimple(user, texteAudioNormalise);
-    if (repSimple) return { reponse: repSimple, fiche: null, bypassFormat: true };
+    const repSimple = construireReponseHumaineSimpleAudio(user, texteAudioNormalise);
+    if (repSimple) {
+      return {
+        reponse: repSimple,
+        fiche: null,
+        bypassFormat: true,
+        transcription: transcriptionBrute || transcription
+      };
+    }
   }
 
   if (!reponse || !reponse.trim()) {
     reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
-    return { reponse, fiche: null, bypassFormat: true };
+    return { reponse, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
   }
 
   const bypassFormat = estReponseRelationnelleSimpleIA(reponse);
-  return { reponse, fiche: null, bypassFormat };
+  return {
+    reponse,
+    fiche: null,
+    bypassFormat,
+    transcription: transcriptionBrute || transcription
+  };
 }
 
 /* =========================================================
@@ -4132,7 +4227,9 @@ async function processIncomingMessage(msg) {
     reponseBrute = resultat?.reponse || "";
     ficheContexte = resultat?.fiche || null;
     bypassFormat = Boolean(resultat?.bypassFormat);
-    contenuUtilisateurPourMemoire = "[audio envoyé]";
+    contenuUtilisateurPourMemoire = resultat?.transcription
+      ? `[audio transcrit] ${resultat.transcription}`
+      : "[audio envoyé]";
     await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
   } else if (msgType === "image") {
     const resultat = await traiterImage({ ...user, phone: from }, msg, historique);
