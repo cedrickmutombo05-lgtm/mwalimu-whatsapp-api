@@ -1103,32 +1103,66 @@ function construireQuestionsConsolidationCiblee(question = "", corps = "", sujet
   return `❓ [CONSOLIDATION]\n${modeles[matiere] || modeles.general}`;
 }
 
+function normaliserCleCitation(texte = "") {
+  return retirerAccents(String(texte || "").toLowerCase())
+    .replace(/[’']/g, " ")
+    .replace(/[\*_`]/g, " ")
+    .replace(/[^a-z0-9²³+\-*/×÷=\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function detecterDomaineCitationPedagogique(question = "", reponse = "") {
-  const texte = retirerAccents(`${question} ${reponse}`.toLowerCase());
+  const q = normaliserCleCitation(question);
+  const r = normaliserCleCitation(reponse);
 
-  const domaines = [
-    { domaine: "geometrie", motif: /\b(geometrie|triangle|carre|rectangle|losange|cercle|polygone|quadrilatere|angle|sommet|perimetre|aire|surface|volume)\b/ },
-    { domaine: "algebre", motif: /\b(algebre|equation|inequation|polynome|inconnue|factoriser|factorisation|developper|fonction affine|fonction quadratique)\b|[xyz]\s*[²³]?\s*[+\-*/×÷=]/ },
-    { domaine: "biologie", motif: /\b(biologie|photosynthese|cellule|cellules|etre vivant|etres vivants|organisme|organismes|genetique|respiration|digestion|ecosysteme|plante|animal|corps humain)\b/ },
-    { domaine: "chimie", motif: /\b(chimie|atome|molecule|reaction chimique|acide|base|solution chimique|element chimique|tableau periodique)\b|\b(h2o|co2|o2|nacl|h2so4)\b/ },
-    { domaine: "electricite_electronique", motif: /\b(electricite|electrique|electronique|circuit|tension|courant|intensite|resistance electrique|ohm|volt|ampere|diode|transistor)\b/ },
-    { domaine: "mecanique", motif: /\b(mecanique|mouvement|force|vitesse|acceleration|equilibre|levier|moment|resistance des materiaux|contrainte|deformation)\b/ },
-    { domaine: "physique", motif: /\b(physique|energie|masse|pression|temperature|chaleur|optique|lumiere|onde|gravitation)\b/ },
-    { domaine: "comptabilite", motif: /\b(comptabilite|comptable|debit|credit|bilan|journal|grand livre|actif|passif|amortissement|tresorerie)\b/ },
-    { domaine: "droit", motif: /\b(droit|loi|code|article|constitution|juridique|tribunal|justice|ohada|procedure)\b/ },
-    { domaine: "geographie", motif: /\b(geographie|province|territoire|commune|ville|pays|capitale|continent|fleuve|riviere|climat|relief|population)\b/ },
-    { domaine: "histoire", motif: /\b(histoire|historique|independance|colonisation|royaume|empire|guerre|revolution|date historique)\b/ },
-    { domaine: "francais", motif: /\b(français|francais|grammaire|orthographe|conjugaison|adjectif|verbe|nom commun|pronom|sujet du verbe|complement|phrase)\b/ },
-    { domaine: "informatique", motif: /\b(informatique|ordinateur|algorithme|programmation|logiciel|reseau informatique|base de donnees|code source)\b/ },
-    { domaine: "mathematiques", motif: /\b(mathematiques|maths|calcul|nombre|fraction|pourcentage|proportion|arithmetique|racine carree|puissance)\b/ }
-  ];
+  // La question principale est toujours prioritaire. La réponse générée ne doit
+  // jamais imposer une matière différente à cause d'un mot accidentel.
+  const detecter = (texte = "") => {
+    if (!texte) return "";
 
-  const trouve = domaines.find((item) => item.motif.test(texte));
-  if (trouve) return trouve.domaine;
+    if (/\b(racine carree|fraction|pourcentage|proportion|arithmetique|calcul numerique)\b/.test(texte)) return "mathematiques";
+    if (/\b(geometrie|triangle|carre|rectangle|losange|cercle|polygone|quadrilatere|angle|sommet|perimetre|aire|surface|volume|figure geometrique)\b/.test(texte)) return "geometrie";
+    if (/\b(algebre|equation|inequation|polynome|inconnue|factoriser|factorisation|developper|fonction affine|fonction quadratique)\b/.test(texte) || /\b[xyz]\s*[²³]?\s*(?:\+|-|\*|\/|×|÷|=)/.test(texte)) return "algebre";
+    if (/\b(biologie|photosynthese|cellule|cellules|etre vivant|etres vivants|organisme|organismes|genetique|respiration|digestion|ecosysteme|plante|plantes|animal|animaux|corps humain|insecte|insectes|botanique|zoologie)\b/.test(texte)) return "biologie";
+    if (/\b(chimie|atome|molecule|reaction chimique|acide|base|solution chimique|element chimique|tableau periodique|h2o|co2|o2|nacl|h2so4)\b/.test(texte)) return "chimie";
+    if (/\b(electricite|electrique|electronique|circuit|tension|courant|intensite|resistance electrique|ohm|volt|ampere|diode|transistor)\b/.test(texte)) return "electricite_electronique";
+    if (/\b(mecanique|mouvement|force|vitesse|acceleration|equilibre|levier|moment|resistance des materiaux|contrainte|deformation)\b/.test(texte)) return "mecanique";
+    if (/\b(physique|energie|masse|pression|temperature|chaleur|optique|lumiere|onde|gravitation)\b/.test(texte)) return "physique";
+    if (/\b(comptabilite|comptable|debit|credit|bilan|journal comptable|grand livre|actif|passif|amortissement|tresorerie)\b/.test(texte)) return "comptabilite";
+    if (/\b(droit|loi|code|article|constitution|juridique|tribunal|justice|ohada|procedure)\b/.test(texte)) return "droit";
+    if (/\b(geographie|province|territoire|commune|ville|pays|capitale|continent|fleuve|riviere|climat|relief|population)\b/.test(texte)) return "geographie";
+    if (/\b(histoire|historique|independance|colonisation|royaume|empire|guerre|revolution|date historique)\b/.test(texte)) return "histoire";
+    if (/\b(français|francais|grammaire|orthographe|conjugaison|adjectif|verbe|nom commun|pronom|sujet du verbe|complement|phrase)\b/.test(texte)) return "francais";
+    if (/\b(informatique|ordinateur|algorithme|programmation|logiciel|reseau informatique|base de donnees|code source)\b/.test(texte)) return "informatique";
+    if (/\b(mathematiques|maths|nombre|puissance)\b/.test(texte)) return "mathematiques";
 
-  const matiereGenerale = detecterMatierePrincipale(question, reponse);
-  if (matiereGenerale === "math") return "mathematiques";
-  return matiereGenerale || "general";
+    return "";
+  };
+
+  const domaineQuestion = detecter(q);
+  if (domaineQuestion) return domaineQuestion;
+
+  // Repli uniquement lorsque la question n'est pas exploitable (image, audio,
+  // question très courte). Aucun domaine général n'est forcé.
+  const questionPeuExploitable = !q || /^\[?(image|audio|document|message)\b/.test(q) || q.length < 4;
+  if (questionPeuExploitable) {
+    const domaineReponse = detecter(r);
+    if (domaineReponse) return domaineReponse;
+  }
+
+  const matiereGenerale = detecterMatierePrincipale(question, "");
+  const correspondances = {
+    math: "mathematiques",
+    physique: "physique",
+    chimie: "chimie",
+    geographie: "geographie",
+    histoire: "histoire",
+    droit: "droit",
+    francais: "francais"
+  };
+
+  return correspondances[matiereGenerale] || "";
 }
 
 function choisirCitationFinale(question = "", corps = "") {
@@ -1159,7 +1193,8 @@ function choisirCitationContextuelle(reponse = "", question = "") {
     general: "***« Comprendre une notion, c’est pouvoir l’expliquer simplement avec ses propres mots. »***"
   };
 
-  return citations[domaine] || citations.general;
+  // En cas d'incertitude, mieux vaut aucune citation qu'une citation hors sujet.
+  return citations[domaine] || "";
 }
 
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
@@ -3518,11 +3553,47 @@ async function expliquerImageAvecIA(
   };
 }
 
+function normaliserQuestionPourComparaison(texte = "") {
+  return retirerAccents(String(texte || "").toLowerCase())
+    .replace(/[\*_`]/g, " ")
+    .replace(/[’']/g, " ")
+    .replace(/[^a-z0-9²³+\-*/×÷=\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function supprimerRepetitionQuestionPrincipale(message = "", question = "") {
+  const questionCle = normaliserQuestionPourComparaison(question);
+  if (!questionCle || questionCle.length < 4) return String(message || "");
+
+  const lignes = String(message || "").split("\n");
+  let blocPedagogiqueCommence = false;
+  let repetitionSupprimee = false;
+  const resultat = [];
+
+  for (const ligne of lignes) {
+    if (/🔵\s*\[VÉCU\]|🟡\s*\[SAVOIR\]|🔴\s*\[INSPIRATION\]|❓\s*\[CONSOLIDATION\]/i.test(ligne)) {
+      blocPedagogiqueCommence = true;
+    }
+
+    const ligneCle = normaliserQuestionPourComparaison(ligne);
+    if (!blocPedagogiqueCommence && !repetitionSupprimee && ligneCle === questionCle) {
+      repetitionSupprimee = true;
+      continue;
+    }
+
+    resultat.push(ligne);
+  }
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function construireMessageFinal(user, reponse, historique, question, fiche) {
   let message = reponse;
   
   const resultat = appliquerLes4EtapesScientifiques(reponse, question, fiche);
   message = normaliserBalisesPedagogiques(resultat.texte);
+  message = supprimerRepetitionQuestionPrincipale(message, question);
   
   if (!/🔵\s*\[VÉCU\]/.test(message)) {
     message = verifierStructureMwalimu(message, user, historique, question);
