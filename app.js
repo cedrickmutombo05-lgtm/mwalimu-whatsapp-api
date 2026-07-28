@@ -110,46 +110,47 @@ function nowMs() {
    3) CONSTANTES
 ========================================================= */
 const HEADER_MWALIMU = "🔴🟡🔵 *Mwalimu EdTech : Ton Mentor pour l'Excellence* 🇨🇩";
+const MWALIMU_AUDIT_VERSION = "2026-07-29-pedagogie-equitable-v1";
 
 const MAX_PDF_SIZE = 10 * 1024 * 1024;
 const MAX_PDF_TEXT_LENGTH = 4000;
 
 const CITATIONS = {
   patriotisme: [
-    "***« Aimer sa patrie, c'est la servir avec intelligence, honnêteté et discipline. »***",
-    "***« Un bon élève d'aujourd'hui peut devenir un grand bâtisseur du Congo de demain. »***"
+    "« Aimer sa patrie, c'est la servir avec intelligence, honnêteté et discipline. »",
+    "« Un bon élève d'aujourd'hui peut devenir un grand bâtisseur du Congo de demain. »"
   ],
   geographie: [
-    "***« Connaître son pays, c'est déjà commencer à mieux l'aimer. »***",
-    "***« La géographie aide à mieux comprendre le monde et à mieux servir sa patrie. »***"
+    "« Connaître son pays, c'est déjà commencer à mieux l'aimer. »",
+    "« La géographie aide à mieux comprendre le monde et à mieux servir sa patrie. »"
   ],
   mathematiques: [
-    "***« La rigueur dans le calcul forme aussi la rigueur dans la vie. »***",
-    "***« Un esprit qui raisonne bien peut mieux construire l'avenir. »***"
+    "« La rigueur dans le calcul forme aussi la rigueur dans la vie. »",
+    "« Un esprit qui raisonne bien peut mieux construire l'avenir. »"
   ],
   histoire: [
-    "***« Comprendre l'histoire aide à aimer sa patrie avec plus de conscience. »***",
-    "***« Un peuple qui connaît son histoire prépare mieux son avenir. »***"
+    "« Comprendre l'histoire aide à aimer sa patrie avec plus de conscience. »",
+    "« Un peuple qui connaît son histoire prépare mieux son avenir. »"
   ],
   francais: [
-    "***« Bien parler et bien écrire donnent de la force à la pensée. »***",
-    "***« La maîtrise des mots fortifie l'intelligence et la dignité. »***"
+    "« Bien parler et bien écrire donnent de la force à la pensée. »",
+    "« La maîtrise des mots fortifie l'intelligence et la dignité. »"
   ],
   sciences: [
-    "***« La science bien apprise peut aider à résoudre les vrais problèmes du pays. »***",
-    "***« Étudier les sciences, c'est se préparer à être utile à sa nation. »***"
+    "« La science bien apprise peut aider à résoudre les vrais problèmes du pays. »",
+    "« Étudier les sciences, c'est se préparer à être utile à sa nation. »"
   ],
   civisme: [
-    "***« Le civisme commence par de petits actes honnêtes. »***",
-    "***« Respecter la loi, c'est aussi participer à la vie de la nation. »***"
+    "« Le civisme commence par de petits actes honnêtes. »",
+    "« Respecter la loi, c'est aussi participer à la vie de la nation. »"
   ],
   relationnel: [
-    "***« La politesse et le respect élèvent aussi la personne. »***",
-    "***« Un cœur discipliné honore sa famille et sa patrie. »***"
+    "« La politesse et le respect élèvent aussi la personne. »",
+    "« Un cœur discipliné honore sa famille et sa patrie. »"
   ],
   general: [
-    "***« Apprendre avec sérieux aujourd'hui, c'est mieux servir le Congo demain. »***",
-    "***« Le savoir et la discipline font grandir la nation. »***"
+    "« Apprendre avec sérieux aujourd'hui, c'est mieux servir le Congo demain. »",
+    "« Le savoir et la discipline font grandir la nation. »"
   ]
 };
 
@@ -1112,7 +1113,7 @@ function normaliserBalisesPedagogiques(texte = "") {
 function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
   let t = normaliserBalisesPedagogiques(corps);
   if (!t) return t;
-  const blocRegex = /❓\s*\[CONSOLIDATION\][\s\S]*?(?=\n👉|\n🌟|\n\*\*\*«|$)/i;
+  const blocRegex = /❓\s*\[CONSOLIDATION\][\s\S]*?(?=\n👉|\n🌟|\n(?:\*{1,3})?«|$)/i;
   const existingBloc = t.match(blocRegex)?.[0] || "";
   if (existingBloc && blocEstPertinent(existingBloc)) {
     return t;
@@ -1204,6 +1205,60 @@ function detecterDomaineCitationPedagogique(question = "", reponse = "") {
   return correspondances[matiereGenerale] || "";
 }
 
+function nettoyerMarkdownCitation(texte = "") {
+  return String(texte || "")
+    .replace(/\*{1,3}\s*(«[^\n»]+»)\s*\*{1,3}/g, "$1")
+    .replace(/(^|\n)\s*\*{3}\s*([^\n]+?)\s*\*{3}\s*(?=\n|$)/g, "$1$2")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function contientCitationFinale(texte = "") {
+  return /(?:^|\n)\s*(?:\*{1,3}\s*)?«[^\n»]+»(?:\s*\*{1,3})?\s*(?=\n|$)/m.test(String(texte || ""));
+}
+
+function retirerToutesOccurrencesPrenom(texte = "", user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  if (!prenom || prenom.toLowerCase() === "élève") return String(texte || "");
+
+  const nomRegex = echapperRegExp(prenom);
+  const regex = new RegExp(
+    `(^|[^\\p{L}\\p{N}_])(\\*{0,2}${nomRegex}\\*{0,2})(?=$|[^\\p{L}\\p{N}_])`,
+    "giu"
+  );
+
+  return String(texte || "")
+    .replace(regex, (_match, prefixe) => prefixe)
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/(^|\n)\s*[,;:]\s*/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function eviterPrenomConsecutif(texte = "", user = {}, historique = []) {
+  const prenom = premierPrenom(user?.nom || "");
+  if (!prenom || prenom.toLowerCase() === "élève") {
+    return limiterPrenomAUneOccurrence(texte, user);
+  }
+
+  const dernierAssistant = [...(Array.isArray(historique) ? historique : [])]
+    .reverse()
+    .find((item) => item?.role === "assistant");
+
+  if (!dernierAssistant) return limiterPrenomAUneOccurrence(texte, user);
+
+  const nomRegex = echapperRegExp(prenom);
+  const dejaUtilise = new RegExp(
+    `(^|[^\\p{L}\\p{N}_])\\*{0,2}${nomRegex}\\*{0,2}(?=$|[^\\p{L}\\p{N}_])`,
+    "iu"
+  ).test(String(dernierAssistant.content || ""));
+
+  return dejaUtilise
+    ? retirerToutesOccurrencesPrenom(texte, user)
+    : limiterPrenomAUneOccurrence(texte, user);
+}
+
 function choisirCitationFinale(question = "", corps = "") {
   return choisirCitationContextuelle(corps, question);
 }
@@ -1213,23 +1268,23 @@ function choisirCitationContextuelle(reponse = "", question = "") {
 
   const domaine = detecterDomaineCitationPedagogique(question, reponse);
   const citations = {
-    geometrie: "***« La géométrie nous apprend à comprendre les formes qui structurent notre environnement. »***",
-    algebre: "***« L’algèbre apprend à raisonner avec méthode pour découvrir l’inconnue. »***",
-    mathematiques: "***« La rigueur dans le calcul forme aussi la rigueur dans le raisonnement. »***",
-    biologie: "***« Comprendre le vivant, c’est apprendre à respecter la nature et la vie. »***",
-    chimie: "***« La chimie aide à comprendre les transformations de la matière qui nous entoure. »***",
-    electricite_electronique: "***« Comprendre l’électricité, c’est apprendre à maîtriser l’énergie avec précision et prudence. »***",
-    mecanique: "***« La mécanique nous apprend comment les forces produisent et transforment le mouvement. »***",
-    physique: "***« La physique nous apprend à observer, mesurer et expliquer les phénomènes du monde. »***",
-    comptabilite: "***« Une comptabilité bien tenue rend les décisions plus claires et plus responsables. »***",
-    droit: "***« Comprendre le droit, c’est mieux connaître les règles qui organisent la société. »***",
-    geographie: "***« La géographie aide à mieux comprendre les territoires et les peuples du monde. »***",
-    histoire: "***« Comprendre le passé aide à mieux éclairer le présent et préparer l’avenir. »***",
-    francais: "***« Bien parler et bien écrire donnent de la force à la pensée. »***",
-    informatique: "***« L’informatique transforme une idée claire en solution utile et organisée. »***",
-    civisme: "***« Le civisme se construit par le respect, la responsabilité et les actes quotidiens. »***",
-    sciences: "***« La science nous apprend à observer, comprendre et vérifier avant de conclure. »***",
-    general: "***« Comprendre une notion, c’est pouvoir l’expliquer simplement avec ses propres mots. »***"
+    geometrie: "« La géométrie nous apprend à comprendre les formes qui structurent notre environnement. »",
+    algebre: "« L’algèbre apprend à raisonner avec méthode pour découvrir l’inconnue. »",
+    mathematiques: "« La rigueur dans le calcul forme aussi la rigueur dans le raisonnement. »",
+    biologie: "« Comprendre le vivant, c’est apprendre à respecter la nature et la vie. »",
+    chimie: "« La chimie aide à comprendre les transformations de la matière qui nous entoure. »",
+    electricite_electronique: "« Comprendre l’électricité, c’est apprendre à maîtriser l’énergie avec précision et prudence. »",
+    mecanique: "« La mécanique nous apprend comment les forces produisent et transforment le mouvement. »",
+    physique: "« La physique nous apprend à observer, mesurer et expliquer les phénomènes du monde. »",
+    comptabilite: "« Une comptabilité bien tenue rend les décisions plus claires et plus responsables. »",
+    droit: "« Comprendre le droit, c’est mieux connaître les règles qui organisent la société. »",
+    geographie: "« La géographie aide à mieux comprendre les territoires et les peuples du monde. »",
+    histoire: "« Comprendre le passé aide à mieux éclairer le présent et préparer l’avenir. »",
+    francais: "« Bien parler et bien écrire donnent de la force à la pensée. »",
+    informatique: "« L’informatique transforme une idée claire en solution utile et organisée. »",
+    civisme: "« Le civisme se construit par le respect, la responsabilité et les actes quotidiens. »",
+    sciences: "« La science nous apprend à observer, comprendre et vérifier avant de conclure. »",
+    general: "« Comprendre une notion, c’est pouvoir l’expliquer simplement avec ses propres mots. »"
   };
 
   // En cas d'incertitude, mieux vaut aucune citation qu'une citation hors sujet.
@@ -2438,6 +2493,7 @@ async function initDB() {
         sub_subject VARCHAR(150) DEFAULT '',
         main_question TEXT NOT NULL,
         pending_prompt TEXT DEFAULT '',
+        lesson_content TEXT DEFAULT '',
         status VARCHAR(40) DEFAULT 'pending',
         reminder_count INTEGER DEFAULT 0,
         step_index INTEGER DEFAULT 0,
@@ -2445,6 +2501,9 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE pedagogical_states
+      ADD COLUMN IF NOT EXISTS lesson_content TEXT DEFAULT '';
 
       CREATE INDEX IF NOT EXISTS idx_pedagogical_states_phone_status
       ON pedagogical_states (phone, status, updated_at DESC);
@@ -2574,7 +2633,7 @@ async function resetAllStudentAttempts(phone) {
 function extraireQuestionConsolidation(texte = "") {
   const t = String(texte || "");
   const match = t.match(
-    /❓\s*\*{0,2}\[CONSOLIDATION\]\*{0,2}\s*:?\s*([\s\S]*?)(?=\n👉|\n🌟|\n\*\*\*«|\n🔵|\n🟡|\n🔴|$)/i
+    /❓\s*\*{0,2}\[CONSOLIDATION\]\*{0,2}\s*:?\s*([\s\S]*?)(?=\n👉|\n🌟|\n(?:\*{1,3})?«|\n🔵|\n🟡|\n🔴|$)/i
   );
   if (!match) return "";
   return String(match[1] || "")
@@ -2706,6 +2765,7 @@ async function enregistrerEtatPedagogique({
   subSubject = "",
   mainQuestion = "",
   pendingPrompt = "",
+  lessonContent = "",
   status = "pending",
   finalAnswerRequired = false
 } = {}) {
@@ -2740,15 +2800,17 @@ async function enregistrerEtatPedagogique({
          SET subject = $1,
              sub_subject = $2,
              pending_prompt = $3,
-             status = $4,
-             final_answer_required = $5,
+             lesson_content = $4,
+             status = $5,
+             final_answer_required = $6,
              updated_at = NOW()
-         WHERE id = $6
+         WHERE id = $7
          RETURNING *`,
         [
           subject || "general",
           subSubject || "",
           pendingPrompt || "",
+          lessonContent || "",
           status,
           Boolean(finalAnswerRequired),
           existingRows[0].id
@@ -2759,8 +2821,8 @@ async function enregistrerEtatPedagogique({
 
     const { rows } = await pool.query(
       `INSERT INTO pedagogical_states
-       (phone, kind, subject, sub_subject, main_question, pending_prompt, status, final_answer_required)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (phone, kind, subject, sub_subject, main_question, pending_prompt, lesson_content, status, final_answer_required)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         phone,
@@ -2769,6 +2831,7 @@ async function enregistrerEtatPedagogique({
         subSubject || "",
         questionMemoire,
         pendingPrompt || "",
+        lessonContent || "",
         status,
         Boolean(finalAnswerRequired)
       ]
@@ -2785,6 +2848,7 @@ async function mettreAJourEtatPedagogique(id, champs = {}) {
   const autorises = {
     pendingPrompt: "pending_prompt",
     mainQuestion: "main_question",
+    lessonContent: "lesson_content",
     status: "status",
     reminderCount: "reminder_count",
     stepIndex: "step_index",
@@ -2836,7 +2900,7 @@ function construireRappelExerciceBloquant(user = {}, etat = {}) {
 function retirerBlocConsolidationPedagogique(texte = "") {
   return String(texte || "")
     .replace(
-      /\n?❓\s*\*{0,2}\[CONSOLIDATION\]\*{0,2}\s*:?\s*[\s\S]*?(?=\n(?:👉|🌟|\*\*\*«|🔵|🟡|🔴)|$)/gi,
+      /\n?❓\s*\*{0,2}\[CONSOLIDATION\]\*{0,2}\s*:?\s*[\s\S]*?(?=\n(?:👉|🌟|(?:\*{1,3})?«|🔵|🟡|🔴)|$)/gi,
       ""
     )
     .replace(/^\s*👉.*(?:consolidation|réponds d'abord|reponds d'abord).*$/gim, "")
@@ -3594,6 +3658,7 @@ async function expliquerImageAvecIA(
 
 function normaliserQuestionPourComparaison(texte = "") {
   return retirerAccents(String(texte || "").toLowerCase())
+    .replace(/^\s*\[(?:audio transcrit|image analysee|image analysée|pdf envoye|pdf envoyé|message textuel)\]\s*/i, "")
     .replace(/[\*_`]/g, " ")
     .replace(/[’']/g, " ")
     .replace(/[^a-z0-9²³+\-*/×÷=\s]/g, " ")
@@ -3652,11 +3717,12 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
   
   message = nettoyerRelancesSelonTypeQuestion(message, question);
 
-  if (!message.includes("***«")) {
+  if (!contientCitationFinale(message)) {
     const citation = choisirCitationContextuelle(message, question);
     if (citation) message += `\n${citation}`;
   }
-  
+
+  message = nettoyerMarkdownCitation(message);
   message = nettoyerReponseIA(message);
   message = supprimerFormulesLourdesDAppel(message, user);
   message = nettoyerAppelsRepetitifs(message, user.nom);
@@ -3669,6 +3735,7 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
   message = normaliserBalisesPedagogiques(message);
   message = nettoyerDoublonsPedagogiques(message);
   message = nettoyerFuitesContexteAcademique(message);
+  message = nettoyerMarkdownCitation(message);
 
   return message.replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -4376,7 +4443,7 @@ function nettoyerDoublonsPedagogiques(texte = "") {
     });
   }
 
-  t = t.replace(/__MWALIMU_DUP_(VECU|SAVOIR|INSPIRATION|CONSOLIDATION)__[\s\S]*?(?=🔵\s*\[VÉCU\]|🟡\s*\[SAVOIR\]|🔴\s*\[INSPIRATION\]|❓\s*\[CONSOLIDATION\]|👉|🌟|\*\*\*«|$)/gi, "");
+  t = t.replace(/__MWALIMU_DUP_(VECU|SAVOIR|INSPIRATION|CONSOLIDATION)__[\s\S]*?(?=🔵\s*\[VÉCU\]|🟡\s*\[SAVOIR\]|🔴\s*\[INSPIRATION\]|❓\s*\[CONSOLIDATION\]|👉|🌟|(?:\*{1,3})?«|$)/gi, "");
 
   const lignes = t.split("\n");
   const sorties = [];
@@ -4404,7 +4471,7 @@ function nettoyerDoublonsPedagogiques(texte = "") {
       if (encouragementDejaVu) continue;
       encouragementDejaVu = true;
     }
-    if (/^\*\*\*«/.test(l)) {
+    if (/^(?:\*{1,3})?«/.test(l)) {
       if (citationDejaVue) continue;
       citationDejaVue = true;
     }
@@ -4436,7 +4503,10 @@ async function traiterQuestionDeCoursActivee(
 🟡 [SAVOIR]
 🔴 [INSPIRATION]
 ❓ [CONSOLIDATION]
-- La consolidation doit contenir une seule petite question directement liée à la notion.`;
+- La consolidation contient une seule petite question directement liée à la notion.
+- Sa réponse doit se trouver explicitement dans le bloc [SAVOIR].
+- N'exige jamais un terme spécialisé, une sous-branche ou une précision qui n'a pas été enseignée dans [SAVOIR].
+- Une réponse générale correcte au niveau enseigné doit pouvoir être validée sans réserve.`;
 
   const systemInstruction = `${construireSystemPrompt(user)}
 ${construireCoucheProfesseurEnClasse({
@@ -4447,14 +4517,15 @@ ${construireCoucheProfesseurEnClasse({
 MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 - Tu réponds uniquement à une question de cours ou de définition.
 - N'utilise pas Google Search.
-- FIDÉLITÉ ABSOLUE À L'ÉNONCÉ : avant toute explication, recopie l'énoncé reçu exactement.
+- Ne recopie jamais la question de l'élève avant la réponse : commence directement par le [VÉCU].
+- Si la question contient une formule, une expression ou une unité, conserve-la exactement lorsque tu la cites.
 - Interdiction de modifier un signe, un exposant, une lettre, une inconnue, un coefficient ou une unité.
-- Interdiction de transformer par exemple 2x en 2, x² en x, + en -, ou d'oublier un terme.
-- Si l'énoncé contient une équation du second degré, ne la traite jamais comme une équation simple du premier degré.
 - Si l'énoncé est ambigu, demande une précision au lieu de corriger ou d'inventer.
 - Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
 - Réponds comme un précepteur professionnel, simple, clair et humain.
-- Donne une définition courte, puis une explication, puis un exemple concret.
+- Donne une définition courte, puis une explication, puis un seul exemple concret.
+- Pour une définition simple, limite l'ensemble VÉCU + SAVOIR + INSPIRATION à environ 170 mots.
+- VÉCU : deux phrases maximum. SAVOIR : cinq idées courtes maximum. INSPIRATION : deux phrases maximum.
 - Ne sois pas bavard.
 - Ne génère jamais le header Mwalimu.
 - Ne génère jamais de citation finale.
@@ -4517,6 +4588,7 @@ Réponds avec la structure Mwalimu, sans doublons.${sansNouvelleConsolidation ? 
     subSubject: detection?.sousMatiere || "",
     mainQuestion: texteUtilisateur,
     pendingPrompt: consolidation,
+    lessonContent: retirerBlocConsolidationPedagogique(reponsePropre),
     status: "pending",
     finalAnswerRequired: false
   });
@@ -4786,16 +4858,20 @@ ${construireCoucheProfesseurEnClasse({
 MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
 - Réponds uniquement en JSON valide.
 - verdict possible : acceptable, partielle, incorrecte, hors_sujet.
-- Évalue la réponse par rapport à la question de consolidation.
+- Évalue la réponse uniquement par rapport à la question de consolidation et au CONTENU RÉELLEMENT ENSEIGNÉ.
+- N'utilise pas une connaissance plus spécialisée pour rendre insuffisante une réponse correcte au niveau enseigné.
+- Si la réponse générale de l'élève correspond au [SAVOIR], verdict = acceptable, même s'il existe un terme scientifique plus précis non enseigné.
+- Un terme non présent dans le contenu enseigné peut seulement être ajouté comme enrichissement facultatif après validation ; il ne doit jamais devenir une correction exigée.
+- Si la consolidation elle-même demande une précision non enseignée, interprète-la au niveau général du cours et valide toute réponse cohérente avec ce cours.
 - Une réponse acceptable, partielle ou incorrecte clôture la consolidation après une correction courte.
-- Pour une réponse acceptable, explication doit confirmer le fait correct en une seule phrase très brève, sans répétition ni nouvelle félicitation.
-- Pour une réponse partielle ou incorrecte, correction doit tenir en une ou deux phrases courtes.
+- Pour une réponse acceptable, explication confirme le fait correct en une seule phrase très brève, sans répétition ni félicitation excessive.
+- Pour une réponse partielle ou incorrecte, correction tient en une ou deux phrases courtes et reprend uniquement ce qui a été enseigné.
 - Ne crée jamais une nouvelle question de consolidation.
 - Ne pose aucune autre question à la fin.`;
 
   const evaluation = await appelerJsonStrict({
     systemInstruction,
-    prompt: `QUESTION PRINCIPALE :\n${etat?.main_question || ""}\n\nQUESTION DE CONSOLIDATION :\n${etat?.pending_prompt || ""}\n\nRÉPONSE DE L'ÉLÈVE :\n${texteUtilisateur}`,
+    prompt: `QUESTION PRINCIPALE :\n${etat?.main_question || ""}\n\nCONTENU RÉELLEMENT ENSEIGNÉ :\n${etat?.lesson_content || ""}\n\nQUESTION DE CONSOLIDATION :\n${etat?.pending_prompt || ""}\n\nRÉPONSE DE L'ÉLÈVE :\n${texteUtilisateur}`,
     schema,
     history: []
   }).catch((e) => {
@@ -4806,22 +4882,19 @@ MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
   const verdict = String(evaluation?.verdict || "partielle").toLowerCase().trim();
   const explication = nettoyerChampEvaluation(evaluation?.explication || "");
   const correction = nettoyerChampEvaluation(evaluation?.correction || "");
-  const prenom = premierPrenom(user?.nom || "");
-  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
-
   if (verdict === "hors_sujet") {
     const rappels = Number(etat?.reminder_count || 0);
     if (rappels < 1) {
       await mettreAJourEtatPedagogique(etat.id, { reminderCount: rappels + 1 });
       return {
-        reponse: `Je comprends ${appel}. Avant de fermer ce point, réponds simplement à cette question : ${etat?.pending_prompt || "la question de consolidation en attente"}`,
+        reponse: `Je comprends. Avant de fermer ce point, réponds simplement à cette question : ${etat?.pending_prompt || "la question de consolidation en attente"}`,
         bypassFormat: true
       };
     }
 
     await cloturerEtatPedagogique(etat.id, "deferred");
     return {
-      reponse: `D'accord ${appel}. Nous mettons cette consolidation de côté pour ne pas te bloquer. Tu peux poursuivre avec ta nouvelle préoccupation.`,
+      reponse: `D'accord. Nous mettons cette consolidation de côté pour ne pas te bloquer. Tu peux poursuivre avec ta nouvelle préoccupation.`,
       bypassFormat: true
     };
   }
@@ -4830,18 +4903,18 @@ MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
 
   if (verdict === "acceptable") {
     return {
-      reponse: `Très bien ${appel} 😊 ${explication || "C’est exact."}
+      reponse: `Exact 😊 ${explication || "Ta réponse correspond bien à la notion étudiée."}
 
-La consolidation est clôturée.`,
+Tu as bien compris. Nous pouvons passer à la suite.`,
       bypassFormat: true
     };
   }
 
   const texteCorrection = correction || explication || "Voici l'idée correcte à retenir.";
   return {
-    reponse: `Merci ${appel}. ${texteCorrection}
+    reponse: `Merci pour ta réponse. ${texteCorrection}
 
-La consolidation est clôturée.`,
+Ce point est maintenant corrigé. Nous pouvons passer à la suite.`,
     bypassFormat: true
   };
 }
@@ -5940,6 +6013,7 @@ async function traiterImage(user, msg, historique) {
           subSubject: detectionImage?.sousMatiere || "",
           mainQuestion: questionImage,
           pendingPrompt: consolidation,
+          lessonContent: retirerBlocConsolidationPedagogique(resultat?.reponse || ""),
           status: "pending",
           finalAnswerRequired: false
         });
@@ -6185,9 +6259,10 @@ async function processIncomingMessage(msg) {
     if (!exerciceActifPipeline && !coursActifPipeline && estMessageRelationnelSimple(texteUtilisateur)) {
       const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
       if (reponseSimple) {
-        const reponseSimpleFinale = limiterPrenomAUneOccurrence(
+        const reponseSimpleFinale = eviterPrenomConsecutif(
           reponseSimple,
-          { ...user, phone: from }
+          { ...user, phone: from },
+          historique
         );
         await appendHistorique(from, "user", texteUtilisateur);
         await appendHistorique(from, "assistant", reponseSimpleFinale);
@@ -6263,9 +6338,11 @@ async function processIncomingMessage(msg) {
     messageFinal = messageSecours({ ...user, phone: from }, msgType);
   }
 
-  messageFinal = limiterPrenomAUneOccurrence(
+  messageFinal = nettoyerMarkdownCitation(messageFinal);
+  messageFinal = eviterPrenomConsecutif(
     messageFinal,
-    { ...user, phone: from }
+    { ...user, phone: from },
+    historique
   );
 
   await appendHistorique(from, "assistant", messageFinal);
