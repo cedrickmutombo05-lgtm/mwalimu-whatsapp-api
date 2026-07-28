@@ -2249,6 +2249,7 @@ async function initDB() {
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
+    await nettoyerEtatsPedagogiquesCorrompus();
     logInfo("db_initialized");
   } catch (e) {
     logError("db_init_error", e);
@@ -2372,6 +2373,102 @@ function extraireQuestionConsolidation(texte = "") {
     .trim();
 }
 
+function normaliserEnonceExerciceMemoire(texte = "") {
+  return String(texte || "")
+    .replace(/```[\s\S]*?```/g, (bloc) => bloc.replace(/```/g, ""))
+    .replace(/^\s*(?:énoncé|enonce)\s*(?:de\s+l['’]exercice)?\s*:?\s*/i, "")
+    .replace(/^\s*[`'“”]+|[`'“”]+\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function estEnonceExerciceFiable(texte = "") {
+  const enonce = normaliserEnonceExerciceMemoire(texte);
+  if (!enonce || enonce.length < 5) return false;
+
+  const n = normaliserTexteRelationnel(enonce);
+  const interdits = new Set([
+    "et", "mais", "donc", "alors", "oui", "oui oui", "non", "non du tout",
+    "ok", "okay", "d accord", "merci", "bonjour", "bonsoir", "salut",
+    "je ne sais pas", "aucune idee", "je n ai aucune idee", "aide moi"
+  ]);
+  if (!n || interdits.has(n)) return false;
+  if (/^(?:et|mais|donc|alors|puis|ensuite|car|parce que)$/i.test(n)) return false;
+
+  const mots = n.split(/\s+/).filter(Boolean);
+  const signalFormel =
+    /\d/.test(enonce) ||
+    /[=+\-*/×÷√²³%]/.test(enonce) ||
+    /\b(?:calculer|calcule|résoudre|resoudre|déterminer|determiner|trouver|démontrer|demontrer|construire|compléter|completer|périmètre|perimetre|aire|volume|équation|equation|exercice|devoir|problème|probleme|circuit|bilan|débit|debit|crédit|credit)\b/i.test(enonce);
+
+  if (mots.length <= 2 && !signalFormel) return false;
+  if (enonce.length < 12 && !signalFormel) return false;
+  return true;
+}
+
+async function nettoyerEtatsPedagogiquesCorrompus() {
+  try {
+    const { rowCount } = await pool.query(`
+      UPDATE pedagogical_states
+      SET status = 'invalid', updated_at = NOW()
+      WHERE kind = 'exercise'
+        AND status IN ('pending', 'awaiting_answer')
+        AND (
+          length(trim(coalesce(main_question, ''))) < 5
+          OR lower(trim(coalesce(main_question, ''))) IN (
+            'et', 'mais', 'donc', 'alors', 'oui', 'oui oui', 'non',
+            'non du tout', 'ok', 'okay', 'd accord', 'merci', 'bonjour',
+            'bonsoir', 'salut', 'je ne sais pas', 'aucune idee', 'aide moi'
+          )
+        )
+    `);
+    if (rowCount > 0) {
+      logWarn("pedagogical_states_corrupted_cleaned", { count: rowCount });
+    }
+  } catch (e) {
+    logError("nettoyerEtatsPedagogiquesCorrompus", e);
+  }
+}
+
+function estDemandeRappelEnonceExercice(texte = "") {
+  const t = normaliserTexteRelationnel(texte);
+  return /^(?:c est quoi|quel est|rappelle moi|redis moi).*(?:enonce|exercice)/i.test(t) ||
+    /(?:enonce|exercice).*(?:deja|encore|rappelle)/i.test(t);
+}
+
+function extraireClarificationEnonceExercice(texte = "") {
+  const brut = String(texte || "").trim();
+  if (!brut) return "";
+  const match = brut.match(/(?:l['’]énoncé|l['’]enonce|la consigne|il fallait|on devait|la question était|la question etait)\s*(?:était|etait|consistait à|consistait a|de|:)?\s*(.+)$/i);
+  if (!match?.[1]) return "";
+  return normaliserEnonceExerciceMemoire(match[1]);
+}
+
+function construireRappelEnonceExerciceFiable(user = {}, etat = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
+  const enonce = normaliserEnonceExerciceMemoire(etat?.main_question || "");
+  const etape = String(etat?.pending_prompt || "").trim();
+
+  if (!estEnonceExerciceFiable(enonce)) {
+    return `Je n'ai plus un énoncé suffisamment fiable en mémoire, ${appel}. Renvoie la photo ou le texte complet de l'exercice et je reprendrai exactement au bon endroit.`;
+  }
+  return `Voici l'énoncé que j'ai en mémoire, ${appel} :\n\`${enonce}\`${etape ? `\n\nNous nous étions arrêtés ici : ${etape}` : ""}`;
+}
+
+function construireEnonceImageMemoire(analyse = {}) {
+  const question = String(analyse?.questionExtraite || "").trim();
+  const transcription = String(analyse?.transcription || "").trim();
+  if (question && transcription) {
+    const nq = normaliserTexteRelationnel(question);
+    const nt = normaliserTexteRelationnel(transcription);
+    if (nq && nt && !nt.includes(nq) && !nq.includes(nt)) {
+      return `${question}\nDonnées visibles : ${transcription}`.trim();
+    }
+  }
+  return question || transcription;
+}
+
 async function getEtatPedagogiqueActif(phone = "") {
   if (!phone) return null;
   try {
@@ -2401,7 +2498,18 @@ async function enregistrerEtatPedagogique({
   status = "pending",
   finalAnswerRequired = false
 } = {}) {
-  if (!phone || !String(mainQuestion || "").trim()) return null;
+  const questionMemoire = kind === "exercise"
+    ? normaliserEnonceExerciceMemoire(mainQuestion)
+    : String(mainQuestion || "").trim();
+
+  if (!phone || !questionMemoire) return null;
+  if (kind === "exercise" && !estEnonceExerciceFiable(questionMemoire)) {
+    logWarn("exercise_state_rejected_unreliable_statement", {
+      phone,
+      preview: tronquerTexte(questionMemoire, 120)
+    });
+    return null;
+  }
   try {
     const { rows: existingRows } = await pool.query(
       `SELECT id
@@ -2412,7 +2520,7 @@ async function enregistrerEtatPedagogique({
          AND status IN ('pending', 'awaiting_answer')
        ORDER BY id DESC
        LIMIT 1`,
-      [phone, kind, String(mainQuestion).trim()]
+      [phone, kind, questionMemoire]
     );
 
     if (existingRows[0]?.id) {
@@ -2448,7 +2556,7 @@ async function enregistrerEtatPedagogique({
         kind,
         subject || "general",
         subSubject || "",
-        String(mainQuestion).trim(),
+        questionMemoire,
         pendingPrompt || "",
         status,
         Boolean(finalAnswerRequired)
@@ -2465,6 +2573,7 @@ async function mettreAJourEtatPedagogique(id, champs = {}) {
   if (!id) return null;
   const autorises = {
     pendingPrompt: "pending_prompt",
+    mainQuestion: "main_question",
     status: "status",
     reminderCount: "reminder_count",
     stepIndex: "step_index",
@@ -2504,7 +2613,11 @@ function construireRappelExerciceBloquant(user = {}, etat = {}) {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
   const consigne = String(etat?.pending_prompt || "").trim();
-  const exercice = String(etat?.main_question || "cet exercice").trim();
+  const exercice = normaliserEnonceExerciceMemoire(etat?.main_question || "");
+
+  if (!estEnonceExerciceFiable(exercice)) {
+    return `Je n'ai plus un énoncé fiable en mémoire, ${appel}. Renvoie la photo ou le texte complet de l'exercice pour que je reprenne sans rien inventer.`;
+  }
 
   return `Nous avons encore cet exercice en cours, ${appel} :\n\`${exercice}\`\n\n${consigne || "Propose d'abord ta réponse finale afin que je la corrige."}\n\nDès que ta réponse finale est corrigée, nous passerons à la nouvelle question.`;
 }
@@ -2553,7 +2666,18 @@ async function getConsolidationCoursActive(phone = "") {
 }
 
 async function getExerciceActif(phone = "") {
-  return getEtatPedagogiqueParType(phone, "exercise");
+  const etat = await getEtatPedagogiqueParType(phone, "exercise");
+  if (!etat) return null;
+  if (!estEnonceExerciceFiable(etat?.main_question || "")) {
+    await cloturerEtatPedagogique(etat.id, "invalid");
+    logWarn("exercise_state_ignored_corrupted", {
+      phone,
+      id: etat.id,
+      preview: tronquerTexte(etat?.main_question || "", 120)
+    });
+    return null;
+  }
+  return etat;
 }
 
 function nettoyerRelancesAjouteesAutomatiquement(texte = "") {
@@ -4802,8 +4926,44 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     historique
   );
 
-  const etatExerciceActif = await getExerciceActif(user?.phone || "");
+  let etatExerciceActif = await getExerciceActif(user?.phone || "");
   const consolidationCoursEnAttente = await getConsolidationCoursActive(user?.phone || "");
+  const clarificationEnonce = extraireClarificationEnonceExercice(texteUtilisateur);
+
+  if (etatExerciceActif && estDemandeRappelEnonceExercice(texteUtilisateur)) {
+    return {
+      reponse: construireRappelEnonceExerciceFiable(user, etatExerciceActif),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  if (clarificationEnonce && estEnonceExerciceFiable(clarificationEnonce)) {
+    const consigneMemoire = "Renvoie la figure, les mesures ou ton calcul complet afin que je vérifie ta réponse finale.";
+    if (etatExerciceActif) {
+      etatExerciceActif = await mettreAJourEtatPedagogique(etatExerciceActif.id, {
+        mainQuestion: clarificationEnonce,
+        pendingPrompt: consigneMemoire,
+        status: "awaiting_answer"
+      }) || etatExerciceActif;
+    } else {
+      etatExerciceActif = await enregistrerEtatPedagogique({
+        phone: user?.phone || "",
+        kind: "exercise",
+        subject: detectionAcademiqueEcrite?.matiere || "general",
+        subSubject: detectionAcademiqueEcrite?.sousMatiere || "",
+        mainQuestion: clarificationEnonce,
+        pendingPrompt: consigneMemoire,
+        status: "awaiting_answer",
+        finalAnswerRequired: true
+      });
+    }
+    return {
+      reponse: `Merci, j'ai corrigé ma mémoire. L'énoncé retenu est :\n\`${clarificationEnonce}\`\n\n${consigneMemoire}`,
+      fiche: null,
+      bypassFormat: true
+    };
+  }
 
   // PRIORITÉ 1 : un exercice réellement actif reste bloquant sur tous les canaux.
   if (etatExerciceActif) {
@@ -5425,9 +5585,10 @@ async function traiterImage(user, msg, historique) {
   );
 
   const typeImage = String(resultat?.typeImage || "").toLowerCase();
-  const questionImage = String(
-    resultat?.questionExtraite || resultat?.transcription || contenuImage
-  ).trim();
+  const questionImage = construireEnonceImageMemoire({
+    questionExtraite: resultat?.questionExtraite || analyseImage?.questionExtraite || "",
+    transcription: resultat?.transcription || analyseImage?.transcription || contenuImage
+  });
 
   if (["academique_simple", "academique_web"].includes(typeImage) && questionImage) {
     const detectionImage = await observerRoutageAcademiqueEcrit(
