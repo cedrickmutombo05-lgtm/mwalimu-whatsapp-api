@@ -1103,31 +1103,63 @@ function construireQuestionsConsolidationCiblee(question = "", corps = "", sujet
   return `❓ [CONSOLIDATION]\n${modeles[matiere] || modeles.general}`;
 }
 
+function detecterDomaineCitationPedagogique(question = "", reponse = "") {
+  const texte = retirerAccents(`${question} ${reponse}`.toLowerCase());
+
+  const domaines = [
+    { domaine: "geometrie", motif: /\b(geometrie|triangle|carre|rectangle|losange|cercle|polygone|quadrilatere|angle|sommet|perimetre|aire|surface|volume)\b/ },
+    { domaine: "algebre", motif: /\b(algebre|equation|inequation|polynome|inconnue|factoriser|factorisation|developper|fonction affine|fonction quadratique)\b|[xyz]\s*[²³]?\s*[+\-*/×÷=]/ },
+    { domaine: "biologie", motif: /\b(biologie|photosynthese|cellule|cellules|etre vivant|etres vivants|organisme|organismes|genetique|respiration|digestion|ecosysteme|plante|animal|corps humain)\b/ },
+    { domaine: "chimie", motif: /\b(chimie|atome|molecule|reaction chimique|acide|base|solution chimique|element chimique|tableau periodique)\b|\b(h2o|co2|o2|nacl|h2so4)\b/ },
+    { domaine: "electricite_electronique", motif: /\b(electricite|electrique|electronique|circuit|tension|courant|intensite|resistance electrique|ohm|volt|ampere|diode|transistor)\b/ },
+    { domaine: "mecanique", motif: /\b(mecanique|mouvement|force|vitesse|acceleration|equilibre|levier|moment|resistance des materiaux|contrainte|deformation)\b/ },
+    { domaine: "physique", motif: /\b(physique|energie|masse|pression|temperature|chaleur|optique|lumiere|onde|gravitation)\b/ },
+    { domaine: "comptabilite", motif: /\b(comptabilite|comptable|debit|credit|bilan|journal|grand livre|actif|passif|amortissement|tresorerie)\b/ },
+    { domaine: "droit", motif: /\b(droit|loi|code|article|constitution|juridique|tribunal|justice|ohada|procedure)\b/ },
+    { domaine: "geographie", motif: /\b(geographie|province|territoire|commune|ville|pays|capitale|continent|fleuve|riviere|climat|relief|population)\b/ },
+    { domaine: "histoire", motif: /\b(histoire|historique|independance|colonisation|royaume|empire|guerre|revolution|date historique)\b/ },
+    { domaine: "francais", motif: /\b(français|francais|grammaire|orthographe|conjugaison|adjectif|verbe|nom commun|pronom|sujet du verbe|complement|phrase)\b/ },
+    { domaine: "informatique", motif: /\b(informatique|ordinateur|algorithme|programmation|logiciel|reseau informatique|base de donnees|code source)\b/ },
+    { domaine: "mathematiques", motif: /\b(mathematiques|maths|calcul|nombre|fraction|pourcentage|proportion|arithmetique|racine carree|puissance)\b/ }
+  ];
+
+  const trouve = domaines.find((item) => item.motif.test(texte));
+  if (trouve) return trouve.domaine;
+
+  const matiereGenerale = detecterMatierePrincipale(question, reponse);
+  if (matiereGenerale === "math") return "mathematiques";
+  return matiereGenerale || "general";
+}
+
 function choisirCitationFinale(question = "", corps = "") {
-  const matiere = detecterMatierePrincipale(question, corps);
-  const citationsMixtes = {
-    droit: "***« Un droit compris est un droit mieux défendu, pour soi et pour la nation. »***",
-    geographie: "***« Connaître les communes de sa ville, c'est déjà participer à la vie de la cité. »***",
-    histoire: "***« Comprendre le passé de son pays, c'est honorer ceux qui l'ont bâti. »***",
-    math: "***« Un esprit rigoureux en mathématiques est un esprit prêt à servir avec précision. »***",
-    physique: "***« La physique nous apprend à observer le monde ; la citoyenneté, à l'améliorer. »***",
-    chimie: "***« La chimie transforme la matière, la détermination transforme le pays. »***",
-    francais: "***« Maîtriser sa langue, c'est porter haut la culture de sa nation. »***",
-    general: "***« Apprendre aujourd'hui, c'est bâtir un Congo plus fort demain. »***"
-  };
-  return citationsMixtes[matiere] || citationsMixtes.general;
+  return choisirCitationContextuelle(corps, question);
 }
 
 function choisirCitationContextuelle(reponse = "", question = "") {
-  const matiere = detecterMatierePrincipale(question, reponse);
   if (estMessageRelationnelSimple(question)) return "";
-  if (matiere === "droit") return pick(CITATIONS.civisme);
-  if (matiere === "geographie") return pick(CITATIONS.geographie);
-  if (matiere === "histoire") return pick(CITATIONS.histoire);
-  if (matiere === "math") return pick(CITATIONS.mathematiques);
-  if (matiere === "physique" || matiere === "chimie") return pick(CITATIONS.sciences);
-  if (matiere === "francais") return pick(CITATIONS.francais);
-  return pick(CITATIONS.general);
+
+  const domaine = detecterDomaineCitationPedagogique(question, reponse);
+  const citations = {
+    geometrie: "***« La géométrie nous apprend à comprendre les formes qui structurent notre environnement. »***",
+    algebre: "***« L’algèbre apprend à raisonner avec méthode pour découvrir l’inconnue. »***",
+    mathematiques: "***« La rigueur dans le calcul forme aussi la rigueur dans le raisonnement. »***",
+    biologie: "***« Comprendre le vivant, c’est apprendre à respecter la nature et la vie. »***",
+    chimie: "***« La chimie aide à comprendre les transformations de la matière qui nous entoure. »***",
+    electricite_electronique: "***« Comprendre l’électricité, c’est apprendre à maîtriser l’énergie avec précision et prudence. »***",
+    mecanique: "***« La mécanique nous apprend comment les forces produisent et transforment le mouvement. »***",
+    physique: "***« La physique nous apprend à observer, mesurer et expliquer les phénomènes du monde. »***",
+    comptabilite: "***« Une comptabilité bien tenue rend les décisions plus claires et plus responsables. »***",
+    droit: "***« Comprendre le droit, c’est mieux connaître les règles qui organisent la société. »***",
+    geographie: "***« La géographie aide à mieux comprendre les territoires et les peuples du monde. »***",
+    histoire: "***« Comprendre le passé aide à mieux éclairer le présent et préparer l’avenir. »***",
+    francais: "***« Bien parler et bien écrire donnent de la force à la pensée. »***",
+    informatique: "***« L’informatique transforme une idée claire en solution utile et organisée. »***",
+    civisme: "***« Le civisme se construit par le respect, la responsabilité et les actes quotidiens. »***",
+    sciences: "***« La science nous apprend à observer, comprendre et vérifier avant de conclure. »***",
+    general: "***« Comprendre une notion, c’est pouvoir l’expliquer simplement avec ses propres mots. »***"
+  };
+
+  return citations[domaine] || citations.general;
 }
 
 function verifierStructureMwalimu(corps = "", user = {}, historique = [], question = "") {
@@ -1150,21 +1182,33 @@ function verifierStructureMwalimu(corps = "", user = {}, historique = [], questi
   return morceaux.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function estExerciceOuDevoirPourRelance(question = "", reponse = "") {
+  const q = retirerAccents(String(question || "").toLowerCase());
+  const r = retirerAccents(String(reponse || "").toLowerCase());
+
+  const consigneExplicite = /\b(exercice|devoir|resous|resoudre|calcule|calculer|demontre|demontrer|determine|trouve la valeur|simplifie|factorise|developpe|complete le tableau)\b/.test(q);
+  const enonceExercice = /l['’]enonce de ton exercice est|exercice en cours|reponse finale attendue/.test(r);
+  const expressionMathematique = /(?:\d|[xyz])\s*[²³]?\s*(?:[+\-*/×÷=])\s*(?:\d|[xyz])/.test(String(question || ""));
+
+  return consigneExplicite || enonceExercice || expressionMathematique;
+}
+
+function nettoyerRelancesSelonTypeQuestion(message = "", question = "") {
+  const estExercice = estExerciceOuDevoirPourRelance(question, message);
+  if (estExercice) return String(message || "").trim();
+
+  return String(message || "")
+    .replace(/^\s*👉\s*.*$/gim, "")
+    .replace(/^\s*(?:essaie|fais)\s+maintenant\s+.*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function choisirOuvertureContextuelle(reponse = "", _user = {}, question = "") {
-  const q = String(question || "").toLowerCase();
-  const r = String(reponse || "");
+  if (estMessageRelationnelSimple(question)) return "";
 
-  if (estMessageRelationnelSimple(q)) return "";
-
-  // Question de cours : la question de CONSOLIDATION suffit.
-  // Aucun second appel à reformuler ou à faire une étape ne doit être ajouté.
-  const estExerciceAResolution =
-    /L['’]énoncé de ton exercice est/i.test(r) ||
-    /\b(exercice|devoir|résous|resous|résoudre|resoudre|calcule|calculer|équation|equation)\b/i.test(q) ||
-    /[0-9a-zA-Z²³√]+\s*[=+\-*/×÷]\s*[0-9a-zA-Z²³√]+/.test(String(question || ""));
-
-  if (estExerciceAResolution) {
-    return "👉 Fais maintenant l'étape demandée et envoie-moi ta réponse.";
+  if (estExerciceOuDevoirPourRelance(question, reponse)) {
+    return "👉 Fais maintenant l’étape demandée et envoie-moi ta réponse.";
   }
 
   return "";
@@ -3496,6 +3540,8 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
     if (encouragement) message += `\n${encouragement}`;
   }
   
+  message = nettoyerRelancesSelonTypeQuestion(message, question);
+
   if (!message.includes("***«")) {
     const citation = choisirCitationContextuelle(message, question);
     if (citation) message += `\n${citation}`;
