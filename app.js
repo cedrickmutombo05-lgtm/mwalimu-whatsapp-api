@@ -2527,6 +2527,173 @@ function ajouterRappelConsolidationEnAttente(reponse = "", etat = {}) {
   return `${corps}\n\nPetit rappel : nous avons encore une seule question de consolidation en attente : « ${rappel} ». Réponds-y quand tu es prêt ; je n'en créerai pas une nouvelle avant sa clôture.`.trim();
 }
 
+
+async function getEtatPedagogiqueParType(phone = "", kind = "") {
+  if (!phone || !kind) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM pedagogical_states
+       WHERE phone = $1
+         AND kind = $2
+         AND status IN ('pending', 'awaiting_answer')
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1`,
+      [phone, kind]
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logError("getEtatPedagogiqueParType", e, { phone, kind });
+    return null;
+  }
+}
+
+async function getConsolidationCoursActive(phone = "") {
+  return getEtatPedagogiqueParType(phone, "course");
+}
+
+async function getExerciceActif(phone = "") {
+  return getEtatPedagogiqueParType(phone, "exercise");
+}
+
+function nettoyerRelancesAjouteesAutomatiquement(texte = "") {
+  return String(texte || "")
+    .replace(/^\s*👉\s*(?:essaie|écris|ecris|réponds|reponds|dis-moi|propose|fais).*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function ajouterRappelCoursSansModifierReponse(reponse = "", etat = {}) {
+  const rappel = String(etat?.pending_prompt || "").trim();
+  let corps = String(reponse || "").trim();
+  if (!rappel) return corps;
+  if (/une seule question de consolidation en attente/i.test(corps)) return corps;
+  return `${corps}\n\nPetit rappel : nous avons encore une seule question de consolidation en attente : « ${rappel} ». Tu peux y répondre après cette demande.`.trim();
+}
+
+function ajouterRappelExerciceApresSocial(reponse = "", user = {}, etat = {}) {
+  const rappel = construireRappelExerciceBloquant(user, etat);
+  const corps = String(reponse || "").trim();
+  return `${corps}\n\n${rappel}`.trim();
+}
+
+async function classifierRelationAvecExerciceActif(
+  user = {},
+  contenuActuel = "",
+  etat = {},
+  canal = "text"
+) {
+  const fallback = {
+    relation: "ambigu",
+    confiance: "faible",
+    raison: "Classification indisponible"
+  };
+
+  try {
+    const parsed = await appelerJsonStrict({
+      systemInstruction: `Tu es le contrôleur global de continuité pédagogique de Mwalimu EdTech.
+Tu dois déterminer la relation entre le nouveau message et l'exercice actif.
+
+RELATIONS AUTORISÉES :
+- reponse_exercice
+- demande_indice
+- nouvelle_demande
+- social
+- ambigu
+
+RÈGLES STRICTES :
+- reponse_exercice : l'élève propose un calcul, une démonstration, une étape ou une réponse finale liée à l'exercice actif.
+- demande_indice : l'élève dit qu'il ne sait pas, n'a aucune idée, demande une explication ou sollicite un indice sur l'exercice actif.
+- nouvelle_demande : le message pose une autre question, contient un autre exercice ou parle d'un autre sujet.
+- social : salutation, remerciement, bien-être ou échange relationnel sans réponse académique.
+- Analyse le sens complet, le canal et le contexte. Ne classe jamais une nouvelle question comme réponse à l'ancien exercice.
+- Une phrase comme « non du tout » après une demande d'idée sur l'exercice est demande_indice.
+- Réponds uniquement en JSON valide.`,
+      prompt: `CANAL : ${canal}
+
+EXERCICE ACTIF :
+${String(etat?.main_question || "")}
+
+ÉTAPE OU RÉPONSE ATTENDUE :
+${String(etat?.pending_prompt || "")}
+
+CONTENU ACTUEL :
+${String(contenuActuel || "")}
+
+Détermine la relation exacte.`,
+      schema: {
+        type: "OBJECT",
+        properties: {
+          relation: { type: "STRING" },
+          confiance: { type: "STRING" },
+          raison: { type: "STRING" }
+        },
+        required: ["relation", "confiance", "raison"]
+      },
+      history: []
+    });
+
+    const relation = String(parsed?.relation || "").trim().toLowerCase();
+    const autorisees = new Set([
+      "reponse_exercice",
+      "demande_indice",
+      "nouvelle_demande",
+      "social",
+      "ambigu"
+    ]);
+
+    return {
+      relation: autorisees.has(relation) ? relation : "ambigu",
+      confiance: String(parsed?.confiance || "moyenne").trim().toLowerCase(),
+      raison: String(parsed?.raison || "Classification contextuelle").trim()
+    };
+  } catch (e) {
+    logError("classifier_relation_exercice_actif", e, {
+      phone: user?.phone || "",
+      canal,
+      preview: tronquerTexte(contenuActuel, 160)
+    });
+    return fallback;
+  }
+}
+
+function finaliserCanalAvecConsolidationCours(
+  user = {},
+  resultat = {},
+  historique = [],
+  questionCourante = "",
+  etatCours = {}
+) {
+  const reponse = String(resultat?.reponse || "").trim();
+  const bypass = Boolean(resultat?.bypassFormat);
+
+  if (bypass) {
+    const propre = nettoyerRelancesAjouteesAutomatiquement(
+      retirerBlocConsolidationPedagogique(reponse)
+    );
+    return {
+      ...resultat,
+      reponse: ajouterRappelCoursSansModifierReponse(propre, etatCours),
+      bypassFormat: true
+    };
+  }
+
+  const message = finaliserReponseAvecConsolidationEnAttente(
+    user,
+    reponse,
+    historique,
+    questionCourante,
+    resultat?.fiche || null,
+    etatCours
+  );
+
+  return {
+    ...resultat,
+    reponse: message,
+    bypassFormat: true
+  };
+}
+
 function estReponseJourneeBienEtre(texte) {
   const t = normaliserTexteRelationnel(texte);
   return /(s'est|s est|ma journee|la journee|journee).*(bien|tres bien|super|genial)/.test(t) ||
@@ -2829,7 +2996,10 @@ async function repondreImageAcademiqueSansWeb(user, base64Image, mimeType, quest
     systemInstruction: `${construireSystemPrompt(user)}
 MODE IMAGE ACADÉMIQUE SANS WEB :
 - Lis d'abord l'image.
-- Appuie-toi seulement sur ce qui est visible dans l'image.
+- Appuie-toi seulement sur ce qui est visible dans l'image actuelle.
+- Ignore entièrement les anciens exercices, nombres, figures et questions de l'historique.
+- Chaque nombre, symbole, mot et relation cités doivent être directement visibles dans l'image actuelle ou dans sa transcription fidèle.
+- Interdiction absolue d'inventer, compléter ou remplacer une donnée absente de l'image.
 - Réponds comme un précepteur professionnel, humain et pédagogue.
 - Si c'est un exercice, explique la méthode avant la réponse finale.
 - N'utilise pas Google Search.
@@ -2899,7 +3069,10 @@ ${tronquerTexte(fiche?.commentaire_ai || "", 1000)}`
     model: "gemini-2.5-flash",
     systemInstruction: `${construireSystemPrompt(user)}
 MODE IMAGE ACADÉMIQUE AVEC WEB :
-- Lis d'abord l'image.
+- Lis d'abord l'image actuelle.
+- Ignore entièrement les anciens exercices, nombres, figures et questions de l'historique.
+- Chaque nombre, symbole, mot et relation cités doivent être directement visibles dans l'image actuelle ou dans sa transcription fidèle.
+- Interdiction absolue d'inventer, compléter ou remplacer une donnée absente de l'image.
 - Utilise ensuite le contexte web seulement pour vérifier ou sécuriser la réponse.
 - Réponds comme un précepteur professionnel, pas comme un moteur de recherche.
 - Ne parle jamais de CONTEXTE WEB, SOURCE PRINCIPALE, SOURCE SECONDAIRE, DB ou contexte brut.
@@ -2956,16 +3129,25 @@ Réponds maintenant comme Mwalimu : réponse pédagogique, claire, fiable, sans 
   return nettoyerFuitesContexteImage(reponse);
 }
 
-async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []) {
-  const analyse = await analyserImagePourRoutage(user, base64Image, mimeType, historique);
+async function expliquerImageAvecIA(
+  user,
+  base64Image,
+  mimeType,
+  historique = [],
+  analysePrecalculee = null
+) {
+  const analyse = analysePrecalculee || await analyserImagePourRoutage(
+    user,
+    base64Image,
+    mimeType,
+    historique
+  );
 
   const transcription = String(analyse?.transcription || "").trim();
   const questionExtraite = String(analyse?.questionExtraite || transcription || "").trim();
   let typeImage = String(analyse?.type || "incompris").trim().toLowerCase();
   const besoinWeb = Boolean(analyse?.besoinWeb) || imageQuestionNecessiteWeb(questionExtraite);
 
-  // GARDE-FOU DÉTERMINISTE : évite qu'une image sociale, une affiche,
-  // une invitation, un programme ou un communiqué soit traité comme un exercice.
   typeImage = classerImageParGardeFou(transcription, questionExtraite, typeImage);
 
   logInfo("image_routing", {
@@ -2980,7 +3162,11 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
     const rep = construireReponseHumaineSimple(user, questionExtraite || transcription || "bonjour");
     return {
       reponse: rep || "J'ai bien reçu ton image 😊",
-      bypassFormat: true
+      bypassFormat: true,
+      analyse,
+      transcription,
+      questionExtraite,
+      typeImage
     };
   }
 
@@ -2988,7 +3174,11 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
     const rep = await repondreImageNonAcademique(user, base64Image, mimeType, transcription, historique);
     return {
       reponse: rep || "J'ai bien reçu ton image. Dis-moi ce que tu veux que j'explique ou vérifie dans cette photo.",
-      bypassFormat: true
+      bypassFormat: true,
+      analyse,
+      transcription,
+      questionExtraite,
+      typeImage
     };
   }
 
@@ -2998,7 +3188,11 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
 🟡 [SAVOIR] : Mais certains éléments sont flous ou difficiles à lire.
 🔴 [INSPIRATION] : Ce n'est pas grave ; nous pouvons reprendre calmement.
 ❓ [CONSOLIDATION] : Envoie-moi une image plus nette, bien cadrée, ou écris la question ici.`,
-      bypassFormat: false
+      bypassFormat: false,
+      analyse,
+      transcription,
+      questionExtraite,
+      typeImage
     };
   }
 
@@ -3033,7 +3227,11 @@ async function expliquerImageAvecIA(user, base64Image, mimeType, historique = []
 
   return {
     reponse: nettoyerFuitesContexteImage(reponse),
-    bypassFormat: false
+    bypassFormat: false,
+    analyse,
+    transcription,
+    questionExtraite,
+    typeImage
   };
 }
 
@@ -4598,22 +4796,72 @@ function finaliserReponseAvecConsolidationEnAttente(
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
-  // Détection sémantique, puis application du régime pédagogique actif.
-  let detectionAcademiqueEcrite = await observerRoutageAcademiqueEcrit(user, texteUtilisateur, historique);
-  const etatPedagogiqueActif = await getEtatPedagogiqueActif(user?.phone || "");
+  let detectionAcademiqueEcrite = await observerRoutageAcademiqueEcrit(
+    user,
+    texteUtilisateur,
+    historique
+  );
 
-  // Une consolidation de cours ne doit jamais avaler une nouvelle question.
-  if (
-    etatPedagogiqueActif?.kind === "course" &&
-    detectionAcademiqueEcrite?.route !== "social"
-  ) {
+  const etatExerciceActif = await getExerciceActif(user?.phone || "");
+  const consolidationCoursEnAttente = await getConsolidationCoursActive(user?.phone || "");
+
+  // PRIORITÉ 1 : un exercice réellement actif reste bloquant sur tous les canaux.
+  if (etatExerciceActif) {
+    const relationExercice = await classifierRelationAvecExerciceActif(
+      user,
+      texteUtilisateur,
+      etatExerciceActif,
+      "text"
+    );
+
+    logInfo("priorite_pedagogique_exercice_text", {
+      phone: user?.phone || "",
+      relation: relationExercice.relation,
+      confiance: relationExercice.confiance,
+      raison: relationExercice.raison,
+      preview: tronquerTexte(texteUtilisateur, 160)
+    });
+
+    if (["reponse_exercice", "demande_indice"].includes(relationExercice.relation)) {
+      const resultatExercice = await traiterReponseExercicePersistant(
+        user,
+        texteUtilisateur,
+        etatExerciceActif
+      );
+      return {
+        reponse: resultatExercice?.reponse || "",
+        fiche: null,
+        bypassFormat: Boolean(resultatExercice?.bypassFormat)
+      };
+    }
+
+    if (relationExercice.relation === "social") {
+      const social = construireReponseHumaineSimple(user, texteUtilisateur) || "Je t'écoute 😊";
+      return {
+        reponse: ajouterRappelExerciceApresSocial(social, user, etatExerciceActif),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    return {
+      reponse: construireRappelExerciceBloquant(user, etatExerciceActif),
+      fiche: null,
+      bypassFormat: true
+    };
+  }
+
+  // PRIORITÉ 2 : une consolidation de cours est non bloquante.
+  // Elle peut être répondue, ou rappelée après le traitement du nouveau message.
+  let historiqueCourant = historique;
+  if (consolidationCoursEnAttente) {
     const relationCours = await classifierRelationAvecConsolidationCours(
       user,
       texteUtilisateur,
-      etatPedagogiqueActif
+      consolidationCoursEnAttente
     );
 
-    logInfo("relation_consolidation_cours", {
+    logInfo("priorite_pedagogique_cours_text", {
       phone: user?.phone || "",
       relation: relationCours.relation,
       confiance: relationCours.confiance,
@@ -4625,9 +4873,8 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       const resultatConsolidation = await traiterReponseConsolidationCoursPersistante(
         user,
         texteUtilisateur,
-        etatPedagogiqueActif
+        consolidationCoursEnAttente
       );
-
       return {
         reponse: resultatConsolidation?.reponse || "",
         fiche: null,
@@ -4635,16 +4882,24 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       };
     }
 
-    if (
-      relationCours.relation === "nouvelle_question" &&
-      detectionAcademiqueEcrite?.route === "reponse_eleve"
-    ) {
+    if (relationCours.relation === "social") {
+      const social = construireReponseHumaineSimple(user, texteUtilisateur) || "Je t'écoute 😊";
+      return {
+        reponse: ajouterRappelCoursSansModifierReponse(social, consolidationCoursEnAttente),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
+
+    // Nouvelle demande : on isole totalement son contexte pour éviter toute contamination.
+    historiqueCourant = [];
+
+    if (detectionAcademiqueEcrite?.route === "reponse_eleve") {
       const classificationNeutre = await classifierRoutageAcademiqueSemantiqueGlobal(
         user,
         texteUtilisateur,
         []
       );
-
       detectionAcademiqueEcrite = detecterRoutageAcademiqueEcrit(
         user,
         texteUtilisateur,
@@ -4654,39 +4909,19 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     }
   }
 
-  // Un exercice/devoir reste bloquant jusqu'à la réponse finale corrigée.
-  if (
-    etatPedagogiqueActif?.kind === "exercise" &&
-    detectionAcademiqueEcrite?.route !== "reponse_eleve" &&
-    detectionAcademiqueEcrite?.route !== "social"
-  ) {
-    return {
-      reponse: construireRappelExerciceBloquant(user, etatPedagogiqueActif),
-      fiche: null,
-      bypassFormat: true
-    };
-  }
-
   if (detectionAcademiqueEcrite?.route === "reponse_eleve") {
     const resultatCorrection = await traiterReponseEleveActivee(
       user,
       texteUtilisateur,
-      historique,
+      historiqueCourant,
       detectionAcademiqueEcrite
     );
-
     return {
       reponse: resultatCorrection?.reponse || resultatCorrection || "",
       fiche: null,
       bypassFormat: Boolean(resultatCorrection?.bypassFormat)
     };
   }
-
-  const consolidationCoursEnAttente = (
-    etatPedagogiqueActif?.kind === "course" &&
-    detectionAcademiqueEcrite?.route !== "social" &&
-    detectionAcademiqueEcrite?.route !== "reponse_eleve"
-  ) ? etatPedagogiqueActif : null;
 
   if (detectionAcademiqueEcrite?.route === "question_de_cours") {
     const sansNouvelleConsolidation = Boolean(consolidationCoursEnAttente);
@@ -4697,44 +4932,22 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     const cachedCours = getCache(cacheKeyCours);
 
     if (cachedCours) {
-      logInfo("cache_hit_question_de_cours", {
-        phone: user?.phone || "",
-        cacheKey: cacheKeyCours,
-        sansNouvelleConsolidation
-      });
-
-      if (!sansNouvelleConsolidation) {
-        await enregistrerEtatPedagogique({
-          phone: user?.phone || "",
-          kind: "course",
-          subject: detectionAcademiqueEcrite?.matiere || "general",
-          subSubject: detectionAcademiqueEcrite?.sousMatiere || "",
-          mainQuestion: texteUtilisateur,
-          pendingPrompt: extraireQuestionConsolidation(cachedCours),
-          status: "pending",
-          finalAnswerRequired: false
-        });
-      }
-
       if (sansNouvelleConsolidation) {
-        const sortieCoursCache = finaliserReponseAvecConsolidationEnAttente(
+        return finaliserCanalAvecConsolidationCours(
           user,
-          cachedCours,
-          historique,
+          { reponse: cachedCours, fiche: null, bypassFormat: false },
+          historiqueCourant,
           texteUtilisateur,
-          null,
           consolidationCoursEnAttente
         );
-        return { reponse: sortieCoursCache, fiche: null, bypassFormat: true };
       }
-
       return { reponse: cachedCours, fiche: null, bypassFormat: false };
     }
 
     const reponseCours = await traiterQuestionDeCoursActivee(
       user,
       texteUtilisateur,
-      historique,
+      historiqueCourant,
       detectionAcademiqueEcrite,
       { sansNouvelleConsolidation }
     );
@@ -4751,15 +4964,13 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     });
 
     if (sansNouvelleConsolidation) {
-      const sortieCours = finaliserReponseAvecConsolidationEnAttente(
+      return finaliserCanalAvecConsolidationCours(
         user,
-        reponseCours,
-        historique,
+        { reponse: reponseCours, fiche: null, bypassFormat: false },
+        historiqueCourant,
         texteUtilisateur,
-        null,
         consolidationCoursEnAttente
       );
-      return { reponse: sortieCours, fiche: null, bypassFormat: true };
     }
 
     return { reponse: reponseCours, fiche: null, bypassFormat: false };
@@ -4768,30 +4979,29 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   if (detectionAcademiqueEcrite?.route === "exercice_a_resolution") {
     const cacheKeyExercice = makeCacheKey(user, `exercice_a_resolution|${texteUtilisateur}`);
     const cachedExercice = getCache(cacheKeyExercice);
-    if (cachedExercice) {
-      logInfo("cache_hit_exercice_a_resolution", { phone: user?.phone || "", cacheKey: cacheKeyExercice });
+    let reponseExercice = cachedExercice;
+
+    if (!reponseExercice) {
+      reponseExercice = await traiterExerciceAResolutionActive(
+        user,
+        texteUtilisateur,
+        historiqueCourant,
+        detectionAcademiqueEcrite
+      );
+      if (reponseExercice && String(reponseExercice).trim()) {
+        setCache(cacheKeyExercice, reponseExercice);
+      }
+    } else {
       await enregistrerEtatPedagogique({
         phone: user?.phone || "",
         kind: "exercise",
         subject: detectionAcademiqueEcrite?.matiere || "general",
         subSubject: detectionAcademiqueEcrite?.sousMatiere || "",
         mainQuestion: extraireEquationOuEnonceCourt(texteUtilisateur) || texteUtilisateur,
-        pendingPrompt: extraireQuestionConsolidation(cachedExercice),
+        pendingPrompt: extraireQuestionConsolidation(reponseExercice),
         status: "awaiting_answer",
         finalAnswerRequired: true
       });
-      return { reponse: cachedExercice, fiche: null, bypassFormat: false };
-    }
-
-    const reponseExercice = await traiterExerciceAResolutionActive(
-      user,
-      texteUtilisateur,
-      historique,
-      detectionAcademiqueEcrite
-    );
-
-    if (reponseExercice && String(reponseExercice).trim()) {
-      setCache(cacheKeyExercice, reponseExercice);
     }
 
     logInfo("routage_academique_exercice_a_resolution_active", {
@@ -4800,11 +5010,22 @@ async function traiterTexte(user, texteUtilisateur, historique) {
       preview: tronquerTexte(texteUtilisateur, 160)
     });
 
+    if (consolidationCoursEnAttente) {
+      return {
+        reponse: ajouterRappelCoursSansModifierReponse(
+          reponseExercice,
+          consolidationCoursEnAttente
+        ),
+        fiche: null,
+        bypassFormat: false
+      };
+    }
+
     return { reponse: reponseExercice, fiche: null, bypassFormat: false };
   }
 
   if (
-    dernierMessageEstInvitationChoixMatiere(historique) &&
+    dernierMessageEstInvitationChoixMatiere(historiqueCourant) &&
     estReponseGeneriqueExploration(texteUtilisateur) &&
     !contientChoixMatiere(texteUtilisateur)
   ) {
@@ -4812,14 +5033,23 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     return { reponse, fiche: null, bypassFormat: true };
   }
 
-  let decision = await cerveauDecisionIA(user, texteUtilisateur, historique, "text");
-  decision = securiserDecisionCasSensibles(decision, texteUtilisateur, historique);
+  let decision = await cerveauDecisionIA(user, texteUtilisateur, historiqueCourant, "text");
+  decision = securiserDecisionCasSensibles(decision, texteUtilisateur, historiqueCourant);
 
-  if (
-    decision.route === "reponse_sociale" ||
-    decision.route === "reponse_bien_etre"
-  ) {
-    const reponse = await genererReponseSocialeIA(user, texteUtilisateur, historique, decision);
+  if (decision.route === "reponse_sociale" || decision.route === "reponse_bien_etre") {
+    const reponse = await genererReponseSocialeIA(
+      user,
+      texteUtilisateur,
+      historiqueCourant,
+      decision
+    );
+    if (consolidationCoursEnAttente) {
+      return {
+        reponse: ajouterRappelCoursSansModifierReponse(reponse, consolidationCoursEnAttente),
+        fiche: null,
+        bypassFormat: true
+      };
+    }
     return { reponse, fiche: null, bypassFormat: true };
   }
 
@@ -4834,32 +5064,26 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   const cacheKey = makeCacheKey(user, texteUtilisateur);
   const cached = getCache(cacheKey);
   if (cached) {
-    logInfo("cache_hit", { phone: user?.phone || "", cacheKey });
-
     if (consolidationCoursEnAttente) {
-      const sortieCache = finaliserReponseAvecConsolidationEnAttente(
+      return finaliserCanalAvecConsolidationCours(
         user,
-        cached,
-        historique,
+        { reponse: cached, fiche: null, bypassFormat: false },
+        historiqueCourant,
         texteUtilisateur,
-        null,
         consolidationCoursEnAttente
       );
-      return { reponse: sortieCache, fiche: null, bypassFormat: true };
     }
-
     return { reponse: cached, fiche: null, bypassFormat: false };
   }
 
-  let analyse = {
+  const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
+  const consigneBase = construireConsignePedagogique(texteUtilisateur, "text");
+  const analyse = {
     intention: decision.intention,
-    matiere: detecterMatiereScientifique(texteUtilisateur, "", null),
+    matiere: detectionAcademiqueEcrite?.matiere || detecterMatiereScientifique(texteUtilisateur, "", null),
     besoinCorrectionRenforcee: false,
     sujet: extraireSujetMemoire(texteUtilisateur) || "general"
   };
-
-  const fiche = await consulterBibliotheque(texteUtilisateur, user.classe || "");
-  const consigneBase = construireConsignePedagogique(texteUtilisateur, "text");
   const antiBoucle = await construireConsigneAntiBoucle(user, texteUtilisateur, analyse);
 
   let consigneFinale = consigneBase;
@@ -4870,15 +5094,20 @@ async function traiterTexte(user, texteUtilisateur, historique) {
     consigneFinale += `\nLe message concerne probablement une subdivision administrative. Si une liste complète est demandée, donne la liste complète trouvée.`;
   }
   consigneFinale += `\nLa consolidation, la citation finale et l'ouverture finale doivent rester dans la matière principale de la question.`;
-  if (antiBoucle.consigne) {
-    consigneFinale += `\n${antiBoucle.consigne}`;
+  if (consolidationCoursEnAttente) {
+    consigneFinale += `\nUne consolidation de cours est déjà en attente. N'en crée aucune nouvelle.`;
   }
+  if (antiBoucle.consigne) consigneFinale += `\n${antiBoucle.consigne}`;
 
-  const reponse = await construireReponseDbWebIa(user, texteUtilisateur, historique, fiche, consigneFinale);
+  const reponse = await construireReponseDbWebIa(
+    user,
+    texteUtilisateur,
+    historiqueCourant,
+    fiche,
+    consigneFinale
+  );
 
-  if (reponse && String(reponse).trim()) {
-    setCache(cacheKey, reponse);
-  }
+  if (reponse && String(reponse).trim()) setCache(cacheKey, reponse);
   if (!reponse || !String(reponse).trim()) {
     await logUnansweredQuestion(user, texteUtilisateur, "text", "traiterTexte_empty");
   }
@@ -4887,20 +5116,13 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   }
 
   if (consolidationCoursEnAttente) {
-    const sortieFinaleTexte = finaliserReponseAvecConsolidationEnAttente(
+    return finaliserCanalAvecConsolidationCours(
       user,
-      reponse,
-      historique,
+      { reponse, fiche: fiche || null, bypassFormat: false },
+      historiqueCourant,
       texteUtilisateur,
-      fiche,
       consolidationCoursEnAttente
     );
-
-    return {
-      reponse: sortieFinaleTexte,
-      fiche: fiche || null,
-      bypassFormat: true
-    };
   }
 
   return { reponse, fiche: fiche || null, bypassFormat: false };
@@ -4915,7 +5137,6 @@ async function traiterAudio(user, msg, historique) {
     return { reponse: "Je n'arrive pas à lire ton audio.", fiche: null, bypassFormat: true, transcription: "" };
   }
 
-  // Télécharger l'audio une seule fois
   let buffer, mimeType;
   try {
     const media = await telechargerMedia(audioId, 8 * 1024 * 1024);
@@ -4927,15 +5148,14 @@ async function traiterAudio(user, msg, historique) {
   }
 
   logInfo("audio_received", { phone: user?.phone || "", mimeType });
-
   if (!estMimeAudioSupporte(mimeType)) {
     return { reponse: "Format audio non supporté.", fiche: null, bypassFormat: true, transcription: "" };
   }
 
-  // Toujours analyser l'audio via l'IA pour obtenir sa transcription et son type.
-  const analyse = await analyserAudioCourt(user, buffer, mimeType, historique);
+  const analyse = await analyserAudioCourt(user, buffer, mimeType, []);
   const transcriptionBrute = String(analyse?.transcription || "").trim();
   const transcription = normaliserRepetitionsSociales(transcriptionBrute);
+  const contenuAudio = transcriptionBrute || transcription;
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
   logInfo("audio_transcription", {
@@ -4944,79 +5164,148 @@ async function traiterAudio(user, msg, historique) {
     transcription: transcription.slice(0, 140)
   });
 
-  const audioSocial = traiterAudioPurementSocial(
-    user,
-    transcriptionBrute || transcription,
-    typeAudio,
-    historique
-  );
+  const etatExerciceActif = await getExerciceActif(user?.phone || "");
+  const etatCoursActif = await getConsolidationCoursActive(user?.phone || "");
 
-  if (audioSocial) {
-    return audioSocial;
-  }
+  if (etatExerciceActif) {
+    const relation = await classifierRelationAvecExerciceActif(
+      user,
+      contenuAudio,
+      etatExerciceActif,
+      "audio"
+    );
 
-  // Vérifications sociales complémentaires après l'analyse IA.
-  if (
-    estReponseJourneeBienEtre(transcriptionBrute) ||
-    estReponseJourneeBienEtre(transcription)
-  ) {
-    const rep = genererRepriseApresBienEtre(user);
-    return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
-  }
+    logInfo("priorite_pedagogique_exercice_audio", {
+      phone: user?.phone || "",
+      relation: relation.relation,
+      confiance: relation.confiance,
+      preview: tronquerTexte(contenuAudio, 160)
+    });
 
-  if (estSecondTourSalutation(historique, transcription || transcriptionBrute)) {
-    const rep = genererRepriseApresBienEtre(user);
-    return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
-  }
+    if (["reponse_exercice", "demande_indice"].includes(relation.relation)) {
+      const correction = await traiterReponseExercicePersistant(
+        user,
+        contenuAudio,
+        etatExerciceActif
+      );
+      return {
+        reponse: correction?.reponse || "",
+        fiche: null,
+        bypassFormat: Boolean(correction?.bypassFormat),
+        transcription: contenuAudio
+      };
+    }
 
-  if (transcription && estMessagePurementSocial(transcription) && !contientQuestionAcademique(transcription)) {
-    const rep = construireReponseHumaineSimpleAudio(user, transcription);
-    if (rep) return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
-  }
+    if (relation.relation === "social") {
+      const social = construireReponseHumaineSimpleAudio(user, contenuAudio) || "Je t'écoute 😊";
+      return {
+        reponse: ajouterRappelExerciceApresSocial(social, user, etatExerciceActif),
+        fiche: null,
+        bypassFormat: true,
+        transcription: contenuAudio
+      };
+    }
 
-  if (transcriptionBrute && estMessagePurementSocial(transcriptionBrute) && !contientQuestionAcademique(transcriptionBrute)) {
-    const rep = construireReponseHumaineSimpleAudio(user, transcriptionBrute);
-    if (rep) return { reponse: rep, fiche: null, bypassFormat: true, transcription: transcriptionBrute };
-  }
-
-  if (typeAudio === "social" && !contientQuestionAcademique(transcription || transcriptionBrute)) {
-    const rep = construireReponseHumaineSimpleAudio(user, transcription || transcriptionBrute);
     return {
-      reponse: rep,
+      reponse: construireRappelExerciceBloquant(user, etatExerciceActif),
       fiche: null,
       bypassFormat: true,
-      transcription: transcriptionBrute || transcription
+      transcription: contenuAudio
     };
   }
 
-  // Les audios académiques restent traités par le moteur existant.
-  let reponse = await reponseAudioUneSeulePasse(user, buffer, mimeType, historique, null);
-  const texteAudioNormalise = normaliserRepetitionsSociales(reponse);
+  if (etatCoursActif) {
+    const relation = await classifierRelationAvecConsolidationCours(
+      user,
+      contenuAudio,
+      etatCoursActif
+    );
 
-  if (texteAudioNormalise && estMessagePurementSocial(texteAudioNormalise) && !contientQuestionAcademique(texteAudioNormalise)) {
-    const repSimple = construireReponseHumaineSimpleAudio(user, texteAudioNormalise);
-    if (repSimple) {
+    logInfo("priorite_pedagogique_cours_audio", {
+      phone: user?.phone || "",
+      relation: relation.relation,
+      confiance: relation.confiance,
+      preview: tronquerTexte(contenuAudio, 160)
+    });
+
+    if (relation.relation === "reponse_consolidation") {
+      const correction = await traiterReponseConsolidationCoursPersistante(
+        user,
+        contenuAudio,
+        etatCoursActif
+      );
       return {
-        reponse: repSimple,
+        reponse: correction?.reponse || "",
+        fiche: null,
+        bypassFormat: Boolean(correction?.bypassFormat),
+        transcription: contenuAudio
+      };
+    }
+
+    if (relation.relation === "social") {
+      const social = construireReponseHumaineSimpleAudio(user, contenuAudio) || "Je t'écoute 😊";
+      return {
+        reponse: ajouterRappelCoursSansModifierReponse(social, etatCoursActif),
         fiche: null,
         bypassFormat: true,
-        transcription: transcriptionBrute || transcription
+        transcription: contenuAudio
       };
     }
   }
 
-  if (!reponse || !reponse.trim()) {
-    reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
-    return { reponse, fiche: null, bypassFormat: true, transcription: transcriptionBrute || transcription };
+  const audioSocial = traiterAudioPurementSocial(
+    user,
+    contenuAudio,
+    typeAudio,
+    etatCoursActif ? [] : historique
+  );
+
+  if (audioSocial) {
+    if (etatCoursActif) {
+      const finalise = finaliserCanalAvecConsolidationCours(
+        user,
+        audioSocial,
+        [],
+        contenuAudio,
+        etatCoursActif
+      );
+      return { ...finalise, transcription: contenuAudio };
+    }
+    return audioSocial;
   }
 
-  const bypassFormat = estReponseRelationnelleSimpleIA(reponse);
-  return {
+  let reponse = await reponseAudioUneSeulePasse(
+    user,
+    buffer,
+    mimeType,
+    etatCoursActif ? [] : historique,
+    null
+  );
+
+  if (!reponse || !reponse.trim()) {
+    reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
+    return { reponse, fiche: null, bypassFormat: true, transcription: contenuAudio };
+  }
+
+  const resultat = {
     reponse,
     fiche: null,
-    bypassFormat,
-    transcription: transcriptionBrute || transcription
+    bypassFormat: estReponseRelationnelleSimpleIA(reponse),
+    transcription: contenuAudio
   };
+
+  if (etatCoursActif) {
+    const finalise = finaliserCanalAvecConsolidationCours(
+      user,
+      resultat,
+      [],
+      contenuAudio,
+      etatCoursActif
+    );
+    return { ...finalise, transcription: contenuAudio };
+  }
+
+  return resultat;
 }
 
 /* =========================================================
@@ -5027,12 +5316,9 @@ async function traiterImage(user, msg, historique) {
 
   if (!imageId) {
     return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Mais je n'arrive pas à l'ouvrir correctement.
-🔴 [INSPIRATION] : Nous allons y arriver.
-❓ [CONSOLIDATION] : Réessaie avec une image plus nette.`,
+      reponse: "J'ai bien reçu ton image, mais je n'arrive pas à l'ouvrir correctement. Réessaie avec une image plus nette.",
       fiche: null,
-      bypassFormat: false
+      bypassFormat: true
     };
   }
 
@@ -5041,26 +5327,193 @@ async function traiterImage(user, msg, historique) {
 
   if (!estMimeImageSupporte(mimeType)) {
     return {
-      reponse: `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Le format d'image n'est pas encore supporté.
-🔴 [INSPIRATION] : Ce n'est pas grave.
-❓ [CONSOLIDATION] : Envoie-moi une image en JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC ou HEIF.`,
+      reponse: "J'ai bien reçu ton image, mais ce format n'est pas supporté. Envoie-la en JPG, PNG ou WEBP.",
       fiche: null,
-      bypassFormat: false
+      bypassFormat: true
     };
   }
 
   const base64Image = buffer.toString("base64");
-  const resultat = await expliquerImageAvecIA(user, base64Image, mimeType, historique);
 
-  return {
-    reponse: resultat?.reponse || `🔵 [VÉCU] : J'ai bien reçu ton image.
-🟡 [SAVOIR] : Je n'arrive pas encore à l'analyser correctement.
-🔴 [INSPIRATION] : Nous pouvons reprendre calmement.
-❓ [CONSOLIDATION] : Envoie-moi une image plus nette ou mieux cadrée.`,
+  // Analyse isolée : aucune ancienne question ne doit contaminer la nouvelle image.
+  const analyseImage = await analyserImagePourRoutage(
+    user,
+    base64Image,
+    mimeType,
+    []
+  );
+
+  const contenuImage = String(
+    analyseImage?.questionExtraite || analyseImage?.transcription || ""
+  ).trim();
+
+  const etatExerciceActif = await getExerciceActif(user?.phone || "");
+  const etatCoursActif = await getConsolidationCoursActive(user?.phone || "");
+
+  if (etatExerciceActif) {
+    const relation = await classifierRelationAvecExerciceActif(
+      user,
+      contenuImage || "image sans texte exploitable",
+      etatExerciceActif,
+      "image"
+    );
+
+    logInfo("priorite_pedagogique_exercice_image", {
+      phone: user?.phone || "",
+      relation: relation.relation,
+      confiance: relation.confiance,
+      preview: tronquerTexte(contenuImage, 160)
+    });
+
+    if (["reponse_exercice", "demande_indice"].includes(relation.relation)) {
+      const correction = await traiterReponseExercicePersistant(
+        user,
+        contenuImage || "Je soumets cette image comme réponse à l'exercice.",
+        etatExerciceActif
+      );
+      return {
+        reponse: correction?.reponse || "",
+        fiche: null,
+        bypassFormat: Boolean(correction?.bypassFormat),
+        transcription: contenuImage
+      };
+    }
+
+    return {
+      reponse: construireRappelExerciceBloquant(user, etatExerciceActif),
+      fiche: null,
+      bypassFormat: true,
+      transcription: contenuImage
+    };
+  }
+
+  if (etatCoursActif && contenuImage) {
+    const relation = await classifierRelationAvecConsolidationCours(
+      user,
+      contenuImage,
+      etatCoursActif
+    );
+
+    logInfo("priorite_pedagogique_cours_image", {
+      phone: user?.phone || "",
+      relation: relation.relation,
+      confiance: relation.confiance,
+      preview: tronquerTexte(contenuImage, 160)
+    });
+
+    if (relation.relation === "reponse_consolidation") {
+      const correction = await traiterReponseConsolidationCoursPersistante(
+        user,
+        contenuImage,
+        etatCoursActif
+      );
+      return {
+        reponse: correction?.reponse || "",
+        fiche: null,
+        bypassFormat: Boolean(correction?.bypassFormat),
+        transcription: contenuImage
+      };
+    }
+  }
+
+  const resultat = await expliquerImageAvecIA(
+    user,
+    base64Image,
+    mimeType,
+    [],
+    analyseImage
+  );
+
+  const typeImage = String(resultat?.typeImage || "").toLowerCase();
+  const questionImage = String(
+    resultat?.questionExtraite || resultat?.transcription || contenuImage
+  ).trim();
+
+  if (["academique_simple", "academique_web"].includes(typeImage) && questionImage) {
+    const detectionImage = await observerRoutageAcademiqueEcrit(
+      user,
+      questionImage,
+      []
+    );
+
+    if (detectionImage?.route === "exercice_a_resolution") {
+      const prochaineEtape = extraireQuestionConsolidation(resultat?.reponse || "");
+      await enregistrerEtatPedagogique({
+        phone: user?.phone || "",
+        kind: "exercise",
+        subject: detectionImage?.matiere || "general",
+        subSubject: detectionImage?.sousMatiere || "",
+        mainQuestion: questionImage,
+        pendingPrompt: prochaineEtape || "Observe la règle de l'exercice et propose l'étape suivante.",
+        status: "awaiting_answer",
+        finalAnswerRequired: true
+      });
+
+      if (etatCoursActif) {
+        const messageExerciceImage = construireMessageFinal(
+          user,
+          resultat?.reponse || "",
+          [],
+          questionImage,
+          null
+        );
+        return {
+          reponse: ajouterRappelCoursSansModifierReponse(
+            messageExerciceImage,
+            etatCoursActif
+          ),
+          fiche: null,
+          bypassFormat: true,
+          transcription: questionImage
+        };
+      }
+    } else if (detectionImage?.route === "question_de_cours" && !etatCoursActif) {
+      const consolidation = extraireQuestionConsolidation(resultat?.reponse || "");
+      if (consolidation) {
+        await enregistrerEtatPedagogique({
+          phone: user?.phone || "",
+          kind: "course",
+          subject: detectionImage?.matiere || "general",
+          subSubject: detectionImage?.sousMatiere || "",
+          mainQuestion: questionImage,
+          pendingPrompt: consolidation,
+          status: "pending",
+          finalAnswerRequired: false
+        });
+      }
+    }
+  }
+
+  const sortie = {
+    reponse: resultat?.reponse || "J'ai bien reçu ton image, mais je n'arrive pas encore à l'analyser correctement.",
     fiche: null,
-    bypassFormat: Boolean(resultat?.bypassFormat)
+    bypassFormat: Boolean(resultat?.bypassFormat),
+    transcription: questionImage
   };
+
+  if (etatCoursActif) {
+    // Pour un exercice image, on garde son étape pédagogique et on ajoute seulement le rappel ancien.
+    const detectionImage = questionImage
+      ? await observerRoutageAcademiqueEcrit(user, questionImage, [])
+      : null;
+
+    if (detectionImage?.route === "exercice_a_resolution") {
+      return {
+        ...sortie,
+        reponse: ajouterRappelCoursSansModifierReponse(sortie.reponse, etatCoursActif)
+      };
+    }
+
+    return finaliserCanalAvecConsolidationCours(
+      user,
+      sortie,
+      [],
+      questionImage || "image actuelle",
+      etatCoursActif
+    );
+  }
+
+  return sortie;
 }
 
 /* =========================================================
@@ -5259,9 +5712,14 @@ async function processIncomingMessage(msg) {
 
   let contenuUtilisateurPourMemoire = texteUtilisateur || `[message ${msgType}]`;
 
-  // ✅ CORRECTION SOCIALE - Vérification rapide avant pipeline complet
+  // Réponse sociale rapide uniquement lorsqu'aucun état pédagogique n'est actif.
+  // Sinon, le routeur omnicanal doit d'abord déterminer si le message répond
+  // à une consolidation ou à un exercice en cours.
   if (msgType === "text" && texteUtilisateur) {
-    if (estMessageRelationnelSimple(texteUtilisateur)) {
+    const exerciceActifPipeline = await getExerciceActif(from);
+    const coursActifPipeline = await getConsolidationCoursActive(from);
+
+    if (!exerciceActifPipeline && !coursActifPipeline && estMessageRelationnelSimple(texteUtilisateur)) {
       const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
       if (reponseSimple) {
         await appendHistorique(from, "user", texteUtilisateur);
@@ -5304,7 +5762,9 @@ async function processIncomingMessage(msg) {
     reponseBrute = resultat?.reponse || "";
     ficheContexte = resultat?.fiche || null;
     bypassFormat = Boolean(resultat?.bypassFormat);
-    contenuUtilisateurPourMemoire = "[image envoyée]";
+    contenuUtilisateurPourMemoire = resultat?.transcription
+      ? `[image analysée] ${resultat.transcription}`
+      : "[image envoyée]";
     await appendHistorique(from, "user", contenuUtilisateurPourMemoire);
   } else if (msgType === "pdf") {
     const resultat = await traiterDocumentPDF({ ...user, phone: from }, msg, historique);
