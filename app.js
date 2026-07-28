@@ -218,6 +218,81 @@ const SYSTEM_TUTORAT = `RÈGLES DE TUTORAT :
 - Pour maths/physique/chimie : guider pas à pas
 - Pour une correction : corrige avec douceur et précision`;
 
+
+const SYSTEM_PROFESSEUR_EN_CLASSE = `COUCHE CENTRALE « PROFESSEUR EN CLASSE » :
+- Cette couche s'applique uniquement après qu'un message a été routé comme académique.
+- Parle directement à l'élève, comme un professeur humain présent devant lui ; ne parle jamais de « l'élève » à la troisième personne.
+- Commence par l'idée utile, sans longue salutation, sans flatterie théâtrale et sans répéter inutilement le prénom.
+- Enseigne comme au tableau : observation ou situation familière, explication progressive, règle essentielle, exemple concret, puis vérification.
+- Le [VÉCU] relie la notion à une situation simple et réellement pertinente.
+- Le [SAVOIR] avance dans un ordre logique, avec des phrases courtes et les étapes clairement séparées.
+- Donne au maximum un exemple principal bien choisi ; il doit éclairer la notion et non détourner du sujet.
+- Le [INSPIRATION] montre en une ou deux phrases l'utilité réelle de la notion ; évite les discours vagues.
+- Le [CONSOLIDATION] contient une seule demande précise, strictement liée à la question principale.
+- Ne duplique jamais VÉCU, SAVOIR, INSPIRATION ou CONSOLIDATION.
+- Ne crée jamais une deuxième consolidation lorsqu'une consolidation de cours est déjà pendante.
+- Pour un exercice ou un devoir : identifie les données, l'inconnue et l'objectif ; explique la méthode ; montre seulement l'étape utile ; ne donne pas la réponse finale à la place de l'élève.
+- Pour corriger une réponse : indique d'abord ce qui est juste, puis la première erreur éventuelle, réexplique le même chemin avec un exemple simple et demande seulement la prochaine étape utile.
+- Pour une image académique : distingue clairement ce qui est observé de ce qui est expliqué et n'utilise que les éléments réellement visibles.
+- N'invente jamais une donnée, une formule, un nombre, une source, un énoncé ou un résultat.
+- Si une information manque, dis exactement ce qui manque et demande seulement cette précision.
+- Reste assez détaillé pour enseigner, mais assez concis pour une lecture confortable sur WhatsApp.`;
+
+function construireCoucheProfesseurEnClasse({
+  route = "academique_general",
+  matiere = "general",
+  avecConsolidation = true,
+  formatJson = false
+} = {}) {
+  const contexte = `
+ROUTE ACADÉMIQUE : ${route}
+MATIÈRE : ${matiere || "general"}
+CONSOLIDATION AUTORISÉE : ${avecConsolidation ? "oui" : "non"}`;
+
+  if (formatJson) {
+    return `${SYSTEM_PROFESSEUR_EN_CLASSE}
+${contexte}
+MODE INTERNE JSON :
+- Ne produis pas les quatre blocs visibles.
+- Applique néanmoins la pédagogie du professeur en classe dans les champs d'explication, d'exemple et de prochaine étape.
+- Les champs doivent être courts, précis, directement exploitables et sans nouvelle question hors de la tâche demandée.`;
+  }
+
+  if (route === "exercice_a_resolution") {
+    return `${SYSTEM_PROFESSEUR_EN_CLASSE}
+${contexte}
+RÈGLE SPÉCIFIQUE EXERCICE :
+- Présente brièvement : ce que l'on connaît, ce que l'on cherche et la méthode.
+- Si un exemple est nécessaire, utilise un exemple analogue plus simple, jamais l'exercice exact résolu jusqu'au bout.
+- La CONSOLIDATION demande uniquement l'étape suivante ou la réponse finale attendue.`;
+  }
+
+  if (route === "correction_exercice" || route === "reponse_eleve") {
+    return `${SYSTEM_PROFESSEUR_EN_CLASSE}
+${contexte}
+RÈGLE SPÉCIFIQUE CORRECTION :
+- Vérifie la réponse par rapport à l'énoncé réellement mémorisé.
+- Distingue clairement réponse finale, étape intermédiaire et réponse hors sujet.
+- En cas d'erreur, ne recommence pas tout le cours : corrige la première erreur et guide la prochaine tentative.`;
+  }
+
+  if (route === "image_academique") {
+    return `${SYSTEM_PROFESSEUR_EN_CLASSE}
+${contexte}
+RÈGLE SPÉCIFIQUE IMAGE :
+- Commence par une observation fidèle et courte des éléments utiles de l'image.
+- Ne complète aucun nombre, mot, figure ou relation qui n'est pas visible.
+- Si l'image contient un exercice, applique les règles d'un exercice à résolution.`;
+  }
+
+  return `${SYSTEM_PROFESSEUR_EN_CLASSE}
+${contexte}
+RÈGLE SPÉCIFIQUE COURS :
+- Donne d'abord une définition ou une idée centrale simple.
+- Développe ensuite comme au tableau, avec un exemple concret pertinent.
+- ${avecConsolidation ? "Termine par une seule question de consolidation." : "Ne crée aucune nouvelle consolidation ni question finale."}`;
+}
+
 const SYSTEM_JURIDIQUE_WEB = `RÈGLES JURIDIQUES ET WEB :
 - Pour droit, loi, code, article, OHADA, fiscalité, procédure : utilise Google Search si nécessaire
 - N'invente jamais un article ou une source
@@ -1536,7 +1611,13 @@ Consignes :
 - Ne donne pas la réponse directement si c'est un exercice
 - Encourage l'élève à réfléchir
 - Utilise des exemples concrets si nécessaire
-- Reste dans le contexte scolaire congolais (RDC) quand c'est pertinent`;
+- Reste dans le contexte scolaire congolais (RDC) quand c'est pertinent
+
+${construireCoucheProfesseurEnClasse({
+  route: "academique_general",
+  matiere: detecterMatierePrincipale(texte, ""),
+  avecConsolidation: true
+})}`;
   
   return consigne;
 }
@@ -1663,6 +1744,10 @@ Donne un contexte web brut et fiable.`
 // ✅ MÉMOIRE CORRIGÉE - historique complet injecté
 async function construireReponseDbWebIa(user, questionEleve, historique = [], fiche = null, consignePedagogique = "") {
   let contexteWeb = "";
+  const matiereProfesseur = detecterMatierePrincipale(
+    questionEleve,
+    `${fiche?.matiere || ""} ${fiche?.titre || ""}`
+  );
 
   const utiliserWeb = fautChercherSurWeb(questionEleve, fiche);
 
@@ -1694,6 +1779,14 @@ Aucune fiche locale disponible.`;
     () =>
       appelerChatCompletion([
         { role: "system", content: construireSystemPrompt(user) },
+        {
+          role: "system",
+          content: construireCoucheProfesseurEnClasse({
+            route: "academique_general",
+            matiere: matiereProfesseur,
+            avecConsolidation: !/aucune nouvelle consolidation/i.test(consignePedagogique)
+          })
+        },
         {
           role: "system",
           content: `RÈGLE FONDAMENTALE :
@@ -3115,9 +3208,20 @@ Réponds naturellement.`
 }
 
 async function repondreImageAcademiqueSansWeb(user, base64Image, mimeType, questionExtraite = "", transcription = "", historique = []) {
+  const contenuAcademiqueImage = `${questionExtraite || ""} ${transcription || ""}`.trim();
+  const routeProfesseurImage = estQuestionTechnique(contenuAcademiqueImage)
+    ? "exercice_a_resolution"
+    : "image_academique";
+  const matiereProfesseurImage = detecterMatierePrincipale(contenuAcademiqueImage, "");
+
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     systemInstruction: `${construireSystemPrompt(user)}
+${construireCoucheProfesseurEnClasse({
+  route: routeProfesseurImage,
+  matiere: matiereProfesseurImage,
+  avecConsolidation: true
+})}
 MODE IMAGE ACADÉMIQUE SANS WEB :
 - Lis d'abord l'image.
 - Appuie-toi seulement sur ce qui est visible dans l'image actuelle.
@@ -3138,7 +3242,7 @@ MODE IMAGE ACADÉMIQUE SANS WEB :
 🔴 [INSPIRATION]
 ❓ [CONSOLIDATION]
 - Dans [VÉCU], dis brièvement que tu as bien reçu l'image et rappelle l'énoncé utile.
-- Dans [CONSOLIDATION], pose une ou deux petites questions strictement liées à l'image.`
+- Dans [CONSOLIDATION], pose une seule petite question strictement liée à l'image.`
   });
 
   const contents = [
@@ -3176,6 +3280,12 @@ Réponds maintenant comme Mwalimu, sans utiliser le web.`
 }
 
 async function repondreImageAcademiqueAvecWeb(user, base64Image, mimeType, questionExtraite = "", transcription = "", historique = []) {
+  const contenuAcademiqueImage = `${questionExtraite || ""} ${transcription || ""}`.trim();
+  const routeProfesseurImage = estQuestionTechnique(contenuAcademiqueImage)
+    ? "exercice_a_resolution"
+    : "image_academique";
+  const matiereProfesseurImage = detecterMatierePrincipale(contenuAcademiqueImage, "");
+
   const contexteWeb = await chercherContexteWeb(questionExtraite || transcription, user, historique);
   const fiche = await consulterBibliotheque(questionExtraite || transcription, user?.classe || "");
 
@@ -3192,6 +3302,11 @@ ${tronquerTexte(fiche?.commentaire_ai || "", 1000)}`
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     systemInstruction: `${construireSystemPrompt(user)}
+${construireCoucheProfesseurEnClasse({
+  route: routeProfesseurImage,
+  matiere: matiereProfesseurImage,
+  avecConsolidation: true
+})}
 MODE IMAGE ACADÉMIQUE AVEC WEB :
 - Lis d'abord l'image actuelle.
 - Ignore entièrement les anciens exercices, nombres, figures et questions de l'historique.
@@ -3211,7 +3326,7 @@ MODE IMAGE ACADÉMIQUE AVEC WEB :
 🔴 [INSPIRATION]
 ❓ [CONSOLIDATION]
 - Dans [VÉCU], dis brièvement que tu as bien reçu l'image et rappelle l'énoncé utile.
-- Dans [CONSOLIDATION], pose une ou deux petites questions strictement liées à l'image.`
+- Dans [CONSOLIDATION], pose une seule petite question strictement liée à l'image.`
   });
 
   const contents = [
@@ -4168,6 +4283,11 @@ async function traiterQuestionDeCoursActivee(
 - La consolidation doit contenir une seule petite question directement liée à la notion.`;
 
   const systemInstruction = `${construireSystemPrompt(user)}
+${construireCoucheProfesseurEnClasse({
+  route: "question_de_cours",
+  matiere,
+  avecConsolidation: !sansNouvelleConsolidation
+})}
 MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 - Tu réponds uniquement à une question de cours ou de définition.
 - N'utilise pas Google Search.
@@ -4329,6 +4449,11 @@ async function traiterExerciceAResolutionActive(user, texteUtilisateur, historiq
   const enonceExact = extraireEquationOuEnonceCourt(texteUtilisateur);
 
   const systemInstruction = `${construireSystemPrompt(user)}
+${construireCoucheProfesseurEnClasse({
+  route: "exercice_a_resolution",
+  matiere,
+  avecConsolidation: true
+})}
 MODE EXERCICE À RÉSOLUTION — ACTIVATION PRUDENTE :
 - Tu traites uniquement un exercice, un devoir, un calcul ou une procédure à résoudre.
 - Matières possibles : maths, physique, chimie, électricité, mécanique, résistance des matériaux, électronique, comptabilité, statistique, algorithmique, économie quantitative, sciences techniques.
@@ -4496,6 +4621,12 @@ async function traiterReponseConsolidationCoursPersistante(user, texteUtilisateu
   };
 
   const systemInstruction = `${construireSystemPrompt(user)}
+${construireCoucheProfesseurEnClasse({
+  route: "correction_cours",
+  matiere: etat?.subject || "general",
+  avecConsolidation: false,
+  formatJson: true
+})}
 MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
 - Réponds uniquement en JSON valide.
 - verdict possible : acceptable, partielle, incorrecte, hors_sujet.
@@ -4567,6 +4698,12 @@ async function traiterReponseExercicePersistant(user, texteUtilisateur, etat = {
   };
 
   const systemInstruction = `${construireSystemPrompt(user)}
+${construireCoucheProfesseurEnClasse({
+  route: "correction_exercice",
+  matiere: etat?.subject || "general",
+  avecConsolidation: true,
+  formatJson: true
+})}
 MODE SUIVI PERSISTANT D'UN EXERCICE :
 - Réponds uniquement en JSON valide.
 - verdict possible : finale_correcte, etape_correcte, incorrecte, incertaine.
@@ -4662,6 +4799,12 @@ async function evaluerReponseEleveActivee(user, texteUtilisateur, historique = [
   };
 
   const systemInstruction = `${construireSystemPrompt(user)}
+${construireCoucheProfesseurEnClasse({
+  route: "reponse_eleve",
+  matiere,
+  avecConsolidation: true,
+  formatJson: true
+})}
 MODE CORRECTION D'UNE RÉPONSE D'ÉLÈVE :
 - Réponds uniquement en JSON valide.
 - verdict possible : correcte, incorrecte, incertaine.
