@@ -4632,6 +4632,8 @@ MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
 - verdict possible : acceptable, partielle, incorrecte, hors_sujet.
 - Évalue la réponse par rapport à la question de consolidation.
 - Une réponse acceptable, partielle ou incorrecte clôture la consolidation après une correction courte.
+- Pour une réponse acceptable, explication doit confirmer le fait correct en une seule phrase très brève, sans répétition ni nouvelle félicitation.
+- Pour une réponse partielle ou incorrecte, correction doit tenir en une ou deux phrases courtes.
 - Ne crée jamais une nouvelle question de consolidation.
 - Ne pose aucune autre question à la fin.`;
 
@@ -4672,14 +4674,18 @@ MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
 
   if (verdict === "acceptable") {
     return {
-      reponse: `Très bien ${appel} 😊 Ta réponse montre que tu as compris. ${explication || "Nous pouvons clôturer cette notion et passer à la suite."}`,
+      reponse: `Très bien ${appel} 😊 ${explication || "C’est exact."}
+
+La consolidation est clôturée.`,
       bypassFormat: true
     };
   }
 
   const texteCorrection = correction || explication || "Voici l'idée correcte à retenir.";
   return {
-    reponse: `Merci pour ta réponse ${appel}. ${texteCorrection}\n\nCette consolidation est maintenant clôturée ; nous pouvons passer à la suite.`,
+    reponse: `Merci ${appel}. ${texteCorrection}
+
+La consolidation est clôturée.`,
     bypassFormat: true
   };
 }
