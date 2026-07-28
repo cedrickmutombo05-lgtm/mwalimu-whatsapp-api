@@ -602,6 +602,45 @@ function nettoyerAppelsRepetitifs(texte = "", nom = "") {
   return t;
 }
 
+/* =========================================================
+   PRÉNOM UNIQUE DANS UNE RÉPONSE
+   - garde la première occurrence naturelle du prénom
+   - retire les répétitions suivantes, y compris en gras
+   - s'applique aussi aux réponses courtes et aux consolidations
+========================================================= */
+function echapperRegExp(texte = "") {
+  return String(texte || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function limiterPrenomAUneOccurrence(texte = "", user = {}) {
+  const prenom = premierPrenom(user?.nom || "");
+  if (!prenom || prenom.toLowerCase() === "élève") return String(texte || "");
+
+  const nomRegex = echapperRegExp(prenom);
+  const regex = new RegExp(
+    `(^|[^\\p{L}\\p{N}_])(\\*{0,2}${nomRegex}\\*{0,2})(?=$|[^\\p{L}\\p{N}_])`,
+    "giu"
+  );
+
+  let occurrences = 0;
+  let resultat = String(texte || "").replace(regex, (match, prefixe) => {
+    occurrences += 1;
+    if (occurrences === 1) return match;
+    return prefixe;
+  });
+
+  resultat = resultat
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/([,;:])\s*([.!?])/g, "$2")
+    .replace(/,\s*,+/g, ",")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return resultat;
+}
+
 function supprimerFormulesLourdesDAppel(texte = "", user = {}) {
   const prenom = premierPrenom(user?.nom || "");
   let t = String(texte || "");
@@ -5700,38 +5739,35 @@ async function traiterAudio(user, msg, historique) {
     return audioSocial;
   }
 
-  let reponse = await reponseAudioUneSeulePasse(
+  // ROUTAGE AUDIO ACADÉMIQUE : la transcription réutilise exactement
+  // le moteur académique écrit déjà validé. Aucun second moteur pédagogique.
+  if (!contenuAudio || typeAudio === "incompris") {
+    return {
+      reponse: "Je n'ai pas bien compris ton audio. Peux-tu le répéter plus clairement ?",
+      fiche: null,
+      bypassFormat: true,
+      transcription: contenuAudio
+    };
+  }
+
+  logInfo("routage_audio_academique_vers_ecrit", {
+    phone: user?.phone || "",
+    typeAudio,
+    transcription: tronquerTexte(contenuAudio, 180)
+  });
+
+  const resultatAcademique = await traiterTexte(
     user,
-    buffer,
-    mimeType,
-    etatCoursActif ? [] : historique,
-    null
+    contenuAudio,
+    historique
   );
 
-  if (!reponse || !reponse.trim()) {
-    reponse = "Je n'arrive pas encore à analyser ton audio correctement.";
-    return { reponse, fiche: null, bypassFormat: true, transcription: contenuAudio };
-  }
-
-  const resultat = {
-    reponse,
-    fiche: null,
-    bypassFormat: estReponseRelationnelleSimpleIA(reponse),
+  return {
+    reponse: resultatAcademique?.reponse || "",
+    fiche: resultatAcademique?.fiche || null,
+    bypassFormat: Boolean(resultatAcademique?.bypassFormat),
     transcription: contenuAudio
   };
-
-  if (etatCoursActif) {
-    const finalise = finaliserCanalAvecConsolidationCours(
-      user,
-      resultat,
-      [],
-      contenuAudio,
-      etatCoursActif
-    );
-    return { ...finalise, transcription: contenuAudio };
-  }
-
-  return resultat;
 }
 
 /* =========================================================
@@ -6149,9 +6185,13 @@ async function processIncomingMessage(msg) {
     if (!exerciceActifPipeline && !coursActifPipeline && estMessageRelationnelSimple(texteUtilisateur)) {
       const reponseSimple = construireReponseHumaineSimple(user, texteUtilisateur);
       if (reponseSimple) {
+        const reponseSimpleFinale = limiterPrenomAUneOccurrence(
+          reponseSimple,
+          { ...user, phone: from }
+        );
         await appendHistorique(from, "user", texteUtilisateur);
-        await appendHistorique(from, "assistant", reponseSimple);
-        await envoyerWhatsAppAvecRetry(from, reponseSimple);
+        await appendHistorique(from, "assistant", reponseSimpleFinale);
+        await envoyerWhatsAppAvecRetry(from, reponseSimpleFinale);
         logInfo("social_response_sent", { phone: from, preview: texteUtilisateur.slice(0, 40) });
         return;
       }
@@ -6222,6 +6262,11 @@ async function processIncomingMessage(msg) {
   if (!messageFinal || !messageFinal.trim()) {
     messageFinal = messageSecours({ ...user, phone: from }, msgType);
   }
+
+  messageFinal = limiterPrenomAUneOccurrence(
+    messageFinal,
+    { ...user, phone: from }
+  );
 
   await appendHistorique(from, "assistant", messageFinal);
   await envoyerWhatsAppAvecRetry(from, messageFinal);
