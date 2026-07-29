@@ -1,6 +1,5 @@
 
 
-/* Mwalimu EdTech — correction v3 : consolidation affichée = consolidation mémorisée */
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
