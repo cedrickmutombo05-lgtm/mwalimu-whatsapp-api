@@ -1,5 +1,6 @@
 
 
+/* Mwalimu EdTech — correction v3 : consolidation affichée = consolidation mémorisée */
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
@@ -200,6 +201,7 @@ STYLE OBLIGATOIRE :
 - Ne félicite pas exagérément
 - N'écris pas "bravo" sauf si l'élève a réellement bien répondu, corrigé juste ou fourni une bonne démarche
 - Évite les compliments excessifs comme "future avocate", "futur avocat", "œil de lynx" ou autres formules théâtrales
+- N'évoque pas automatiquement le rêve ou le futur métier de l'élève dans les cours ; réserve cette personnalisation aux questions d'orientation ou lorsqu'elle éclaire directement la notion
 - Le début doit être humain et simple
 - N'utilise pas toujours "Ah, prénom"
 - N'utilise pas toujours le prénom au début
@@ -874,7 +876,8 @@ function extraireSujetMemoire(texte = "") {
   const sujets = [
     "nepal", "chine", "geographie", "math", "mathematiques", "equation",
     "fraction", "histoire", "francais", "grammaire", "impot", "taxe",
-    "civisme", "rdc", "congo", "province", "territoire", "constitution",
+    "civisme", "citoyennete", "zoologie", "biologie", "botanique", "ethologie",
+    "rdc", "congo", "province", "territoire", "constitution",
     "droit", "sciences", "physique", "chimie", "haut katanga", "commune", "ville"
   ];
   for (const s of sujets) {
@@ -908,11 +911,12 @@ function construirePhraseRetourMemoire(historique = [], texteActuel = "", user =
 function detecterMatierePrincipale(question = "", corps = "") {
   const q = String(question || "").toLowerCase().trim();
   const c = String(corps || "").toLowerCase().trim();
-  const scores = { droit: 0, geographie: 0, histoire: 0, math: 0, physique: 0, chimie: 0, francais: 0, general: 0 };
+  const scores = { civisme: 0, droit: 0, geographie: 0, histoire: 0, math: 0, physique: 0, chimie: 0, francais: 0, general: 0 };
   const ajouter = (theme, motsQuestion = [], motsCorps = [], poidsQuestion = 6, poidsCorps = 1) => {
     for (const mot of motsQuestion) { if (q.includes(mot)) scores[theme] += poidsQuestion; }
     for (const mot of motsCorps) { if (c.includes(mot)) scores[theme] += poidsCorps; }
   };
+  ajouter("civisme",["civisme", "civique", "citoyen", "citoyenneté", "citoyennete", "devoir civique", "vie collective", "bien commun"],["civisme", "civique", "citoyen", "citoyenneté", "citoyennete", "devoir civique", "vie collective", "bien commun"]);
   ajouter("droit",["droit", "droit positif", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"],["droit", "loi", "code", "article", "juridique", "tribunal", "ohada", "constitution"]);
   ajouter("geographie",["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie", "subdivision administrative"],["géographie", "geographie", "province", "territoire", "commune", "ville", "secteur", "chefferie"]);
   ajouter("histoire",["histoire", "passé", "passe", "événement passé", "evenement passe", "colonisation", "indépendance", "independance", "royaume", "date historique"],["histoire", "passé", "passe", "colonisation", "indépendance", "independance", "royaume", "date"]);
@@ -1110,12 +1114,43 @@ function normaliserBalisesPedagogiques(texte = "") {
     .trim();
 }
 
+function consolidationEstGeneriqueOuIncoherente(bloc = "", question = "", corps = "") {
+  const n = normaliserQuestionPourComparaison(bloc);
+  if (!n) return true;
+
+  // Empêche l'affichage de variables internes ou de formulations cassées.
+  if (
+    /\b(?:general|generale|matiere generale|academique general|undefined|null)\b/.test(n) ||
+    /\ble la\b/.test(n) ||
+    /\bnotion etudiee\b/.test(n)
+  ) {
+    return true;
+  }
+
+  // Empêche une consolidation manifestement rattachée à une autre matière.
+  const matiereQuestion = detecterMatierePrincipale(question, corps);
+  const matiereBloc = detecterMatierePrincipale(bloc, bloc);
+  if (
+    matiereQuestion !== "general" &&
+    matiereBloc !== "general" &&
+    matiereQuestion !== matiereBloc
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
   let t = normaliserBalisesPedagogiques(corps);
   if (!t) return t;
   const blocRegex = /❓\s*\[CONSOLIDATION\][\s\S]*?(?=\n👉|\n🌟|\n(?:\*{1,3})?«|$)/i;
   const existingBloc = t.match(blocRegex)?.[0] || "";
-  if (existingBloc && blocEstPertinent(existingBloc)) {
+  if (
+    existingBloc &&
+    blocEstPertinent(existingBloc) &&
+    !consolidationEstGeneriqueOuIncoherente(existingBloc, question, t)
+  ) {
     return t;
   }
   const newBloc = construireQuestionsConsolidationCiblee(question, t, sujet);
@@ -1127,18 +1162,75 @@ function remplacerBlocConsolidation(corps = "", question = "", sujet = "") {
   return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function estSujetConsolidationGenerique(sujet = "") {
+  const n = normaliserQuestionPourComparaison(sujet);
+  return !n || [
+    "general", "generale", "matiere generale", "academique general",
+    "cette notion", "ce sujet", "cours", "definition", "question"
+  ].includes(n);
+}
+
+function extraireNotionPourConsolidation(question = "", corps = "", sujet = "") {
+  if (!estSujetConsolidationGenerique(sujet)) {
+    return normaliserQuestionPourComparaison(sujet);
+  }
+
+  const q = normaliserQuestionPourComparaison(question);
+  const notionsConnues = [
+    "citoyennete", "civisme", "zoologie", "ethologie", "biologie", "botanique",
+    "grammaire", "conjugaison", "orthographe", "histoire", "geographie",
+    "mathematiques", "physique", "chimie", "informatique", "droit",
+    "equation", "fraction", "pourcentage", "photosynthese", "ecosysteme"
+  ];
+
+  for (const notion of notionsConnues) {
+    if (q.includes(notion)) return notion;
+  }
+
+  const demande = q.match(
+    /^(?:qu est ce que|c est quoi|definis|explique(?: moi)?|que signifie)\s+(?:le|la|les|l\s+)?(.+)$/
+  );
+  if (demande?.[1]) {
+    const candidat = String(demande[1]).split(/\s+/).slice(0, 6).join(" ").trim();
+    if (!estSujetConsolidationGenerique(candidat)) return candidat;
+  }
+
+  const savoir = String(corps || "").match(
+    /🟡\s*\[SAVOIR\]\s*:\s*([^\n.]{3,120})/i
+  )?.[1] || "";
+  const savoirNormalise = normaliserQuestionPourComparaison(savoir);
+
+  for (const notion of notionsConnues) {
+    if (savoirNormalise.includes(notion)) return notion;
+  }
+
+  const debutDefinition = savoirNormalise.match(
+    /^(?:le|la|les|l\s+)?([a-z0-9\s-]{2,50}?)\s+(?:est|c est)\b/
+  );
+  if (debutDefinition?.[1]) {
+    const candidat = String(debutDefinition[1]).trim();
+    if (!estSujetConsolidationGenerique(candidat) && candidat.split(/\s+/).length <= 6) {
+      return candidat;
+    }
+  }
+
+  return "";
+}
+
 function construireQuestionsConsolidationCiblee(question = "", corps = "", sujet = "") {
   const matiere = detecterMatierePrincipale(question, corps);
-  const notion = sujet || extraireSujetMemoire(question) || "cette notion";
+  const notion = extraireNotionPourConsolidation(question, corps, sujet);
+  const notionLisible = notion || "la notion étudiée";
   const modeles = {
-    droit: `Pour t'assurer d'avoir bien compris : peux-tu m'expliquer en une phrase ce qu'est le/la ${notion} ?`,
-    geographie: `Si tu devais citer un exemple concret lié à ${notion}, lequel choisirais-tu ?`,
-    histoire: `Quelle est, selon toi, la conséquence la plus importante de ${notion} ?`,
-    math: `Essaie de m'expliquer la méthode que tu utiliserais pour résoudre un problème de type "${notion}".`,
-    physique: `Comment pourrais-tu vérifier expérimentalement la notion de ${notion} ?`,
-    chimie: `Quelle erreur fréquente un élève pourrait-il commettre en travaillant sur ${notion} ?`,
-    francais: `Donne-moi un autre exemple de phrase qui illustre la règle de ${notion}.`,
-    general: `Résume avec tes mots l'idée principale de ${notion}.`
+    civisme: `Selon le SAVOIR, cite un exemple concret de comportement civique.`,
+    droit: `Explique en une phrase la notion de ${notionLisible}.`,
+    geographie: `Cite un exemple concret lié à ${notionLisible}.`,
+    histoire: `Quelle idée essentielle retiens-tu au sujet de ${notionLisible} ?`,
+    math: `Explique la méthode à utiliser pour un problème portant sur ${notionLisible}.`,
+    physique: `Donne un exemple simple qui illustre ${notionLisible}.`,
+    chimie: `Donne un exemple simple qui illustre ${notionLisible}.`,
+    francais: `Donne une phrase qui illustre la règle de ${notionLisible}.`,
+    general: `Résume avec tes mots l'idée principale expliquée dans le SAVOIR.`
   };
   return `❓ [CONSOLIDATION]\n${modeles[matiere] || modeles.general}`;
 }
@@ -1153,7 +1245,9 @@ function normaliserCleCitation(texte = "") {
 }
 
 function detecterDomaineCitationPedagogique(question = "", reponse = "") {
-  const q = normaliserCleCitation(question);
+  const questionNettoyee = String(question || "")
+    .replace(/^\s*\[(?:audio transcrit|image analysee|image analysée|pdf envoye|pdf envoyé|message textuel)\]\s*/i, "");
+  const q = normaliserCleCitation(questionNettoyee);
   const r = normaliserCleCitation(reponse);
 
   // La question principale est toujours prioritaire. La réponse générée ne doit
@@ -1170,10 +1264,11 @@ function detecterDomaineCitationPedagogique(question = "", reponse = "") {
     if (/\b(mecanique|mouvement|force|vitesse|acceleration|equilibre|levier|moment|resistance des materiaux|contrainte|deformation)\b/.test(texte)) return "mecanique";
     if (/\b(physique|energie|masse|pression|temperature|chaleur|optique|lumiere|onde|gravitation)\b/.test(texte)) return "physique";
     if (/\b(comptabilite|comptable|debit|credit|bilan|journal comptable|grand livre|actif|passif|amortissement|tresorerie)\b/.test(texte)) return "comptabilite";
+    if (/\b(civisme|civique|citoyen|citoyennete|devoir civique|vie collective|bien commun)\b/.test(texte)) return "civisme";
     if (/\b(droit|loi|code|article|constitution|juridique|tribunal|justice|ohada|procedure)\b/.test(texte)) return "droit";
     if (/\b(geographie|province|territoire|commune|ville|pays|capitale|continent|fleuve|riviere|climat|relief|population)\b/.test(texte)) return "geographie";
     if (/\b(histoire|historique|independance|colonisation|royaume|empire|guerre|revolution|date historique)\b/.test(texte)) return "histoire";
-    if (/\b(français|francais|grammaire|orthographe|conjugaison|adjectif|verbe|nom commun|pronom|sujet du verbe|complement|phrase)\b/.test(texte)) return "francais";
+    if (/\b(français|francais|grammaire|orthographe|conjugaison|adjectif|verbe|nom commun|pronom|sujet du verbe|complement|phrase grammaticale)\b/.test(texte)) return "francais";
     if (/\b(informatique|ordinateur|algorithme|programmation|logiciel|reseau informatique|base de donnees|code source)\b/.test(texte)) return "informatique";
     if (/\b(mathematiques|maths|nombre|puissance)\b/.test(texte)) return "mathematiques";
 
@@ -1199,7 +1294,8 @@ function detecterDomaineCitationPedagogique(question = "", reponse = "") {
     geographie: "geographie",
     histoire: "histoire",
     droit: "droit",
-    francais: "francais"
+    francais: "francais",
+    civisme: "civisme"
   };
 
   return correspondances[matiereGenerale] || "";
@@ -2884,6 +2980,75 @@ async function cloturerEtatPedagogique(id, status = "closed") {
   return mettreAJourEtatPedagogique(id, { status });
 }
 
+async function reinitialiserEtatsPedagogiques(phone = "", status = "reset") {
+  if (!phone) return 0;
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE pedagogical_states
+       SET status = $2, updated_at = NOW()
+       WHERE phone = $1
+         AND status IN ('pending', 'awaiting_answer')`,
+      [phone, status]
+    );
+    return rowCount || 0;
+  } catch (e) {
+    logError("reinitialiser_etats_pedagogiques", e, { phone });
+    return 0;
+  }
+}
+
+function nettoyerQuestionPourSynchronisationEtat(question = "") {
+  return String(question || "")
+    .replace(/^\s*\[(?:audio transcrit|image analysée|image analysee|pdf envoyé|pdf envoye|message textuel)\]\s*/i, "")
+    .trim();
+}
+
+async function synchroniserConsolidationCoursAffichee({
+  phone = "",
+  questionCourante = "",
+  messageFinal = ""
+} = {}) {
+  const consolidationAffichee = extraireQuestionConsolidation(messageFinal);
+  if (!phone || !consolidationAffichee) return null;
+
+  const questionNettoyee = nettoyerQuestionPourSynchronisationEtat(questionCourante);
+  if (!questionNettoyee) return null;
+
+  const etat = await getConsolidationCoursActive(phone);
+  if (!etat) return null;
+
+  const memeQuestion =
+    normaliserQuestionPourComparaison(etat?.main_question || "") ===
+    normaliserQuestionPourComparaison(questionNettoyee);
+
+  // Ne touche jamais à une ancienne consolidation rappelée pendant un nouveau cours.
+  if (!memeQuestion) return etat;
+
+  const consolidationMemoire = String(etat?.pending_prompt || "").trim();
+  if (consolidationMemoire === consolidationAffichee) return etat;
+
+  const contenuEnseigneAffiche = retirerBlocConsolidationPedagogique(messageFinal)
+    .replace(/🔴🟡🔵\s*\*?Mwalimu EdTech\s*:\s*Ton Mentor pour l'Excellence\*?\s*🇨🇩/gi, "")
+    .replace(/^\s*[─—-]{5,}\s*$/gm, "")
+    .replace(/(?:^|\n)\s*«[^\n»]+»\s*(?=\n|$)/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const etatMisAJour = await mettreAJourEtatPedagogique(etat.id, {
+    pendingPrompt: consolidationAffichee,
+    lessonContent: contenuEnseigneAffiche
+  });
+
+  logInfo("course_consolidation_synced_with_display", {
+    phone,
+    stateId: etat.id,
+    previousPrompt: tronquerTexte(consolidationMemoire, 140),
+    displayedPrompt: tronquerTexte(consolidationAffichee, 140)
+  });
+
+  return etatMisAJour || etat;
+}
+
 function construireRappelExerciceBloquant(user = {}, etat = {}) {
   const prenom = premierPrenom(user?.nom || "");
   const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
@@ -2912,7 +3077,7 @@ function ajouterRappelConsolidationEnAttente(reponse = "", etat = {}) {
   const rappel = String(etat?.pending_prompt || "").trim();
   const corps = retirerBlocConsolidationPedagogique(reponse);
   if (!rappel) return corps;
-  return `${corps}\n\nPetit rappel : nous avons encore une seule question de consolidation en attente : « ${rappel} ». Réponds-y quand tu es prêt ; je n'en créerai pas une nouvelle avant sa clôture.`.trim();
+  return `${corps}\n\n📌 Petit rappel : « ${rappel} » Tu peux y répondre après ce cours.`.trim();
 }
 
 
@@ -2966,8 +3131,8 @@ function ajouterRappelCoursSansModifierReponse(reponse = "", etat = {}) {
   const rappel = String(etat?.pending_prompt || "").trim();
   let corps = String(reponse || "").trim();
   if (!rappel) return corps;
-  if (/une seule question de consolidation en attente/i.test(corps)) return corps;
-  return `${corps}\n\nPetit rappel : nous avons encore une seule question de consolidation en attente : « ${rappel} ». Tu peux y répondre après cette demande.`.trim();
+  if (/📌\s*Petit rappel/i.test(corps)) return corps;
+  return `${corps}\n\n📌 Petit rappel : « ${rappel} » Tu peux y répondre après ce cours.`.trim();
 }
 
 function ajouterRappelExerciceApresSocial(reponse = "", user = {}, etat = {}) {
@@ -3703,7 +3868,8 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
     message = verifierStructureMwalimu(message, user, historique, question);
   }
   
-  message = remplacerBlocConsolidation(message, question, resultat.matiere);
+  const notionConsolidation = extraireNotionPourConsolidation(question, message, "");
+  message = remplacerBlocConsolidation(message, question, notionConsolidation);
   
   if (!message.includes("👉 ")) {
     const ouverture = choisirOuvertureContextuelle(message, user, question);
@@ -5283,8 +5449,8 @@ function finaliserReponseAvecConsolidationEnAttente(
     .trim();
 
   const rappel = String(etat?.pending_prompt || "").trim();
-  if (rappel && !message.includes("une seule question de consolidation en attente")) {
-    message += `\n\nPetit rappel : nous avons encore une seule question de consolidation en attente : « ${rappel} ». Réponds-y quand tu es prêt ; je n'en créerai pas une nouvelle avant sa clôture.`;
+  if (rappel && !/📌\s*Petit rappel/i.test(message)) {
+    message += `\n\n📌 Petit rappel : « ${rappel} » Tu peux y répondre après ce cours.`;
   }
 
   return nettoyerDoublonsPedagogiques(message)
@@ -6088,14 +6254,16 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
   if (cmd === "/reset") {
     await updateUserField(from, "historique", []);
     await resetAllStudentAttempts(from);
+    await reinitialiserEtatsPedagogiques(from, "reset");
     await envoyerWhatsAppAvecRetry(
       from,
-      `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : L'historique a été remis à zéro.\n🔴 [INSPIRATION] : Repartir proprement peut aider.\n❓ [CONSOLIDATION] : Envoie-moi maintenant la question ou l'exercice que tu veux reprendre.`
+      `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : L'historique et les questions pédagogiques en attente ont été remis à zéro.\n🔴 [INSPIRATION] : Repartir proprement peut aider.\n❓ [CONSOLIDATION] : Envoie-moi maintenant la question ou l'exercice que tu veux reprendre.`
     );
     return true;
   }
 
   if (cmd === "/profil") {
+    await reinitialiserEtatsPedagogiques(from, "profile_reset");
     await pool.query(
       "UPDATE conversations SET nom = '', classe = '', reve = '', historique = '[]'::jsonb, updated_at = NOW() WHERE phone = $1",
       [from]
@@ -6344,6 +6512,14 @@ async function processIncomingMessage(msg) {
     { ...user, phone: from },
     historique
   );
+
+  // Source unique de vérité : la consolidation mémorisée devient exactement
+  // celle que l'élève voit dans le message final WhatsApp.
+  await synchroniserConsolidationCoursAffichee({
+    phone: from,
+    questionCourante: texteUtilisateur || contenuUtilisateurPourMemoire,
+    messageFinal
+  });
 
   await appendHistorique(from, "assistant", messageFinal);
   await envoyerWhatsAppAvecRetry(from, messageFinal);
