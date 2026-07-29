@@ -2147,15 +2147,50 @@ function estMimeImageSupporte(mimeType) {
   ].includes(mimeType);
 }
 
+/* =========================================================
+   NORMALISATION PRUDENTE DES TRANSCRIPTIONS AUDIO SCOLAIRES
+   - corrige seulement des confusions phonétiques très probables
+   - ne transforme jamais un véritable acronyme militaire CIFA
+========================================================= */
+function normaliserTranscriptionAcademiqueAudio(texte = "") {
+  let t = String(texte || "").trim();
+  if (!t) return "";
+
+  const cle = retirerAccents(t.toLowerCase());
+  const contexteMilitaireCifa =
+    /\bcifa\b/.test(cle) ||
+    /\bcentre d instruction(?: des)? forces armees\b/.test(cle) ||
+    /\b(armee|militaire|soldat|recrue|forces armees)\b/.test(cle);
+
+  // « cifisme / sifisme / civisime » sont des confusions audio fréquentes
+  // pour le terme scolaire « civisme ». On ne corrige pas si le contexte
+  // indique réellement l'acronyme militaire CIFA.
+  if (!contexteMilitaireCifa) {
+    t = t
+      .replace(/\bcifisme\b/gi, "civisme")
+      .replace(/\bsifisme\b/gi, "civisme")
+      .replace(/\bcivisime\b/gi, "civisme")
+      .replace(/\bcivisisme\b/gi, "civisme");
+  }
+
+  return t.replace(/\s+/g, " ").trim();
+}
+
 async function analyserAudioCourt(user, buffer, mimeType, historique) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
-    const prompt = `Transcris ce message audio. Ensuite, classe-le dans UNE de ces catégories :
+    const prompt = `Transcris fidèlement ce message audio en français, dans un contexte scolaire congolais. Ensuite, classe-le dans UNE de ces catégories :
 - "question" : l'élève pose une question scolaire
 - "reponse" : l'élève donne une réponse à un exercice
 - "social" : salutation, remerciement, bavardage
 - "incompris" : audio inaudible ou incompréhensible
+
+RÈGLES DE TRANSCRIPTION :
+- Privilégie les termes scolaires courants lorsque la prononciation les indique.
+- Le mot « civisme » désigne les comportements et devoirs du citoyen.
+- N'écris « CIFA » que si l'audio prononce clairement l'acronyme ou parle d'armée, de soldats ou d'un centre d'instruction militaire.
+- N'invente aucun développement : transcris seulement ce qui est dit.
 
 Réponds UNIQUEMENT avec un JSON valide au format :
 {
@@ -2777,14 +2812,28 @@ async function nettoyerEtatsPedagogiquesCorrompus() {
     const { rowCount } = await pool.query(`
       UPDATE pedagogical_states
       SET status = 'invalid', updated_at = NOW()
-      WHERE kind = 'exercise'
-        AND status IN ('pending', 'awaiting_answer')
+      WHERE status IN ('pending', 'awaiting_answer')
         AND (
-          length(trim(coalesce(main_question, ''))) < 5
-          OR lower(trim(coalesce(main_question, ''))) IN (
-            'et', 'mais', 'donc', 'alors', 'oui', 'oui oui', 'non',
-            'non du tout', 'ok', 'okay', 'd accord', 'merci', 'bonjour',
-            'bonsoir', 'salut', 'je ne sais pas', 'aucune idee', 'aide moi'
+          (
+            kind = 'exercise'
+            AND (
+              length(trim(coalesce(main_question, ''))) < 5
+              OR lower(trim(coalesce(main_question, ''))) IN (
+                'et', 'mais', 'donc', 'alors', 'oui', 'oui oui', 'non',
+                'non du tout', 'ok', 'okay', 'd accord', 'merci', 'bonjour',
+                'bonsoir', 'salut', 'je ne sais pas', 'aucune idee', 'aide moi'
+              )
+            )
+          )
+          OR (
+            kind = 'course'
+            AND (
+              lower(coalesce(main_question, '')) ~ '(cifisme|sifisme|civisime|civisisme)'
+              OR (
+                lower(coalesce(main_question, '')) LIKE '%civisme%'
+                AND lower(coalesce(pending_prompt, '')) LIKE '%cifa%'
+              )
+            )
           )
         )
     `);
@@ -3857,6 +3906,21 @@ function supprimerRepetitionQuestionPrincipale(message = "", question = "") {
   return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function supprimerSalutationAvantBlocPedagogique(texte = "") {
+  const lignes = String(texte || "").split("\n");
+  const indexBloc = lignes.findIndex((ligne) => /🔵\s*\[VÉCU\]/i.test(ligne));
+  if (indexBloc <= 0) return String(texte || "");
+
+  const resultat = lignes.filter((ligne, index) => {
+    if (index >= indexBloc) return true;
+    const n = normaliserQuestionPourComparaison(ligne);
+    if (!n) return true;
+    return !/^(?:salut|bonjour|bonsoir)(?:\s+[a-z0-9]+){0,3}$/.test(n);
+  });
+
+  return resultat.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function construireMessageFinal(user, reponse, historique, question, fiche) {
   let message = reponse;
   
@@ -3890,6 +3954,7 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
 
   message = nettoyerMarkdownCitation(message);
   message = nettoyerReponseIA(message);
+  message = supprimerSalutationAvantBlocPedagogique(message);
   message = supprimerFormulesLourdesDAppel(message, user);
   message = nettoyerAppelsRepetitifs(message, user.nom);
   message = nettoyerOuverturesDupliquees(message);
@@ -5461,6 +5526,74 @@ function finaliserReponseAvecConsolidationEnAttente(
 
 
 /* =========================================================
+   REMPLACEMENT D'UNE CONSOLIDATION PAR UNE REFORMULATION
+   - si l'élève répète/corrige presque la même question de cours,
+     l'ancien état est remplacé au lieu d'être rappelé comme vérité.
+========================================================= */
+function normaliserQuestionDefinition(texte = "") {
+  return normaliserQuestionPourComparaison(texte)
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function estQuestionDefinitionCourte(texte = "") {
+  const n = normaliserQuestionDefinition(texte);
+  return /^(?:qu est ce que|c est quoi|que signifie|definis|definition de|explique moi)\b/.test(n);
+}
+
+function extraireNoyauQuestionDefinition(texte = "") {
+  return normaliserQuestionDefinition(texte)
+    .replace(/^(?:qu est ce que|c est quoi|que signifie|definis|definition de|explique moi)\s+/, "")
+    .replace(/^(?:le|la|les|un|une|l)\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function distanceLevenshteinCourte(a = "", b = "") {
+  const x = String(a || "");
+  const y = String(b || "");
+  const ligne = Array.from({ length: y.length + 1 }, (_, i) => i);
+
+  for (let i = 1; i <= x.length; i += 1) {
+    let precedentDiagonal = ligne[0];
+    ligne[0] = i;
+    for (let j = 1; j <= y.length; j += 1) {
+      const ancien = ligne[j];
+      const cout = x[i - 1] === y[j - 1] ? 0 : 1;
+      ligne[j] = Math.min(
+        ligne[j] + 1,
+        ligne[j - 1] + 1,
+        precedentDiagonal + cout
+      );
+      precedentDiagonal = ancien;
+    }
+  }
+  return ligne[y.length];
+}
+
+function doitRemplacerConsolidationParReformulation(etat = {}, questionCourante = "") {
+  const ancienne = String(etat?.main_question || "").trim();
+  const actuelle = String(questionCourante || "").trim();
+  if (!ancienne || !actuelle) return false;
+  if (!estQuestionDefinitionCourte(ancienne) || !estQuestionDefinitionCourte(actuelle)) return false;
+
+  const noyauAncien = extraireNoyauQuestionDefinition(ancienne);
+  const noyauActuel = extraireNoyauQuestionDefinition(actuelle);
+  if (!noyauAncien || !noyauActuel) return false;
+  if (noyauAncien === noyauActuel) return true;
+
+  const longueurMax = Math.max(noyauAncien.length, noyauActuel.length);
+  if (longueurMax > 32) return false;
+
+  const distance = distanceLevenshteinCourte(noyauAncien, noyauActuel);
+  const ratio = longueurMax ? distance / longueurMax : 1;
+
+  // Exemple visé : « cifisme » ↔ « civisme ».
+  return distance <= 2 || ratio <= 0.22;
+}
+
+/* =========================================================
    TRAITEMENT TEXTE
 ========================================================= */
 async function traiterTexte(user, texteUtilisateur, historique) {
@@ -5471,7 +5604,24 @@ async function traiterTexte(user, texteUtilisateur, historique) {
   );
 
   let etatExerciceActif = await getExerciceActif(user?.phone || "");
-  const consolidationCoursEnAttente = await getConsolidationCoursActive(user?.phone || "");
+  let consolidationCoursEnAttente = await getConsolidationCoursActive(user?.phone || "");
+
+  if (
+    consolidationCoursEnAttente &&
+    detectionAcademiqueEcrite?.route === "question_de_cours" &&
+    doitRemplacerConsolidationParReformulation(
+      consolidationCoursEnAttente,
+      texteUtilisateur
+    )
+  ) {
+    await cloturerEtatPedagogique(consolidationCoursEnAttente.id, "superseded");
+    logInfo("course_consolidation_superseded_by_reformulation", {
+      phone: user?.phone || "",
+      previousQuestion: tronquerTexte(consolidationCoursEnAttente?.main_question || "", 140),
+      currentQuestion: tronquerTexte(texteUtilisateur, 140)
+    });
+    consolidationCoursEnAttente = null;
+  }
   const clarificationEnonce = extraireClarificationEnonceExercice(texteUtilisateur);
 
   if (etatExerciceActif && estDemandeRappelEnonceExercice(texteUtilisateur)) {
@@ -5858,14 +6008,17 @@ async function traiterAudio(user, msg, historique) {
 
   const analyse = await analyserAudioCourt(user, buffer, mimeType, []);
   const transcriptionBrute = String(analyse?.transcription || "").trim();
-  const transcription = normaliserRepetitionsSociales(transcriptionBrute);
-  const contenuAudio = transcriptionBrute || transcription;
+  const transcriptionCorrigee = normaliserTranscriptionAcademiqueAudio(transcriptionBrute);
+  const transcription = normaliserRepetitionsSociales(transcriptionCorrigee);
+  const contenuAudio = transcriptionCorrigee || transcriptionBrute || transcription;
   const typeAudio = String(analyse?.type || "incompris").trim().toLowerCase();
 
   logInfo("audio_transcription", {
     phone: user?.phone || "",
     typeAudio,
-    transcription: transcription.slice(0, 140)
+    transcriptionBrute: tronquerTexte(transcriptionBrute, 140),
+    transcriptionUtilisee: tronquerTexte(contenuAudio, 140),
+    correctionAppliquee: transcriptionBrute !== transcriptionCorrigee
   });
 
   const etatExerciceActif = await getExerciceActif(user?.phone || "");
