@@ -186,6 +186,71 @@ const REGLE_CALCUL_INTELLIGENT = `RÈGLES SPÉCIALES POUR LES CALCULS :
 - Explique la logique avant le résultat
 - N'invente jamais un chiffre, une unité ou une formule`;
 
+const REGLE_EXPLICATION_ADAPTATIVE = `PÉDAGOGIE ADAPTATIVE — EXPLICATION PROFESSIONNELLE ET PROFESSORALE :
+- Brève ne signifie jamais pauvre, vague ou superficielle.
+- Commence par l'explication minimale complète qui permet réellement de comprendre.
+- Présente l'idée centrale, les éléments indispensables et un seul exemple bien choisi.
+- Supprime les détours, les répétitions, les listes décoratives et les compliments inutiles.
+- Ne supprime jamais une condition, une exception, une étape ou une précision nécessaire à la compréhension.
+- Approfondis seulement lorsque la notion est complexe, lorsque l'élève le demande ou lorsque sa réponse montre une incompréhension.
+- En cas d'incompréhension, ne répète pas le même texte : change d'angle, simplifie le vocabulaire et utilise un autre exemple.
+- L'objectif n'est pas d'écrire le moins possible, mais d'expliquer exactement ce qu'il faut, avec la rigueur d'un professeur.`;
+
+function detecterNiveauExplication(question = "", route = "academique_general") {
+  const t = String(question || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, " ")
+    .replace(/[^a-z0-9²³+\-*/×÷=\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/exercice_a_resolution|correction_exercice|reponse_eleve/.test(String(route || ""))) {
+    return "guidee";
+  }
+
+  if (/\b(explique davantage|explique plus|approfondis|en detail|plus de details|je ne comprends pas|je n ai pas compris|reprends autrement|montre moi pas a pas|pourquoi exactement|comment fonctionne)\b/.test(t)) {
+    return "approfondie";
+  }
+
+  if (/\b(qu est ce que|c est quoi|definition|definis|definir)\b/.test(t) && t.length <= 180) {
+    return "essentielle";
+  }
+
+  return "standard";
+}
+
+function construireRegleExplicationAdaptative({ question = "", route = "academique_general" } = {}) {
+  const niveau = detecterNiveauExplication(question, route);
+
+  if (niveau === "approfondie") {
+    return `NIVEAU D'EXPLICATION : APPROFONDI
+- Développe progressivement, sans répétition, avec les étapes ou distinctions réellement nécessaires.
+- Utilise au maximum deux exemples courts si le second apporte un éclairage différent.
+- Vise environ 250 à 450 mots pour l'ensemble pédagogique, sauf si la matière exige moins ou davantage pour rester exacte.`;
+  }
+
+  if (niveau === "guidee") {
+    return `NIVEAU D'EXPLICATION : GUIDÉ
+- Donne seulement l'étape utile maintenant : données, objectif, méthode et prochaine action.
+- Une correction traite d'abord la première erreur ; elle ne recommence pas tout le cours.
+- Vise environ 90 à 220 mots, selon la difficulté de l'étape.`;
+  }
+
+  if (niveau === "essentielle") {
+    return `NIVEAU D'EXPLICATION : ESSENTIEL
+- Donne une définition rigoureuse, deux à quatre idées indispensables et un exemple concret.
+- VÉCU : une ou deux phrases. SAVOIR : quatre à six phrases courtes. INSPIRATION : une phrase utile.
+- Vise environ 100 à 180 mots pour VÉCU + SAVOIR + INSPIRATION, sans sacrifier une précision nécessaire.`;
+  }
+
+  return `NIVEAU D'EXPLICATION : STANDARD
+- Explique dans un ordre logique, avec les distinctions indispensables et un exemple principal.
+- Développe seulement ce qui aide directement à comprendre la question posée.
+- Vise environ 160 à 300 mots pour l'ensemble pédagogique, selon la difficulté réelle.`;
+}
+
 const SYSTEM_BASE = `Tu es Mwalimu EdTech, un précepteur numérique congolais, humain, chaleureux, rigoureux, pédagogue et bienveillant.
 MISSION :
 - Aider l'élève à comprendre
@@ -195,9 +260,10 @@ MISSION :
 - Adapter le niveau à la classe de l'élève
 - Te référer au contexte scolaire de la RDC lorsque c'est pertinent
 STYLE OBLIGATOIRE :
-- Réponse claire, naturelle et brève
+- Réponse claire, naturelle, professionnelle et professorale
+- Commence par une explication brève mais complète
 - Évite les répétitions
-- Ne sois jamais bavard
+- Ne sois jamais bavard, mais ne raccourcis jamais au point de rendre l'explication superficielle
 - Ne félicite pas exagérément
 - N'écris pas "bravo" sauf si l'élève a réellement bien répondu, corrigé juste ou fourni une bonne démarche
 - Évite les compliments excessifs comme "future avocate", "futur avocat", "œil de lynx" ou autres formules théâtrales
@@ -223,6 +289,7 @@ const SYSTEM_TUTORAT = `RÈGLES DE TUTORAT :
 
 
 const SYSTEM_PROFESSEUR_EN_CLASSE = `COUCHE CENTRALE « PROFESSEUR EN CLASSE » :
+${REGLE_EXPLICATION_ADAPTATIVE}
 - Cette couche s'applique uniquement après qu'un message a été routé comme académique.
 - Parle directement à l'élève, comme un professeur humain présent devant lui ; ne parle jamais de « l'élève » à la troisième personne.
 - Commence par l'idée utile, sans longue salutation, sans flatterie théâtrale et sans répéter inutilement le prénom.
@@ -245,16 +312,19 @@ function construireCoucheProfesseurEnClasse({
   route = "academique_general",
   matiere = "general",
   avecConsolidation = true,
-  formatJson = false
+  formatJson = false,
+  question = ""
 } = {}) {
   const contexte = `
 ROUTE ACADÉMIQUE : ${route}
 MATIÈRE : ${matiere || "general"}
 CONSOLIDATION AUTORISÉE : ${avecConsolidation ? "oui" : "non"}`;
+  const regleNiveau = construireRegleExplicationAdaptative({ question, route });
 
   if (formatJson) {
     return `${SYSTEM_PROFESSEUR_EN_CLASSE}
 ${contexte}
+${regleNiveau}
 MODE INTERNE JSON :
 - Ne produis pas les quatre blocs visibles.
 - Applique néanmoins la pédagogie du professeur en classe dans les champs d'explication, d'exemple et de prochaine étape.
@@ -264,6 +334,7 @@ MODE INTERNE JSON :
   if (route === "exercice_a_resolution") {
     return `${SYSTEM_PROFESSEUR_EN_CLASSE}
 ${contexte}
+${regleNiveau}
 RÈGLE SPÉCIFIQUE EXERCICE :
 - Présente brièvement : ce que l'on connaît, ce que l'on cherche et la méthode.
 - Si un exemple est nécessaire, utilise un exemple analogue plus simple, jamais l'exercice exact résolu jusqu'au bout.
@@ -273,6 +344,7 @@ RÈGLE SPÉCIFIQUE EXERCICE :
   if (route === "correction_exercice" || route === "reponse_eleve") {
     return `${SYSTEM_PROFESSEUR_EN_CLASSE}
 ${contexte}
+${regleNiveau}
 RÈGLE SPÉCIFIQUE CORRECTION :
 - Vérifie la réponse par rapport à l'énoncé réellement mémorisé.
 - Distingue clairement réponse finale, étape intermédiaire et réponse hors sujet.
@@ -282,6 +354,7 @@ RÈGLE SPÉCIFIQUE CORRECTION :
   if (route === "image_academique") {
     return `${SYSTEM_PROFESSEUR_EN_CLASSE}
 ${contexte}
+${regleNiveau}
 RÈGLE SPÉCIFIQUE IMAGE :
 - Commence par une observation fidèle et courte des éléments utiles de l'image.
 - Ne complète aucun nombre, mot, figure ou relation qui n'est pas visible.
@@ -290,6 +363,7 @@ RÈGLE SPÉCIFIQUE IMAGE :
 
   return `${SYSTEM_PROFESSEUR_EN_CLASSE}
 ${contexte}
+${regleNiveau}
 RÈGLE SPÉCIFIQUE COURS :
 - Donne d'abord une définition ou une idée centrale simple.
 - Développe ensuite comme au tableau, avec un exemple concret pertinent.
@@ -1011,6 +1085,24 @@ function nettoyerReponseIA(texte = "") {
   t = t.replace(/^\s*👉\s*Je reste disponible.*$/gim, "");
   t = t.replace(/^\s*👉\s*Continue à me parler.*$/gim, "");
   return supprimerDoublonsLignes(t).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function nettoyerDebutValidation(texte = "") {
+  const propre = String(texte || "")
+    .replace(/^\s*(?:exact(?:e)?|c['’]est exact|bonne r[ée]ponse|r[ée]ponse correcte|tout [àa] fait)\s*(?:[😊✅!.:,;—-]+\s*)*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return propre;
+}
+
+function nettoyerValidationsRepetitives(texte = "") {
+  return String(texte || "")
+    .replace(/\bExact\s*😊?\s*[.!,:;-]*\s*C['’]est exact\b/gi, "Exact 😊")
+    .replace(/\bC['’]est exact\s*[.!,:;-]*\s*C['’]est exact\b/gi, "C'est exact")
+    .replace(/\bExcellent travail(?:\s+\*{0,2}[\p{L}-]+\*{0,2})?\s*😊?\s*[.!,:;-]*\s*(?:c['’]est|cela est) tout [àa] fait (?:juste|correct)\b/giu, "Exact 😊")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function simplifierNotationMath(texte = "") {
@@ -1885,7 +1977,8 @@ Consignes :
 ${construireCoucheProfesseurEnClasse({
   route: "academique_general",
   matiere: detecterMatierePrincipale(texte, ""),
-  avecConsolidation: true
+  avecConsolidation: true,
+  question: texte
 })}`;
   
   return consigne;
@@ -2053,7 +2146,8 @@ Aucune fiche locale disponible.`;
           content: construireCoucheProfesseurEnClasse({
             route: "academique_general",
             matiere: matiereProfesseur,
-            avecConsolidation: !/aucune nouvelle consolidation/i.test(consignePedagogique)
+            avecConsolidation: !/aucune nouvelle consolidation/i.test(consignePedagogique),
+            question: questionEleve
           })
         },
         {
@@ -3616,7 +3710,8 @@ async function repondreImageAcademiqueSansWeb(user, base64Image, mimeType, quest
 ${construireCoucheProfesseurEnClasse({
   route: routeProfesseurImage,
   matiere: matiereProfesseurImage,
-  avecConsolidation: true
+  avecConsolidation: true,
+  question: contenuAcademiqueImage
 })}
 MODE IMAGE ACADÉMIQUE SANS WEB :
 - Lis d'abord l'image.
@@ -3701,7 +3796,8 @@ ${tronquerTexte(fiche?.commentaire_ai || "", 1000)}`
 ${construireCoucheProfesseurEnClasse({
   route: routeProfesseurImage,
   matiere: matiereProfesseurImage,
-  avecConsolidation: true
+  avecConsolidation: true,
+  question: contenuAcademiqueImage
 })}
 MODE IMAGE ACADÉMIQUE AVEC WEB :
 - Lis d'abord l'image actuelle.
@@ -3953,6 +4049,7 @@ function construireMessageFinal(user, reponse, historique, question, fiche) {
   }
 
   message = nettoyerMarkdownCitation(message);
+  message = nettoyerValidationsRepetitives(message);
   message = nettoyerReponseIA(message);
   message = supprimerSalutationAvantBlocPedagogique(message);
   message = supprimerFormulesLourdesDAppel(message, user);
@@ -4743,7 +4840,8 @@ async function traiterQuestionDeCoursActivee(
 ${construireCoucheProfesseurEnClasse({
   route: "question_de_cours",
   matiere,
-  avecConsolidation: !sansNouvelleConsolidation
+  avecConsolidation: !sansNouvelleConsolidation,
+  question: texteUtilisateur
 })}
 MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 - Tu réponds uniquement à une question de cours ou de définition.
@@ -4753,11 +4851,11 @@ MODE QUESTION DE COURS — ACTIVATION PRUDENTE :
 - Interdiction de modifier un signe, un exposant, une lettre, une inconnue, un coefficient ou une unité.
 - Si l'énoncé est ambigu, demande une précision au lieu de corriger ou d'inventer.
 - Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
-- Réponds comme un précepteur professionnel, simple, clair et humain.
-- Donne une définition courte, puis une explication, puis un seul exemple concret.
-- Pour une définition simple, limite l'ensemble VÉCU + SAVOIR + INSPIRATION à environ 170 mots.
-- VÉCU : deux phrases maximum. SAVOIR : cinq idées courtes maximum. INSPIRATION : deux phrases maximum.
-- Ne sois pas bavard.
+- Réponds comme un professeur professionnel, rigoureux, clair et humain.
+- Donne d'abord une définition précise, puis les éléments indispensables, puis un seul exemple concret.
+- La brièveté concerne les détours et les répétitions, jamais le contenu nécessaire à la compréhension.
+- Adapte la profondeur au niveau d'explication indiqué plus haut.
+- Ne multiplie ni les sous-titres, ni les exemples, ni les formulations équivalentes.
 - Ne génère jamais le header Mwalimu.
 - Ne génère jamais de citation finale.
 - Ne génère jamais d'ouverture finale.
@@ -4778,6 +4876,7 @@ ${regleStructure}`;
           text: `Question de cours détectée.
 Matière détectée : ${matiere}
 Question de l'élève : ${texteUtilisateur}
+Niveau d'explication détecté : ${detecterNiveauExplication(texteUtilisateur, "question_de_cours")}
 
 Réponds avec la structure Mwalimu, sans doublons.${sansNouvelleConsolidation ? " N'ajoute aucune nouvelle consolidation." : ""}`
         }
@@ -4911,15 +5010,16 @@ async function traiterExerciceAResolutionActive(user, texteUtilisateur, historiq
 ${construireCoucheProfesseurEnClasse({
   route: "exercice_a_resolution",
   matiere,
-  avecConsolidation: true
+  avecConsolidation: true,
+  question: texteUtilisateur
 })}
 MODE EXERCICE À RÉSOLUTION — ACTIVATION PRUDENTE :
 - Tu traites uniquement un exercice, un devoir, un calcul ou une procédure à résoudre.
 - Matières possibles : maths, physique, chimie, électricité, mécanique, résistance des matériaux, électronique, comptabilité, statistique, algorithmique, économie quantitative, sciences techniques.
 - N'utilise pas Google Search.
 - Ne parle jamais de CONTEXTE WEB, CONTEXTE DB, SOURCE PRINCIPALE ou SOURCE SECONDAIRE.
-- Réponds comme un précepteur professionnel, simple, clair et humain.
-- Explique la méthode pas à pas.
+- Réponds comme un professeur professionnel, rigoureux, clair et humain.
+- Explique la méthode pas à pas, mais seulement jusqu'à l'étape utile maintenant.
 - Ne recopie pas l'énoncé toi-même : le système l'ajoutera automatiquement avec exactitude.
 - Montre seulement le démarrage utile ou la première étape importante.
 - Ne donne pas directement toute la réponse finale.
@@ -5084,7 +5184,8 @@ ${construireCoucheProfesseurEnClasse({
   route: "correction_cours",
   matiere: etat?.subject || "general",
   avecConsolidation: false,
-  formatJson: true
+  formatJson: true,
+  question: etat?.pending_prompt || etat?.main_question || ""
 })}
 MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
 - Réponds uniquement en JSON valide.
@@ -5133,8 +5234,10 @@ MODE CLÔTURE D'UNE CONSOLIDATION DE COURS :
   await cloturerEtatPedagogique(etat.id, "closed");
 
   if (verdict === "acceptable") {
+    const confirmation = nettoyerDebutValidation(explication) ||
+      "Ta réponse correspond bien à la notion étudiée.";
     return {
-      reponse: `Exact 😊 ${explication || "Ta réponse correspond bien à la notion étudiée."}
+      reponse: `Exact 😊 ${confirmation}
 
 Tu as bien compris. Nous pouvons passer à la suite.`,
       bypassFormat: true
@@ -5168,7 +5271,8 @@ ${construireCoucheProfesseurEnClasse({
   route: "correction_exercice",
   matiere: etat?.subject || "general",
   avecConsolidation: true,
-  formatJson: true
+  formatJson: true,
+  question: etat?.pending_prompt || etat?.main_question || ""
 })}
 MODE SUIVI PERSISTANT D'UN EXERCICE :
 - Réponds uniquement en JSON valide.
@@ -5195,13 +5299,12 @@ MODE SUIVI PERSISTANT D'UN EXERCICE :
   const exemple = nettoyerChampEvaluation(evaluation?.exempleVie || "");
   const prochaineEtape = nettoyerChampEvaluation(evaluation?.prochaineEtape || "") ||
     "Reprends l'étape demandée et envoie-moi ta nouvelle proposition.";
-  const prenom = premierPrenom(user?.nom || "");
-  const appel = prenom && prenom !== "élève" ? `**${prenom}**` : "toi";
-
   if (verdict === "finale_correcte") {
     await cloturerEtatPedagogique(etat.id, "closed");
+    const confirmation = nettoyerDebutValidation(explication) ||
+      "Ta démarche est cohérente et ta réponse finale est correcte.";
     return {
-      reponse: `Excellent travail ${appel} 😊 Ta réponse finale est correcte. ${explication || "Ta démarche est cohérente et l'exercice est maintenant terminé."}\n\nNous pouvons passer à une autre question.`,
+      reponse: `Exact 😊 ${confirmation}\n\nL'exercice est terminé. Nous pouvons passer à la suite.`,
       bypassFormat: true
     };
   }
@@ -5213,7 +5316,7 @@ MODE SUIVI PERSISTANT D'UN EXERCICE :
       status: "awaiting_answer"
     });
     return {
-      reponse: `🔵 [VÉCU] : Très bien ${appel}, cette étape est correcte.\n\n🟡 [SAVOIR] : ${explication || "Tu avances dans la bonne direction."}\n\n🔴 [INSPIRATION] : Continue avec la même rigueur.\n\n❓ [CONSOLIDATION] : ${prochaineEtape}`,
+      reponse: `🔵 [VÉCU] : Cette étape est correcte.\n\n🟡 [SAVOIR] : ${nettoyerDebutValidation(explication) || "Tu avances dans la bonne direction."}\n\n🔴 [INSPIRATION] : Poursuis avec la même rigueur.\n\n❓ [CONSOLIDATION] : ${prochaineEtape}`,
       bypassFormat: false
     };
   }
@@ -5225,7 +5328,7 @@ MODE SUIVI PERSISTANT D'UN EXERCICE :
     });
     const exempleTexte = exemple ? ` Exemple concret : ${exemple}` : "";
     return {
-      reponse: `🔵 [VÉCU] : Merci d'avoir essayé ${appel}.\n\n🟡 [SAVOIR] : ${erreur || "Il reste une erreur dans cette étape."} ${explication || "Reprenons le même chemin plus doucement."}${exempleTexte}\n\n🔴 [INSPIRATION] : L'erreur fait partie de l'apprentissage ; garde la même méthode.\n\n❓ [CONSOLIDATION] : ${prochaineEtape}`,
+      reponse: `🔵 [VÉCU] : Merci d'avoir essayé.\n\n🟡 [SAVOIR] : ${erreur || "Il reste une erreur dans cette étape."} ${explication || "Reprenons le même chemin plus doucement."}${exempleTexte}\n\n🔴 [INSPIRATION] : Une erreur corrigée fait progresser.\n\n❓ [CONSOLIDATION] : ${prochaineEtape}`,
       bypassFormat: false
     };
   }
@@ -5269,7 +5372,8 @@ ${construireCoucheProfesseurEnClasse({
   route: "reponse_eleve",
   matiere,
   avecConsolidation: true,
-  formatJson: true
+  formatJson: true,
+  question: contexte?.derniereConsigne || contexte?.questionInitiale || ""
 })}
 MODE CORRECTION D'UNE RÉPONSE D'ÉLÈVE :
 - Réponds uniquement en JSON valide.
@@ -6390,7 +6494,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
     await updateUserField(from, "reminders_enabled", false);
     await envoyerWhatsAppAvecRetry(
       from,
-      `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : Les rappels du matin sont maintenant arrêtés.\n🔴 [INSPIRATION] : Tu gardes le contrôle de ton rythme.\n❓ [CONSOLIDATION] : Si tu veux les réactiver, envoie /start.`
+      `${HEADER_MWALIMU}\n────────────────\n✅ *Rappels du matin désactivés.*\n\nTu peux les réactiver à tout moment en envoyant /start.`
     );
     return true;
   }
@@ -6399,7 +6503,7 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
     await updateUserField(from, "reminders_enabled", true);
     await envoyerWhatsAppAvecRetry(
       from,
-      `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : Les rappels du matin sont maintenant réactivés.\n🔴 [INSPIRATION] : Une bonne régularité aide à progresser.\n❓ [CONSOLIDATION] : Nous continuerons ensemble pas à pas.`
+      `${HEADER_MWALIMU}\n────────────────\n✅ *Rappels du matin réactivés.*\n\nTu recevras de nouveau ton message d'accompagnement chaque matin.`
     );
     return true;
   }
@@ -6447,9 +6551,11 @@ cron.schedule(
       );
       for (const eleve of rows) {
         try {
-          const appel = `${genreEleve(eleve.nom)} **${premierPrenom(eleve.nom)}**`;
-          const citation = pick(CITATIONS.patriotisme);
-          const messageRappel = `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : Bonjour ${appel}.\n🟡 [SAVOIR] : Petit rappel du matin : avance aujourd'hui avec calme et sérieux.\n🔴 [INSPIRATION] : Ton objectif n'est pas d'aller vite, mais de bien comprendre.\n❓ [CONSOLIDATION] : Quelle matière veux-tu travailler aujourd'hui ?\n👉 Je reste à tes côtés.\n🌟 Mot d'encouragement : Un élève constant progresse.\n${citation}`.replace(
+          const prenom = premierPrenom(eleve.nom);
+          // Le rappel matinal est un message social d'accompagnement.
+          // Il ne doit créer ni structure pédagogique, ni consolidation,
+          // ni modification de l'état pédagogique de l'élève.
+          const messageRappel = `${HEADER_MWALIMU}\n────────────────\nBonjour **${prenom}** 😊\n\nPetit rappel du matin : avance aujourd'hui avec calme et sérieux. Tu n'as pas besoin d'aller vite ; l'essentiel est de bien comprendre.\n\nQuelle matière aimerais-tu travailler aujourd'hui ? Je reste à tes côtés.`.replace(
             /\n{3,}/g,
             "\n\n"
           ).trim();
@@ -6662,6 +6768,7 @@ async function processIncomingMessage(msg) {
   }
 
   messageFinal = nettoyerMarkdownCitation(messageFinal);
+  messageFinal = nettoyerValidationsRepetitives(messageFinal);
   messageFinal = eviterPrenomConsecutif(
     messageFinal,
     { ...user, phone: from },
