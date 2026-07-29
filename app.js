@@ -6252,12 +6252,14 @@ async function traiterCommandeTexte(from, _user, texteUtilisateur) {
   }
 
   if (cmd === "/reset") {
+    // Une commande technique ne doit jamais produire une structure pédagogique
+    // ni donner l'impression qu'une nouvelle consolidation est ouverte.
     await updateUserField(from, "historique", []);
     await resetAllStudentAttempts(from);
     await reinitialiserEtatsPedagogiques(from, "reset");
     await envoyerWhatsAppAvecRetry(
       from,
-      `${HEADER_MWALIMU}\n────────────────\n🔵 [VÉCU] : J'ai bien reçu ta demande.\n🟡 [SAVOIR] : L'historique et les questions pédagogiques en attente ont été remis à zéro.\n🔴 [INSPIRATION] : Repartir proprement peut aider.\n❓ [CONSOLIDATION] : Envoie-moi maintenant la question ou l'exercice que tu veux reprendre.`
+      `${HEADER_MWALIMU}\n────────────────\n✅ *Réinitialisation terminée.*\n\nL'historique ainsi que toutes les questions pédagogiques en attente ont été effacés.\n\nTu peux maintenant envoyer une nouvelle question ou un nouvel exercice.`
     );
     return true;
   }
